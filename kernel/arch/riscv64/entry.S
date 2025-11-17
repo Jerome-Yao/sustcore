@@ -9,9 +9,18 @@
  * 
  */
 
+.section .data
+.extern hart_id
+.extern dtb_ptr
+
 .section .text.entry, "ax"
 .globl _start
 _start:
+    # 将64位寄存器a0, a1的值保存到全局变量中
+    la t0, hart_id
+    sd a0, 0(t0)
+    la t1, dtb_ptr
+    sd a1, 0(t1)
     # 设置栈指针
     la sp, boot_stack_top
     # 跳转到 Rust/C 主函数

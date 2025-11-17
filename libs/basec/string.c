@@ -59,6 +59,15 @@ int strlen(const char *restrict str) {
 	return len;
 }
 
+int strnlen(const char *restrict str, int count) {
+	int len = 0;
+	while (*str != 0 && len < count) {
+		len += 1;
+		str ++;
+	}
+	return len;
+}
+
 // 复制字符串
 char *strcpy(void *restrict dst, const char *restrict src) {
 	int len = strlen(src);

@@ -9,7 +9,7 @@ include $(path-script)/helper.mk
 target := $(path-bin)/libs/$(architecture)/libbasec.a
 target-kernel := $(path-bin)/libs/$(architecture)/libkerbasec.a
 
-objects := logger.o baseio.o tostring.o string.o ctype.o
+objects := logger.o baseio.o tostring.o string.o ctype.o stdlib.o
 
 flags-c-kernel := -g -mcmodel=medany
 

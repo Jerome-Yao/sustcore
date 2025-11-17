@@ -25,7 +25,7 @@ flags-c := -std=gnu23 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 
 flags-c += -g -mcmodel=medany
 
-include-c := -I$(path-include) -I$(path-include)/std/ -I$(path-d) -I./third_party/include/
+include-c := -I$(path-include) -I$(path-include)/std/ -I$(path-d) -I./third_party/include/ -I./third_party/include/libfdt/
 
 defs-c :=
 
@@ -35,7 +35,7 @@ flags-asm :=
 
 args-asm := flags-asm="$(flags-asm)"
 
-args := $(args-ld) $(args-c) $(args-asm) libraries="kerbasec kersbi"
+args := $(args-ld) $(args-c) $(args-asm) libraries="kerbasec kersbi fdt"
 
 dir := dir-obj="$(path-objects)/kernel/" dir-src="$(path-d)"
 

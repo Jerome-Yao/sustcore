@@ -6,9 +6,9 @@ include $(path-script)/helper.mk
 
 .PHONY: build
 
-target := $(path-bin)/libs/$(architecture)/libkersbi.a
+target := $(path-bin)/libs/$(architecture)/libfdt.a
 
-objects := sbi.o sbi_dbcn.o sbi_legacy.o sbi_base.o
+objects := fdt.o fdt_wip.o fdt_sw.o fdt_strerror.o fdt_rw.o fdt_ro.o fdt_overlay.o fdt_empty_tree.o fdt_check.o fdt_addresses.o
 
 flags-c := -std=gnu23 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 		   -Wall -Wno-int-conversion -Wstrict-prototypes -Werror=implicit-function-declaration \
@@ -24,11 +24,7 @@ args-c := defs-c="$(defs-c)" include-c="$(include-c)" flags-c="$(flags-c)"
 
 args := $(args-c)
 
-dir := dir-obj="$(path-objects)/sbi/$(architecture)" dir-src="$(path-d)"
+dir := dir-obj="$(path-objects)/kernel/fdt/$(architecture)" dir-src="$(path-d)"
 
 build:
-ifeq ($(architecture), riscv64)
 	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) objects="$(objects)" $(dir) $(args) $(target)
-else
-	echo "!"
-endif

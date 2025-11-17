@@ -53,6 +53,14 @@ int strcmp(const char *restrict str1, const char *restrict str2);
 int strlen(const char *restrict str);
 
 /**
+ * @brief 计算字符串长度 (<= count)
+ * 
+ * @param str 字符串
+ * @return int 字符串长度
+ */
+int strnlen(const char *restrict str, int count);
+
+/**
  * @brief 复制字符串
  * 
  * @param dst 目标字符串

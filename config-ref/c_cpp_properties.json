@@ -6,6 +6,7 @@
                 "${workspaceFolder}/include/",
                 "${workspaceFolder}/include/std/",
                 "${workspaceFolder}/third_party/include/",
+                "${workspaceFolder}/third_party/include/libfdt/",
                 "${workspaceFolder}/kernel/"
             ],
             "defines": [
@@ -25,7 +26,8 @@
             "includePath": [
                 "${workspaceFolder}/include/",
                 "${workspaceFolder}/include/std/",
-                "${workspaceFolder}/third_party/include/"
+                "${workspaceFolder}/third_party/include/",
+                "${workspaceFolder}/third_party/include/libfdt/"
             ],
             "defines": [
                 "_DEBUG",

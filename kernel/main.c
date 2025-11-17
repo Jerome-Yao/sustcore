@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <sbi/sbi.h>
+#include <libfdt.h>
 
 int kputchar(int ch) {
     sbi_dbcn_console_write_byte((char)ch);
@@ -27,6 +28,42 @@ int kputs(const char *str) {
     return len;
 }
 
+umb_t hart_id, dtb_ptr;
+
+//------------------ 调试libfdt使用-----------
+
+/* 基础验证 */
+int fdt_check_initial(void *fdt) {
+    /* 检查魔数 */
+    if (fdt_magic(fdt) != FDT_MAGIC) {
+        return -FDT_ERR_BADMAGIC;
+    }
+    
+    /* 检查版本兼容性 */
+    if (fdt_version(fdt) < FDT_FIRST_SUPPORTED_VERSION) {
+        return -FDT_ERR_BADVERSION;
+    }
+    
+    /* 完整检查 */
+    return fdt_check_header(fdt);
+}
+
+/** 遍历节点 */
+void traverse_nodes(void *fdt) {
+    int node, depth = 0;
+    
+    /* 从根节点开始遍历 */
+    for (node = fdt_next_node(fdt, -1, &depth);
+         node >= 0;
+         node = fdt_next_node(fdt, node, &depth)) {
+        
+        const char *name = fdt_get_name(fdt, node, NULL);
+        log_debug("Node: %s (depth: %d)", name, depth);
+    }
+}
+
+//------------------ 调试libfdt使用-----------
+
 /**
  * @brief 内核主函数
  * 
@@ -34,6 +71,18 @@ int kputs(const char *str) {
  */
 int main(void) {
     log_info("Hello RISCV World!");
+    log_info("Hart ID: %u", (unsigned int)hart_id);
+    log_info("DTB Ptr: 0x%016lx", (unsigned long)dtb_ptr);
+
+    void *fdt = (void *)dtb_ptr;
+    int ret = fdt_check_initial(fdt);
+    if (ret != 0) {
+        log_error("设备树校验失败: %d", ret);
+        return -1;
+    }
+
+    traverse_nodes(fdt);
+
     return 0;
 }
 
