@@ -1,0 +1,1 @@
+cloc ./libs/ ./kernel/ ./include/ ./script/ ./tools/ Makefile

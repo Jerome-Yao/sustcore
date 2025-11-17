@@ -1,0 +1,12 @@
+*.log
+.vscode/
+!setup/config.mk
+bios/
+build/
+!script/*
+bochsrc.bxrc
+bochsrc
+sustcore.img
+bx_enh_dbg.ini
+doc/
+config.mk

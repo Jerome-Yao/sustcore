@@ -1,0 +1,38 @@
+{
+    "fileHeaderComment.parameter":{
+        "*":{
+            "author": "your_name",
+            "lic_sustcore": [
+                " * Sustcore",
+                " ",
+                " 作者: ${author}",
+                " ",
+                " ${filename}",
+                " ",
+                " 在此处键入描述",
+                " "
+            ]
+        }
+    },
+    "fileHeaderComment.template":{
+        "header":[
+            "${commentbegin}",
+            "${commentprefix}${lic_sustcore}",
+            "${commentend}",
+            "",
+            "",
+            ""
+        ]
+    },
+    "C_Cpp.default.systemIncludePath": [
+        "${workspaceFolder}/"
+    ],
+    "doxdocgen.file.versionTag": "@version alpha-1.0.0",
+    "doxdocgen.generic.authorName": "your_name",
+    "doxdocgen.generic.authorEmail": "your_email@sth.com",
+    "files.associations": {
+        "*.S": "gas",
+        "*.h": "c",
+        "*.c": "c"
+    }
+}

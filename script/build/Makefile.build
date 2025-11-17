@@ -1,0 +1,34 @@
+include $(global-env)
+include $(path-script)/env/local.mk
+
+include $(path-script)/build/build.mk
+include $(path-script)/tool.mk
+include $(path-script)/util.mk
+
+include $(path-script)/build/asm.mk
+include $(path-script)/build/c.mk
+include $(path-script)/build/ld.mk
+include $(path-script)/build/ar.mk
+
+include $(path-script)/build/arch.mk
+include $(path-script)/build/compilers.mk
+
+
+.PHONY: $(target)
+
+# kernel
+ifeq ($(mode), k)
+
+$(target): $(build-objects)
+	$(call prepare, $@, $^)
+	$(call ld-link, $@, $^)
+# static-library
+else
+ifeq ($(mode), s)
+
+$(target): $(build-objects)
+	$(call prepare, $@, $^)
+	$(call ar-link, $@, $^)
+
+endif
+endif
