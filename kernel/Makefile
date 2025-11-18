@@ -11,6 +11,7 @@ objects := main.o
 
 subdirs := ./arch/$(architecture)
 
+include $(path-d)/arch/$(architecture)/subdirs.mk
 include $(foreach subdir, $(subdirs), $(path-d)/$(subdir)/include.mk)
 
 flags-ld := -z max-page-size=0x100 -nostdlib
@@ -25,7 +26,8 @@ flags-c := -std=gnu23 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 
 flags-c += -g -mcmodel=medany
 
-include-c := -I$(path-include) -I$(path-include)/std/ -I$(path-d) -I./third_party/include/ -I./third_party/include/libfdt/
+include-third_party-c := -I$(path-third_party)/include/ -I$(path-third_party)/include/libfdt/ -I$(path-third_party)/include/std/
+include-c := -I$(path-include) -I$(path-include)/std/ $(include-third_party-c) -I$(path-d)
 
 defs-c :=
 
