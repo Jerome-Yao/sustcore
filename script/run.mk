@@ -1,5 +1,5 @@
 # 权益之计
-qemu-args := -m size=256m,maxmem=256m \
+qemu-args ?= -m size=256m,maxmem=256m \
 			 -bios default \
 			 -serial stdio \
  			 -rtc base=localtime \
@@ -7,7 +7,7 @@ qemu-args := -m size=256m,maxmem=256m \
 			 -machine virt \
 			 -kernel ./build/bin/kernel/sustcore.bin
 
-qemu-debug := -s -S
+qemu-debug ?= -s -S
 
 .PHONY: run
 run:

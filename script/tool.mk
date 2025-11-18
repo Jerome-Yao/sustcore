@@ -1,23 +1,23 @@
-mkdir := mkdir
-rm := rm
-dd := dd
-mkfs := mkfs
-grub-install := grub-install
-sudo := sudo
-mount := mount
-umount := umount
-echo := echo
-cd := cd
-copy := cp
-chmod := chmod
-doxygen := doxygen
-loop-setup := losetup
-fdisk := fdisk
+mkdir ?= mkdir
+rm ?= rm
+dd ?= dd
+mkfs ?= mkfs
+grub-install ?= grub-install
+sudo ?= sudo
+mount ?= mount
+umount ?= umount
+echo ?= echo
+cd ?= cd
+copy ?= cp
+chmod ?= chmod
+doxygen ?= doxygen
+loop-setup ?= losetup
+fdisk ?= fdisk
 
-qemu := qemu-system-$(architecture)
+qemu ?= qemu-system-$(architecture)
 
-comments-stat := $(path-tools)/comments_stat/stat.py
-get-loop := $(path-tools)/get_loop_devices/get_loop.sh
+comments-stat ?= $(path-tools)/comments_stat/stat.py
+get-loop ?= $(path-tools)/get_loop_devices/get_loop.sh
 
 loop-a ?= $(shell $(get-loop) 0)
 loop-b ?= $(shell $(get-loop) $(loop-a))
@@ -36,4 +36,4 @@ grub-install-target := $(grub-install) --target=i386-pc
 endif
 grub-install-target ?= $(grub-install) --target=i386-pc
 
-grub-modules := normal part_msdos ext2 fat multiboot all_video
+grub-modules ?= normal part_msdos ext2 fat multiboot all_video
