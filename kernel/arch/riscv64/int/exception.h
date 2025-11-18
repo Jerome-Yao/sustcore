@@ -15,8 +15,13 @@
 
 typedef void (*ISRService)(void);
 
-#define IVT_ENTRIES (16)
+#define DIRECT 0
+#define VECTORED 1
+#define IVT_MODE DIRECT
 
+#if IVT_MODE == VECTORED
+#define IVT_ENTRIES (16)
 extern dword IVT[IVT_ENTRIES];
+#endif
 
 void init_ivt();

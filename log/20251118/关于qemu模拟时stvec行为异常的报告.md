@@ -9,7 +9,7 @@
  | `[0:1]`  | MODE     |
  | `[2:63]` | BASE     |
 
-当 `MODE = 0(direct)` 时, 中断发生时 `pc = BASE << 2`. 或者说 `pc = stvec & ~0x11`.
+当 `MODE = 0(direct)` 时, 中断发生时 `pc = BASE << 2`. 或者说 `pc = stvec & ~0b11`.
 当 `MODE = 1(vectored)`时, 如果是异步中断发生, 则`pc = BASE << 2 + cause * 4`.
 
 在最新版的`qemu`中, 其表现为
