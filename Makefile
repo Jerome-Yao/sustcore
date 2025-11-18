@@ -25,6 +25,8 @@ path-objects := $(path-e)/build/objects/
 
 arg-basic := architecture=$(architecture) global-env=$(global-env) path-bin=$(path-bin) path-objects=$(path-objects)
 
+-include $(path-script)/config.mk
+
 build:
 	$(q)$(MAKE) -f $(path-e)/libs/basec/Makefile $(arg-basic) $@
 	$(q)$(MAKE) -f $(path-e)/libs/sbi/Makefile $(arg-basic) $@
