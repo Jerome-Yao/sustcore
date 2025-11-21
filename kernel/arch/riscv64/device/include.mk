@@ -1,0 +1,1 @@
+objects += ./arch/riscv64/device/device.o
