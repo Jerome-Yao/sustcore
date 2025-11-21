@@ -60,13 +60,13 @@ MemRegion *arch_get_memory_layout(void)
     FDTNodeDesc root = get_device_root(fdt);
 
     FDTNodeDesc mem = get_sub_device(fdt, root, "memory");
-    if (mem == -1) {
+    if (mem < 0) {
         log_error("未找到/memory@<base>节点, 无法获取内存布局");
         return nullptr;
     }
 
     FDTPropDesc prop_reg = get_device_property(fdt, mem, "reg");
-    if (prop_reg == -1) {
+    if (prop_reg < 0) {
         log_error("未找到/memory@<base>/reg属性, 无法获取内存布局");
         return nullptr;
     }

@@ -20,6 +20,7 @@
 #include <arch/riscv64/int/isr.h>
 #include <arch/riscv64/int/exception.h>
 #include <arch/riscv64/device/device.h>
+#include <arch/riscv64/device/misc.h>
 
 int kputchar(int ch) {
     sbi_dbcn_console_write_byte((char)ch);
@@ -91,13 +92,16 @@ void arch_init(void) {
     log_info("启用中断...");
     sti();
 
-    // TODO: 通过设备树获取时钟频率
-    // 正常来说, 我们应该要查询设备树
-    // 但是对QEMU, virt机器的频率始终为10MHz
-    // 所以这里先硬编码为10MHz
-    // 同时, 我们希望2s触发1次时钟中断(调试用)
+    // 我们希望2s触发1次时钟中断(调试用)
     // 下面第一个单位为Hz, 第二个单位为mHz(10^-3 Hz)
-    init_timer(10000000, 500); // 10MHz
+    int freq = get_clock_freq_hz();
+    if (freq < 0){
+        //使用QEMU virt机器的默认值10MHz
+        freq = 10000000;
+        log_error("获取时钟频率失败, 使用默认值 %d Hz", freq);
+    }
+    log_info("时钟频率: %d Hz = %d KHz = %d MHz", freq, freq / 1000, freq / 1000000);
+    init_timer(freq, 500);
     log_info("启用时钟中断...");
 }
 

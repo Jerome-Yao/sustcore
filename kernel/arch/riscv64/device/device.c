@@ -106,7 +106,7 @@ byte get_device_property_value_as_byte(const FDTDesc *fdt, FDTPropDesc prop) {
 word get_device_property_value_as_word(const FDTDesc *fdt, FDTPropDesc prop) {
     FDTPropVal val = get_device_property_value(fdt, prop);
     if (val.len >= sizeof(word)) {
-        return *(const word *)val.ptr;
+        return fdt16_to_cpu(*(const word *)val.ptr);
     }
     return 0;
 }
@@ -114,7 +114,7 @@ word get_device_property_value_as_word(const FDTDesc *fdt, FDTPropDesc prop) {
 dword get_device_property_value_as_dword(const FDTDesc *fdt, FDTPropDesc prop) {
     FDTPropVal val = get_device_property_value(fdt, prop);
     if (val.len >= sizeof(dword)) {
-        return *(const dword *)val.ptr;
+        return fdt32_to_cpu(*(const dword *)val.ptr);
     }
     return 0;
 }
@@ -122,7 +122,7 @@ dword get_device_property_value_as_dword(const FDTDesc *fdt, FDTPropDesc prop) {
 qword get_device_property_value_as_qword(const FDTDesc *fdt, FDTPropDesc prop) {
     FDTPropVal val = get_device_property_value(fdt, prop);
     if (val.len >= sizeof(qword)) {
-        return *(const qword *)val.ptr;
+        return fdt64_to_cpu(*(const qword *)val.ptr);
     }
     return 0;
 }
@@ -236,18 +236,22 @@ static void print_property_value(const char *name, const void *value, int len) {
         // phandle
         dword phandle = fdt32_to_cpu(*(const dword *)value);
         kprintf("%" PRIu32, phandle);
+    } else if (len == 2) {
+        // 16位整数
+        word val = fdt32_to_cpu(*(const word *)value);
+        kprintf("0x%x (%u) (%d bits)", (dword)val, (dword)val, 16);
     } else if (len == 4) {
         // 32位整数
         dword val = fdt32_to_cpu(*(const dword *)value);
-        kprintf("0x%" PRIx32 " (%" PRIu32 ")", val, val);
+        kprintf("0x%x (%u) (%d bits)", val, val, 32);
     } else if (len == 8) {
         // 64位整数
         qword val = fdt64_to_cpu(*(const qword *)value);
-        kprintf("0x%" PRIx64 " (%" PRIu64 ")", val, val);
+        kprintf("0x%llx (%llu) (%d bits)", val, val, 64);
     } else if (len == 1) {
         // 字节
         byte val = *(const byte *)value;
-        kprintf("0x%02x (%u)", val, val);
+        kprintf("0x%02x (%u) (%d bits)", (dword)val, (dword)val, 8);
     } else {
         // 二进制数据
         kprintf("[");
