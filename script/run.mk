@@ -7,8 +7,9 @@ qemu-args-riscv64 ?= -bios default \
 qemu-attached-args-riscv64 ?=
 qemu-attached-args ?=
 
+
 ifeq ($(architecture), riscv64)
-	qemu-args := $(qemu-args-riscv64)
+	qemu-args ?= $(qemu-args-riscv64)
 	qemu-attached-args += $(qemu-attached-args-riscv64)
 endif
 
