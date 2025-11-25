@@ -111,8 +111,8 @@ void timer_isr(void) {
     ISR_SERVICE_START(timer_isr, 128);
 
     timer_handler(scause, sepc, stval, reglist_ptr);
+    reglist_ptr = schedule(reglist_ptr);
 
-    schedule();
     ISR_SERVICE_END(timer_isr);
 }
 
