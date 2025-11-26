@@ -14,6 +14,7 @@ include $(path-script)/build/attach.mk
 include $(path-script)/build/arch.mk
 include $(path-script)/build/compilers.mk
 
+include $(foreach dep, $(deps), $(dir-obj)/$(dep))
 
 .PHONY: $(target)
 
@@ -25,6 +26,7 @@ $(target): $(build-objects)
 	$(call ld-link, $@, $^)
 # static-library
 else
+
 ifeq ($(mode), s)
 
 $(target): $(build-objects)
@@ -32,4 +34,5 @@ $(target): $(build-objects)
 	$(call ar-link, $@, $^)
 
 endif
+
 endif

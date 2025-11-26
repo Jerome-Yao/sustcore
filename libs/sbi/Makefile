@@ -9,6 +9,7 @@ include $(path-script)/helper.mk
 target := $(path-bin)/libs/$(architecture)/libkersbi.a
 
 objects := sbi.o sbi_dbcn.o sbi_legacy.o sbi_base.o
+deps := sbi.d sbi_dbcn.d sbi_legacy.d sbi_base.d
 
 flags-c := -std=gnu23 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 		   -Wall -Wno-int-conversion -Wstrict-prototypes -Werror=implicit-function-declaration \
@@ -28,7 +29,7 @@ dir := dir-obj="$(path-objects)/sbi/$(architecture)" dir-src="$(path-d)"
 
 build:
 ifeq ($(architecture), riscv64)
-	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) objects="$(objects)" $(dir) $(args) $(target)
+	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) deps="$(deps)" objects="$(objects)" $(dir) $(args) $(target)
 else
 	echo "!"
 endif

@@ -9,6 +9,7 @@ include $(path-script)/helper.mk
 target := $(path-bin)/libs/$(architecture)/libkmod.a
 
 objects := startup.o rpc.o alloc.o
+deps := startup.d rpc.d alloc.d
 
 flags-c := -std=gnu23 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 		   -Wall -Wno-int-conversion -Wstrict-prototypes -Werror=implicit-function-declaration \
@@ -28,4 +29,4 @@ args-kernel  := $(args-c-kernel)
 dir := dir-obj="$(path-objects)/kmod/$(architecture)" dir-src="$(path-d)"
 
 build:
-	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) objects="$(objects)" $(dir) $(args) $(target)
+	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) deps="$(deps)" objects="$(objects)" $(dir) $(args) $(target)

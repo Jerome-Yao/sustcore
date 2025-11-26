@@ -10,6 +10,7 @@ target := $(path-bin)/libs/$(architecture)/libbasec.a
 target-kernel := $(path-bin)/libs/$(architecture)/libkerbasec.a
 
 objects := logger.o baseio.o tostring.o string.o ctype.o stdlib.o
+deps := logger.d baseio.d tostring.d string.d ctype.d stdlib.d
 
 flags-c-kernel := -g -mcmodel=medany
 
@@ -33,5 +34,5 @@ dir := dir-obj="$(path-objects)/bcl/$(architecture)" dir-src="$(path-d)"
 dir-kernel := dir-obj="$(path-objects)/kernel/bcl/$(architecture)" dir-src="$(path-d)"
 
 build:
-	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) objects="$(objects)" $(dir) $(args) $(target)
-	$(q)$(MAKE) $(builder-s)=$(target-kernel) architecture=$(architecture) objects="$(objects)" $(dir-kernel) $(args-kernel) $(target-kernel)
+	$(q)$(MAKE) $(builder-s)=$(target) architecture=$(architecture) deps="$(deps)" objects="$(objects)" $(dir) $(args) $(target)
+	$(q)$(MAKE) $(builder-s)=$(target-kernel) architecture=$(architecture) deps="$(deps)" objects="$(objects)" $(dir-kernel) $(args-kernel) $(target-kernel)
