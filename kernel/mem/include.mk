@@ -1,2 +1,5 @@
-objects += ./mem/pmm.o
-objects += ./mem/alloc.o
+objects += mem/pmm.o
+deps += mem/pmm.d
+
+objects += mem/alloc.o
+deps += mem/alloc.d

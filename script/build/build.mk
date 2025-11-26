@@ -17,6 +17,8 @@ dir-src ?=
 
 # 目标文件目录
 dir-obj ?=
+
+# 构建所需文件
 build-objects := $(foreach obj, $(objects), $(dir-obj)/$(obj)) \
 				 $(foreach attachment, $(attachments), $(dir-obj)/attachment/$(attachment))
 

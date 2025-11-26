@@ -9,6 +9,7 @@ target := $(path-kernel)
 target-phy := $(path-kernel-phy)
 
 objects := main.o
+deps := main.d
 attachments := license.attachment.o
 
 subdirs := ./mem/ ./arch/$(architecture)/
@@ -46,5 +47,5 @@ args-phy := $(args-phy-ld) $(args-c) $(args-asm) libraries="kerbasec kersbi fdt"
 dir := dir-obj="$(path-objects)/kernel/" dir-src="$(path-d)"
 
 build:
-	$(q)$(MAKE) $(builder-k)=$(target) architecture=$(architecture) attachments="$(attachments)" objects="$(objects)" $(dir) $(args) $(target)
-	$(q)$(MAKE) $(builder-k)=$(target-phy) architecture=$(architecture) attachments="$(attachments)" objects="$(objects)" $(dir) $(args-phy) $(target-phy)
+	$(q)$(MAKE) $(builder-k)=$(target) architecture=$(architecture) attachments="$(attachments)" deps="$(deps)" objects="$(objects)" $(dir) $(args) $(target)
+	$(q)$(MAKE) $(builder-k)=$(target-phy) architecture=$(architecture) attachments="$(attachments)" deps="$(deps)" objects="$(objects)" $(dir) $(args-phy) $(target-phy)
