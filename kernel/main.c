@@ -169,7 +169,7 @@ void kernel_paging_setup(MemRegion *const layout) {
     log_info("内核剩余部分虚拟地址空间: [%p, %p)", misc_vaddr_start,
              (void *)((umb_t)misc_vaddr_start + misc_pages * PAGE_SIZE));
     mem_maps_range_to(root, misc_vaddr_start, (void *)&s_misc, misc_pages,
-                      RWX_MODE_R, false, true);
+                      RWX_MODE_RX, false, true);
 
     // 内核物理地址空间映射
     void *kphy_vaddr_start = (void *)(((umb_t)0x0) + (umb_t)KPHY_VA_OFFSET);

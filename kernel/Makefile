@@ -31,7 +31,7 @@ flags-c := -std=gnu23 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 flags-c += -g -mcmodel=medany
 
 include-third_party-c := -I$(path-third_party)/include/ -I$(path-third_party)/include/libfdt/ -I$(path-third_party)/include/std/
-include-c := -I$(path-include) -I$(path-include)/std/ $(include-third_party-c) -I$(path-d)
+include-c := -I$(path-include) -I$(path-include)/std/ $(include-third_party-c) -I$(path-d) -I$(path-include)/arch/
 
 defs-c :=
 

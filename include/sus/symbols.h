@@ -70,3 +70,9 @@ extern void *s_misc;
  *
  */
 extern void *s_attach_license, *e_attach_license;
+
+/**
+ * @brief 存放临时用户态代码
+ * 
+ */
+extern void *s_ptest1, *e_ptest1;

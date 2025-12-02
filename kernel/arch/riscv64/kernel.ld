@@ -18,7 +18,7 @@ SECTIONS
         e_text = .;
     }
 
-    . = ALIGN(4K);
+    
     s_ivt = .;
     .ivt : {
         *(.ivt .ivt.*)
@@ -57,6 +57,13 @@ SECTIONS
     . = ALIGN(4K);
     s_misc = .;
 
+    s_ptest1 = .;
+    .ptest1 : {
+        KEEP(*(.ptest1))
+        . = ALIGN(4K);
+        e_ptest1 = .;
+    }
+    
     . = ALIGN(4K);
     s_attach_license = .;
     .attach.license : {

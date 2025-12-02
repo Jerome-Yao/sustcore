@@ -11,48 +11,32 @@
 
 #pragma once
 
-#include <arch/riscv64/int/trap.h>
+// #include <include/arch/riscv64/int/trap.h>
 #include <sus/bits.h>
+#include <sus/ctx.h>
+#include <task/pid.h>
 
 #define POOL_SIZE 2
-
-typedef InterruptContextRegisterList RegCtx;
-
-// Saved registers for kernel context switches.
-// typedef struct Context {
-//     umb_t ra;
-//     umb_t sp;
-
-//     // callee-saved
-//     umb_t s0;
-//     umb_t s1;
-//     umb_t s2;
-//     umb_t s3;
-//     umb_t s4;
-//     umb_t s5;
-//     umb_t s6;
-//     umb_t s7;
-//     umb_t s8;
-//     umb_t s9;
-//     umb_t s10;
-//     umb_t s11;
-// } Context;
+#define NPROG     2
 
 typedef enum {
     READY   = 0,
     RUNNING = 1,
     BLOCKED = 2,
     ZOMBIE  = 3,
+    UNUSED  = 4,
 } ProcState;
 
-typedef struct ProcessControlBlock {
-    umb_t pid;
+typedef struct PCB {
+    pid_t pid;
     ProcState state;
     RegCtx *ctx;
     umb_t *kstack;  // 内核栈
     // TODO
+} PCB;
 
-} ProcessControlBlock;
+extern PCB *proc_pool[NPROG];
+extern PCB *init_proc;
 
 /**
  * @brief 实现 context switch
@@ -60,10 +44,10 @@ typedef struct ProcessControlBlock {
  * @param old  旧进程 context 结构体指针
  * @param new  新进程 context 结构体指针
  */
-void __switch(RegCtx *old, RegCtx *new);
+// void __switch(RegCtx *old, RegCtx *new);
 
 /**
- * @brief 初始化进程管理系统
+ * @brief 初始化进程池
  */
 void proc_init(void);
 
@@ -72,6 +56,6 @@ void proc_init(void);
  */
 RegCtx *schedule(RegCtx *old);
 
-void worker(void);
+PCB *alloc_proc(void);
 
-void cal_prime(void);
+__attribute__((section(".ptest1"))) void worker(void);

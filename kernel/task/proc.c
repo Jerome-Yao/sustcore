@@ -11,61 +11,116 @@
 
 #include "proc.h"
 
-#include <arch/riscv64/int/exception.h>
 #include <basec/logger.h>
 #include <mem/alloc.h>
+#include <mem/kmem.h>
+#include <mem/pmm.h>
 #include <string.h>
 #include <sus/boot.h>
+#include <sus/paging.h>
+#include <sus/symbols.h>
+#include <sus/ctx.h>
 #include <task/pid.h>
 
-// 预分配的内核栈
-__attribute__((
-    aligned(4096))) static umb_t kstack_pool[POOL_SIZE][1024];  // 8KB per stack
+static PCB *cur_proc;
 
-static ProcessControlBlock pool[POOL_SIZE];
-static ProcessControlBlock *cur_proc;
+PCB *proc_pool[NPROG];
+PCB *init_proc = NULL;
 
+/**
+ * @brief 初始化进程池
+ *
+ */
 void proc_init(void) {
-    pid_init();
-    log_debug("初始化 pid...");
+    PCB *p;
+    for (size_t i = 0; i < NPROG; i++) {
+        p = (PCB *)kmalloc(sizeof(PCB));
+        memset(p, 0, sizeof(PCB));
 
-    for (size_t i = 0; i < POOL_SIZE; i++) {
-        pool[i].pid    = pid_alloc();
-        pool[i].state  = READY;
-        pool[i].kstack = (umb_t *)&kstack_pool[i];  // 指向内核栈
+        p->pid   = get_current_pid();
+        p->state = READY;
+        log_info("initialize kstack for proc %d", i);
+        p->kstack = (umb_t *)kmalloc(PAGE_SIZE);
 
-        umb_t *stack_top =
-            (umb_t *)((umb_t)pool[i].kstack + sizeof(kstack_pool[i]));
+        log_info("initialize ctx for proc %d", i);
+        umb_t *stack_top  = (umb_t *)((umb_t)p->kstack + PAGE_SIZE);
+        stack_top        -= sizeof(RegCtx) / sizeof(umb_t);
+        p->ctx            = (RegCtx *)stack_top;
+        memset(p->ctx, 0, sizeof(RegCtx));
 
-        stack_top   -= sizeof(RegCtx) / sizeof(umb_t);
-        pool[i].ctx  = (RegCtx *)stack_top;
-        memset(pool[i].ctx, 0, sizeof(RegCtx));
+        // 1. 分配一页作为用户栈 (alloc_page 返回物理地址)
+        umb_t user_stack_pa = (umb_t)alloc_page();
+        
+        // 2. 获取内核虚拟地址以便清空栈内容
+        void *user_stack_kva = PA2KPA(user_stack_pa);
+        memset(user_stack_kva, 0, PAGE_SIZE);
+        
+        // 3. 栈向下增长，所以 SP 指向页面末尾
+        p->ctx->regs[1] = user_stack_pa + PAGE_SIZE;
 
-        // 设置进程入口点（worker 函数）
-        if (i % 2 == 0)
-            pool[i].ctx->sepc = (umb_t)worker;
-        else
-            pool[i].ctx->sepc = (umb_t)cal_prime;
-
-        pool[i].ctx->sstatus.spp  = 1;
-        pool[i].ctx->sstatus.spie = 1;
+        log_info("proc %d user stack: PA=0x%lx, SP=0x%lx", 
+                 i, user_stack_pa, p->ctx->regs[1]);
 
         // ra
-        pool[i].ctx->regs[0] = 0;
+        p->ctx->regs[0]      = 0;
+        // 代码运行在 U-Mode
+        p->ctx->sstatus.spp  = 0;
+        // 用户进程应该开启中断
+        p->ctx->sstatus.spie = 1;
 
-        // sp
-        pool[i].ctx->regs[1] =
-            (umb_t)((umb_t)pool[i].kstack + sizeof(kstack_pool[i]));
-
-        log_debug("进程 %d: pid=%d, kstack=0x%lx, sp=0x%lx, ra=0x%lx", i,
-                  pool[i].pid, (umb_t)pool[i].kstack, pool[i].ctx->regs[1],
-                  pool[i].ctx->regs[0]);
+        proc_pool[i] = p;
     }
-    cur_proc        = &pool[0];
-    cur_proc->state = RUNNING;
 
-    log_info("进程管理初始化完成, 共 %d 个进程", POOL_SIZE);
+
+    for (size_t i = 0; i < 2; i++) {
+        if (p == NULL) {
+            log_error("proc_pool[%d] 未初始化", i);
+            continue;
+        }
+
+        p            = proc_pool[i];
+        p->ctx->sepc = KA2PA((umb_t)&s_ptest1);
+        log_debug("进程 %d: 用户代码加载到 0x%lx", i, KA2PA((umb_t)&s_ptest1));
+    }
+
+    cur_proc = NULL;
+    log_info("进程管理初始化完成, 等待第一次时钟中断调度...");
 }
+
+/**
+ * @brief 分配一个进程控制块
+ *
+ * @return ProcessControlBlock*
+ */
+PCB *alloc_proc(void) {
+    for (size_t i = 0; i < NPROG; i++) {
+        if (proc_pool[i]->state == UNUSED) {
+            proc_pool[i]->state = READY;
+            if (!init_proc) {
+                init_proc = proc_pool[i];
+            }
+
+            return proc_pool[i];
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief 释放并清空一个进程控制块
+ *
+ * @param proc
+ * @param pid
+ */
+void dealloc_proc(PCB *proc, umb_t pid) {
+    if (proc_pool[pid] == proc) {
+        memset(proc_pool[pid], 0, sizeof(PCB));
+        proc_pool[pid]->pid   = pid;
+        proc_pool[pid]->state = UNUSED;
+        return;
+    }
+}
+
 
 /**
  * @brief 调度器 - 选择下一个就绪进程进行切换
@@ -74,14 +129,33 @@ void proc_init(void) {
  * 这是一个非阻塞式调度，只有在找到 READY 的进程时才会切换。
  */
 RegCtx *schedule(RegCtx *old) {
-    ProcessControlBlock *next = NULL;
-    cur_proc->ctx             = old;
+    PCB *next = NULL;
+    log_debug("schedule: 当前进程 pid=%d", cur_proc ? cur_proc->pid : -1);
+    if (cur_proc == NULL) {
+        for (size_t i = 0; i < NPROG; i++) {
+            if (proc_pool[i] && proc_pool[i]->state == READY) {
+                next = proc_pool[i];
+                break;
+            }
+        }
 
-    // 从当前进程的下一个开始查找
-    for (size_t i = cur_proc->pid + 1;; i++) {
-        i = i % POOL_SIZE;
+        if (next) {
+            cur_proc    = next;
+            next->state = RUNNING;
+            log_info("首次调度: 启动进程 (pid=%d)", next->pid);
+            // 直接返回新进程的上下文，丢弃 old (内核引导线程的上下文)
+            log_debug("schedule: 进入进程 pid=%d, sepc 0x%x", next->pid,
+                      next->ctx->sepc);
+            return next->ctx;
+        } else {
+            return old;
+        }
+    }
 
-        ProcessControlBlock *p = &pool[i];
+    cur_proc->ctx = old;
+
+    for (size_t i = 0; i < NPROG; i++) {
+        PCB *p = proc_pool[i];
         if (p != cur_proc && p->state == READY) {
             next = p;
             break;
@@ -90,36 +164,30 @@ RegCtx *schedule(RegCtx *old) {
 
     // 如果没找到其他 READY 的进程，就继续运行当前进程
     if (next == NULL) {
-        log_debug("调度: 无其他就绪进程，继续运行当前进程 %d (pid=%d)",
-                  (int)(cur_proc - pool), cur_proc->pid);
+        log_debug("调度: 无其他就绪进程，继续运行当前进程(pid=%d)",
+                  cur_proc->pid);
         return old;
     }
 
     // 更新进程状态
-
-    ProcessControlBlock *prev = cur_proc;
+    PCB *prev = cur_proc;
     cur_proc                  = next;
 
     prev->state = READY;
     next->state = RUNNING;
 
-    log_debug("调度: 从进程 %d (pid=%d) 切换到进程 %d (pid=%d)",
-              (int)(prev - pool), prev->pid, (int)(next - pool), next->pid);
-    // 执行上下文切换
-    // __switch 会保存 prev 的被调用者保存寄存器到 &prev->ctx
-    // 然后恢复 next 的被调用者保存寄存器从 &next->ctx
-    // __switch(&prev->ctx, &next->ctx);
+    log_debug("调度: 从进程 (pid=%d) 切换到进程 (pid=%d)", prev->pid,
+              next->pid);
 
     return next->ctx;
 }
 
-void worker(void) {
-    // 获取当前进程的 pid
-    umb_t pid = cur_proc->pid;
-
-    log_info("进程(pid=%d) 执行中...", pid);
-
-    while (1) {}
+__attribute__((section(".ptest1"), used)) void worker(void) {
+    // 纯净的循环，不依赖任何内核数据
+    while (1) {
+        // 简单的忙等待，防止被编译器优化掉
+        for (volatile int i = 0; i < 1000000; i++);
+    }
 }
 
 void cal_prime(void) {
