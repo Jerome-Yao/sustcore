@@ -18,198 +18,310 @@
 #include <string.h>
 #include <sus/boot.h>
 #include <sus/ctx.h>
+#include <sus/list_helper.h>
 #include <sus/paging.h>
 #include <sus/symbols.h>
-#include <task/pid.h>
+
+PCB *proc_list_head;
+PCB *proc_list_tail;
+
+PCB *rp_list_heads[RP_LEVELS];
+PCB *rp_list_tails[RP_LEVELS];
 
 PCB *cur_proc;
 
-PCB *proc_pool[NPROG];
-PCB *init_proc = NULL;
+PCB empty_proc;
+
+#define PROC_LIST proc_list_head, proc_list_tail, next, prev
+#define RP_LIST(level) rp_list_heads[level], rp_list_tails[level], snext, sprev
+// 我们希望rp3队列中的进程按照run_time从小到大排序
+#define RP3_LIST rp_list_heads[3], rp_list_tails[3], snext, sprev, run_time, ascending
+#define APPLY_MACRO(macro, args) macro args
 
 /**
  * @brief 初始化进程池
  *
  */
 void proc_init(void) {
-    PCB *p;
-    for (size_t i = 0; i < NPROG; i++) {
-        p = (PCB *)kmalloc(sizeof(PCB));
-        memset(p, 0, sizeof(PCB));
+    // 设置链表头
+    list_init(PROC_LIST);
+    list_init(RP_LIST(0));
+    list_init(RP_LIST(1));
+    list_init(RP_LIST(2));
+    // 设定rp3为有序链表
+    ordered_list_init(RP3_LIST);
 
-        p->pid   = get_current_pid();
-        p->state = READY;
-        log_info("initialize kstack for proc %d", i);
-        p->kstack = (umb_t *)kmalloc(PAGE_SIZE);
+    // 将当前进程设为空
+    cur_proc = nullptr;
 
-        log_info("initialize ctx for proc %d", i);
-        umb_t *stack_top  = (umb_t *)((umb_t)p->kstack + PAGE_SIZE);
-        stack_top        -= sizeof(RegCtx) / sizeof(umb_t);
-        p->ctx            = (RegCtx *)stack_top;
-        memset(p->ctx, 0, sizeof(RegCtx));
-
-        // 1. 分配一页作为用户栈 (alloc_page 返回物理地址)
-        umb_t user_stack_pa = (umb_t)alloc_page();
-
-        // 2. 获取内核虚拟地址以便清空栈内容
-        void *user_stack_kva = PA2KPA(user_stack_pa);
-        memset(user_stack_kva, 0, PAGE_SIZE);
-
-        // 3. 栈向下增长，所以 SP 指向页面末尾
-        p->ctx->regs[1] = user_stack_pa + PAGE_SIZE;
-
-        log_info("proc %d user stack: PA=0x%lx, SP=0x%lx", i, user_stack_pa,
-                 p->ctx->regs[1]);
-
-        // ra
-        p->ctx->regs[0]      = 0;
-        // 代码运行在 U-Mode
-        p->ctx->sstatus.spp  = 0;
-        // 用户进程应该开启中断
-        p->ctx->sstatus.spie = 1;
-
-        proc_pool[i] = p;
-    }
-
-    for (size_t i = 0; i < 2; i++) {
-        if (p == NULL) {
-            log_error("proc_pool[%d] 未初始化", i);
-            continue;
-        }
-
-        p            = proc_pool[i];
-        p->ctx->sepc = KA2PA((umb_t)&s_ptest1);
-        log_debug("进程 %d: 用户代码加载到 0x%lx", i, KA2PA((umb_t)&s_ptest1));
-    }
-
-    cur_proc = NULL;
-    log_info("进程管理初始化完成, 等待第一次时钟中断调度...");
+    // 设置空闲进程
+    // PID 0 保留给空进程
+    memset(&empty_proc, 0, sizeof(PCB));
 }
 
 /**
- * @brief 分配一个进程控制块
+ * @brief 获得下一个就绪进程, 同时将其弹出就绪队列
  *
- * @return ProcessControlBlock*
+ * @return PCB* 下一个就绪进程的PCB指针, 如果是nullptr, 则表示发生错误;
+ * 如果是cur_proc, 则表示继续运行当前进程
  */
-PCB *alloc_proc(void) {
-    for (size_t i = 0; i < NPROG; i++) {
-        if (proc_pool[i]->state == UNUSED) {
-            proc_pool[i]->state = READY;
-            if (!init_proc) {
-                init_proc = proc_pool[i];
-            }
-
-            return proc_pool[i];
-        }
+static PCB *fetch_ready_process(void) {
+    if (cur_proc == nullptr) {
+        // 这是不可能发生的情况, 报错
+        log_error("fetch_ready_process: 当前没有运行的进程");
+        return nullptr;
     }
-    return NULL;
-}
 
-/**
- * @brief 释放并清空一个进程控制块
- *
- * @param proc
- * @param pid
- */
-void dealloc_proc(PCB *proc, umb_t pid) {
-    if (proc_pool[pid] == proc) {
-        memset(proc_pool[pid], 0, sizeof(PCB));
-        proc_pool[pid]->pid   = pid;
-        proc_pool[pid]->state = UNUSED;
-        return;
+    // 如果当前进程已是rp0, 且仍然处于RUNNING状态, 则继续运行该进程
+    if (cur_proc->rp_level == 0 && cur_proc->state == RUNNING) {
+        return cur_proc;
     }
+
+    // 否则当前进程要么不是rp0, 要么不是RUNNING状态
+    // 那么我们就可以从rp0开始寻找下一个就绪进程
+    PCB *next;
+    list_pop_front(next, RP_LIST(0));
+    if (next != nullptr) {
+        return next;
+    }
+
+    // 寻找rp1
+    // 如果当前进程已是rp1, 且仍然处于RUNNING状态, 且时间片未用尽,
+    // 则继续运行该进程
+    if (cur_proc->rp_level == 1 && cur_proc->state == RUNNING &&
+        cur_proc->rp1_count > 0)
+    {
+        return cur_proc;
+    }
+
+    // 否则从rp1队列中弹出下一个就绪进程
+    list_pop_front(next, RP_LIST(1));
+    if (next != nullptr) {
+        return next;
+    }
+
+    // 寻找rp2
+    // 如果当前进程已是rp2, 且仍然处于RUNNING状态, 且时间片未用尽,
+    // 则继续运行该进程
+    if (cur_proc->rp_level == 2 && cur_proc->state == RUNNING &&
+        cur_proc->rp2_count > 0)
+    {
+        return cur_proc;
+    }
+    list_pop_front(next, RP_LIST(2));
+    if (next != nullptr) {
+        return next;
+    }
+
+    // 寻找rp3
+    // 如果当前进程已是rp3, 且仍然处于RUNNING状态, 则继续运行该进程
+    if (cur_proc->rp_level == 3 && cur_proc->state == RUNNING) {
+        return cur_proc;
+    }
+    // 取出有序链表中run_time最小的进程(位于头部)
+    ordered_list_pop_front(next, RP3_LIST);
+    if (next != nullptr) {
+        return next;
+    }
+
+    // 均不符合要求
+    return nullptr;
 }
 
 /**
  * @brief 调度器 - 选择下一个就绪进程进行切换
  *
- * 使用简单的轮转调度算法，寻找下一个状态为 READY 的进程。
- * 这是一个非阻塞式调度，只有在找到 READY 的进程时才会切换。
  */
-RegCtx *schedule(RegCtx *old) {
-    PCB *next = NULL;
+void schedule(RegCtx **old) {
+    // cur_proc 为空, 还未到进程调度阶段
+    if (cur_proc == nullptr) {
+        log_error("schedule: 当前没有运行的进程");
+        return;
+    }
+
     log_debug("schedule: 当前进程 pid=%d", cur_proc ? cur_proc->pid : -1);
     log_debug("current state: %d", cur_proc ? cur_proc->state : -1);
-    if (cur_proc == NULL) {
-        for (size_t i = 0; i < NPROG; i++) {
-            if (proc_pool[i] && proc_pool[i]->state == READY) {
-                next = proc_pool[i];
-                break;
-            }
-        }
 
-        if (next) {
-            cur_proc    = next;
-            next->state = RUNNING;
-            log_info("首次调度: 启动进程 (pid=%d)", next->pid);
-            // 直接返回新进程的上下文，丢弃 old (内核引导线程的上下文)
-            log_debug("schedule: 进入进程 pid=%d, sepc 0x%x", next->pid,
-                      next->ctx->sepc);
-            return next->ctx;
-        } else {
-            return old;
+    // 更新当前进程的上下文
+    cur_proc->ctx = *old;
+    // 如果是rp1/rp2进程, 则更新其时间片计数器
+    if (cur_proc->rp_level == 1) {
+        cur_proc->rp1_count--;
+    } else if (cur_proc->rp_level == 2) {
+        cur_proc->rp2_count--;
+    }
+    // 如果是rp3进程, 则更新其运行时间统计
+    else if (cur_proc->rp_level == 3) {
+        cur_proc->run_time += 10;  // TODO: 根据已经过去的周期数进行更新
+    }
+
+    // 获取下一个就绪进程
+    PCB *next = fetch_ready_process();
+
+    // 继续运行当前进程
+    if (next == cur_proc) {
+        log_debug("继续运行当前进程 (pid=%d), rp_level = %d", cur_proc->pid, cur_proc->rp_level);
+        if (cur_proc->rp_level == 1) {
+            log_debug("RP1: 剩余时间片为%d", cur_proc->rp1_count);
+        } else if (cur_proc->rp_level == 2) {
+            log_debug("RP2: 剩余时间片为%d", cur_proc->rp2_count);
+        }else if (cur_proc->rp_level == 2) {
+            log_debug("RP3: 已运行%d ms", cur_proc->run_time);
+        }
+        return;
+    }
+
+    // 没找到任何可运行的进程
+    if (next == nullptr) {
+        // 如果当前进程仍然是RUNNING状态, 则继续运行当前进程
+        if (cur_proc->state == RUNNING) {
+            next = cur_proc;
+        }
+        else {
+            log_debug("所有进程均运行");
+            // 目前没有任何进程可以运行.
+            // 此时应当调度一个备用的空进程
+            // 但是我们还没做XD
+            log_error("schedule: 没有可运行的进程, 系统停滞");
+            while (true);
         }
     }
 
-    cur_proc->ctx = old;
-
-    for (size_t i = 0; i < NPROG; i++) {
-        PCB *p = proc_pool[i];
-        if (p != cur_proc && p->state == READY) {
-            next = p;
-            break;
-        }
-    }
-
-    // 如果没找到其他 READY 的进程，就继续运行当前进程
-    if (next == NULL) {
-        if (cur_proc->state == ZOMBIE) {
-            log_info("所有进程运行完毕");
-            while (1) {}
-        }
-        log_debug("调度: 无其他就绪进程，继续运行当前进程(pid=%d)",
-                  cur_proc->pid);
-
-        return old;
-    }
+    // 否则, 切换到下一个进程
+    *old = next->ctx;
+    // TODO: 更新页表与其它控制寄存器
 
     // 更新进程状态
-    PCB *prev = cur_proc;
+    // 如果当前进程仍然是RUNNING状态, 则将其设为READY
+    int prev_pid = cur_proc->pid;
+    if (cur_proc->state == RUNNING) {
+        cur_proc->state = READY;
+    }
+    // 加入到相应的就绪队列
+    if (cur_proc->state == READY) {
+        if (cur_proc->rp_level == 3) {
+            // rp3为有序链表
+            ordered_list_insert(cur_proc, RP3_LIST);
+        } else {
+            // 其它rp队列为普通链表, 加到尾部(先到先得)
+            list_push_back(cur_proc, RP_LIST(cur_proc->rp_level));
+        }
+    }
+
+    // 将当前进程更新到下一个进程
     cur_proc  = next;
+    cur_proc->state = RUNNING;
 
-    if (prev->state != ZOMBIE) {
-        prev->state = READY;
+    // 如果是rp1/rp2进程, 则重置其时间片计数器
+    if (cur_proc->rp_level == 1) {
+        cur_proc->rp1_count = 5;  // TODO: 时间片长度待定
+    } else if (cur_proc->rp_level == 2) {
+        cur_proc->rp2_count = 3;  // TODO: 时间片长度待定
     }
 
-    next->state = RUNNING;
-
-    log_debug("调度: 从进程 (pid=%d) 切换到进程 (pid=%d)", prev->pid,
-              next->pid);
-
-    return next->ctx;
-}
-
-RegCtx *exit_current_task() {
-    if (cur_proc == NULL) {
-        log_error("exit_current_task: 当前没有运行的进程");
-        return NULL;
+    log_debug("调度: 从进程 (pid=%d) 切换到进程 (pid=%d)", prev_pid, cur_proc->pid);
+    // 根据rp_level打印调度信息
+    if (cur_proc->rp_level == 0) {
+        log_debug("调度到 rp0 实时进程 (pid=%d)", cur_proc->pid);
+    } else if (cur_proc->rp_level == 1) {
+        log_debug("调度到 rp1 服务进程 (pid=%d)", cur_proc->pid);
+    } else if (cur_proc->rp_level == 2) {
+        log_debug("调度到 rp2 普通用户进程 (pid=%d)", cur_proc->pid);
+    } else if (cur_proc->rp_level == 3) {
+        log_debug("调度到 rp3 Daemon进程 (pid=%d)", cur_proc->pid);
     }
-    cur_proc->state = ZOMBIE;
-
-    RegCtx *next_ctx = schedule(cur_proc->ctx);
-
-    return next_ctx;
 }
+
+PCB *test_add_proc(void) {
+    // 初始化PCB
+    PCB *p = (PCB *)kmalloc(sizeof(PCB));
+    memset(p, 0, sizeof(PCB));
+
+    // 设置基本信息
+    p->pid   = get_current_pid();
+    p->rp_level = 2;  // 普通用户进程
+    p->priority = 0;
+    p->state = READY;
+
+    // 分配内核栈
+    p->kstack = (umb_t *)kmalloc(PAGE_SIZE);
+    log_info("为进程(PID:%d)分配内核栈: %p", p->pid, p->kstack);
+
+    log_info("为进程(PID:%d)初始化上下文", p->pid);
+    // 栈顶(栈是向下增长的)
+    umb_t *stack_top  = (umb_t *)((umb_t)p->kstack + PAGE_SIZE);
+    // 留出空间存放上下文
+    stack_top        -= sizeof(RegCtx) / sizeof(umb_t);
+    p->ctx            = (RegCtx *)stack_top;
+    memset(p->ctx, 0, sizeof(RegCtx));
+    // 设置进程入口点与ip寄存器
+    // 由于只是测试例程, 所以arch有关也是没事的
+    p->ip = (void **)&p->ctx->sepc;
+    *p->ip = (void *)worker;
+
+    // 1. 分配一页作为用户栈 (alloc_page 返回物理地址)
+    umb_t user_stack_pa = (umb_t)alloc_page();
+
+    // 2. 获取内核虚拟地址以便清空栈内容
+    void *user_stack_kva = PA2KPA(user_stack_pa);
+    memset(user_stack_kva, 0, PAGE_SIZE);
+
+    // 3. 栈向下增长，所以 SP 指向页面末尾
+    p->ctx->regs[1] = user_stack_pa + PAGE_SIZE;
+
+    log_info("进程(PID=%d)用户栈: PA=0x%lx, SP=0x%lx", p->pid, user_stack_pa,
+                p->ctx->regs[1]);
+
+    // ra
+    p->ctx->regs[0]      = 0;
+    // 代码运行在 S-Mode
+    p->ctx->sstatus.spp  = 1;
+    // 用户进程应该开启中断
+    p->ctx->sstatus.spie = 1;
+
+    return p;
+}
+
+/**
+ * @brief 进程调度测试
+ * 
+ */
+void proc_test(void) {
+    log_info("进程调度测试开始");
+
+    // 添加3个测试进程
+    for (int i = 0; i < 3; i++) {
+        PCB *p = test_add_proc();
+        log_info("添加测试进程 PID=%d", p->pid);
+        // 将其加入就绪队列
+        list_push_back(p, RP_LIST(p->rp_level));
+    }
+    cur_proc = &empty_proc;
+
+    log_info("进程调度测试结束");
+}
+
+// RegCtx *exit_current_task() {
+//     if (cur_proc == nullptr) {
+//         log_error("exit_current_task: 当前没有运行的进程");
+//         return nullptr;
+//     }
+//     cur_proc->state = ZOMBIE;
+
+//     RegCtx *next_ctx = schedule(cur_proc->ctx);
+
+//     return next_ctx;
+// }
 
 __attribute__((section(".ptest1"), used)) void worker(void) {
     // syscall(SYS_EXIT, 0);
-    asm volatile(
-        "mv a7, %0\n"
-        "mv a0, %1\n"
-        "ecall\n"
-        :
-        : "r"(93), "r"(0)
-        : "a0", "a7");
+    // asm volatile(
+    //     "mv a7, %0\n"
+    //     "mv a0, %1\n"
+    //     "ecall\n"
+    //     :
+    //     : "r"(93), "r"(0)
+    //     : "a0", "a7");
     // 纯净的循环，不依赖任何内核数据
     while (1) {
         // 简单的忙等待，防止被编译器优化掉

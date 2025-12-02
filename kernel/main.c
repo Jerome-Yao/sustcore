@@ -46,7 +46,8 @@ int main(void) {
 
     log_info("Hello RISCV World!");
 
-    log_info("开始调度第一个进程...");
+    log_info("进程调度测试");
+    proc_test();
 
     while (true);
 

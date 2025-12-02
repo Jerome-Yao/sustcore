@@ -11,41 +11,34 @@
 
 #pragma once
 
-// #include <include/arch/riscv64/int/trap.h>
 #include <sus/bits.h>
-#include <sus/ctx.h>
-#include <task/pid.h>
-
-#define POOL_SIZE 2
-#define NPROG     2
-
-typedef enum {
-    READY   = 0,
-    RUNNING = 1,
-    BLOCKED = 2,
-    ZOMBIE  = 3,
-    UNUSED  = 4,
-} ProcState;
-
-typedef struct PCB {
-    pid_t pid;
-    ProcState state;
-    RegCtx *ctx;
-    umb_t *kstack;  // 内核栈
-    // TODO
-} PCB;
-
-extern PCB *proc_pool[NPROG];
-extern PCB *cur_proc;
-extern PCB *init_proc;
+#include <task/task_struct.h>
 
 /**
- * @brief 实现 context switch
- *
- * @param old  旧进程 context 结构体指针
- * @param new  新进程 context 结构体指针
+ * @brief 进程链表
+ * 
  */
-// void __switch(RegCtx *old, RegCtx *new);
+extern PCB *proc_list_head;
+extern PCB *proc_list_tail;
+
+/**
+ * @brief 空进程
+ * 
+ */
+extern PCB empty_proc;
+
+// 进程就绪队列级别
+#define RP_LEVELS (4)
+
+/**
+ * @brief 当前进程
+ * 
+ */
+extern PCB *cur_proc;
+
+// 就绪队列链表
+extern PCB *rp_list_heads[RP_LEVELS];
+extern PCB *rp_list_tails[RP_LEVELS];
 
 /**
  * @brief 初始化进程池
@@ -55,9 +48,9 @@ void proc_init(void);
 /**
  * @brief 调度器 - 从当前进程切换到下一个就绪进程
  */
-RegCtx *schedule(RegCtx *old);
+void schedule(RegCtx **ctx);
 
-PCB *alloc_proc(void);
+void proc_test(void);
 
 RegCtx *exit_current_task();
 
