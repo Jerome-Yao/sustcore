@@ -20,6 +20,8 @@
 #include <sus/arch.h>
 #include <sus/boot.h>
 #include <sus/symbols.h>
+#include <task/proc.h>
+#include <arch/riscv64/paging.h>
 
 /**
  * @brief 内核主函数
@@ -43,6 +45,8 @@ int main(void) {
     kfree(license_str);
 
     log_info("Hello RISCV World!");
+
+    log_info("开始调度第一个进程...");
 
     while (true);
 
@@ -165,7 +169,7 @@ void kernel_paging_setup(MemRegion *const layout) {
     log_info("内核剩余部分虚拟地址空间: [%p, %p)", misc_vaddr_start,
              (void *)((umb_t)misc_vaddr_start + misc_pages * PAGE_SIZE));
     mem_maps_range_to(root, misc_vaddr_start, (void *)&s_misc, misc_pages,
-                      RWX_MODE_R, false, true);
+                      RWX_MODE_RX, false, true);
 
     // 内核物理地址空间映射
     void *kphy_vaddr_start = (void *)(((umb_t)0x0) + (umb_t)KPHY_VA_OFFSET);
@@ -250,6 +254,11 @@ void post_init(void) {
     flush_tlb();
     log_info("低位内存[%p, %p)已用户态化!", (void *)0x0,
              (void *)(phymem_sz & ~(PAGE_SIZE - 1)));
+
+    // 初始化进程管理系统
+    log_info("初始化进程管理系统...");
+    proc_init();
+    log_info("进程管理系统初始化完成!");
 
     // 最后执行main与terminate
     main();
