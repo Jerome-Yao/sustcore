@@ -21,11 +21,11 @@ void syscall_handler(csr_scause_t scause, umb_t sepc, umb_t stval,
     umb_t ret          = 0;
     ctx->sepc         += 4;  // 跳过 ecall 指令
     switch (syscall_num) {
-        // case SYS_EXIT:
-        //     log_info("进程调用 exit 系统调用");
-        //     ctx = exit_current_task();
-        //     ret = 0;
-        //     break;
+        case SYS_EXIT:
+            log_info("进程调用 exit 系统调用");
+            // 设置为ZOMBIET态, 从而在之后的调度中被清理
+            cur_proc->state = PS_ZOMBIE;
+            break;
         default: log_info("未知系统调用号: %lu", syscall_num); break;
     }
     // ret       = test_syscall();

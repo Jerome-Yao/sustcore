@@ -14,7 +14,7 @@
 #include <arch/riscv64/int/isr.h>
 #include <basec/logger.h>
 #include <stddef.h>
-#include <task/proc.h>
+#include <task/scheduler.h>
 
 #if IVT_MODE == VECTORED
 /**
