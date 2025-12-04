@@ -9,13 +9,19 @@
  *
  */
 
-#include <basec/logger.h>
 #include <mem/alloc.h>
 #include <mem/kmem.h>
 #include <mem/pmm.h>
 #include <mem/vmm.h>
 #include <string.h>
 #include <sus/paging.h>
+
+
+#ifdef DLOG_PMM
+#define DISABLE_LOGGING
+#endif
+
+#include <basec/logger.h>
 
 void *setup_paging_table(void) {
     // 构造根页表
@@ -200,4 +206,16 @@ void memset_u(void *root, void *vaddr, int byte, size_t size) {
         cur_vaddr    = (void *)((umb_t)cur_vaddr + setsz);
         remain_size -= setsz;
     }
+}
+
+void ua_start_access(void) {
+    csr_sstatus_t sstatus = csr_get_sstatus();
+    sstatus.sum = 1;  // 允许S-MODE访问U-MODE内存
+    csr_set_sstatus(sstatus);
+}
+
+void ua_end_access(void) {
+    csr_sstatus_t sstatus = csr_get_sstatus();
+    sstatus.sum = 0;  // 禁止S-MODE访问U-MODE内存
+    csr_set_sstatus(sstatus);
 }

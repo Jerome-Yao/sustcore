@@ -76,6 +76,7 @@ int strnlen(const char *restrict str, int count) {
 char *strcpy(void *restrict dst, const char *restrict src) {
     int len = strlen(src);
     memcpy(dst, src, len);
+    *(char *)(dst + len) = '\0';
     return dst;
 }
 

@@ -36,7 +36,7 @@ build:
 	$(call prepare, $(path-attach))
 	$(q)$(copy) ./LICENSE $(path-attach)/license
 # 	$(q)$(MAKE) -f $(path-e)/loader/grub/Makefile $(arg-basic) $@
-	$(q)$(MAKE) -f $(path-e)/module/virtio_blk/Makefile $(arg-basic) $@
+# 	$(q)$(MAKE) -f $(path-e)/module/virtio_blk/Makefile $(arg-basic) $@
 	$(q)$(MAKE) -f $(path-e)/module/test/Makefile $(arg-basic) $@
 
 	$(q)$(MAKE) -f $(path-e)/kernel/Makefile $(arg-basic) $@

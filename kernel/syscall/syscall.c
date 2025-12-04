@@ -12,30 +12,66 @@
 #include <basec/logger.h>
 #include <syscall/syscall.h>
 #include <task/proc.h>
+#include <sus/syscall.h>
+#include <mem/alloc.h>
+#include <syscall/uaccess.h>
+#include <sus/boot.h>
 
-void syscall_handler(csr_scause_t scause, umb_t sepc, umb_t stval,
-                     InterruptContextRegisterList *ctx) {
-    log_debug("系统调用处理程序: scause=0x%lx, sepc=0x%lx, stval=0x%lx, from pid: %d",
-              scause.value, sepc, stval, cur_proc == nullptr ? -1 : cur_proc->pid);
-    umb_t syscall_num  = ctx->regs[16];  // a7 寄存器保存系统调用号
-    umb_t ret          = 0;
-    ctx->sepc         += 4;  // 跳过 ecall 指令
-    switch (syscall_num) {
-        case SYS_EXIT:
-            log_info("进程调用 exit 系统调用");
-            // 设置为ZOMBIET态, 从而在之后的调度中被清理
-            cur_proc->state = PS_ZOMBIE;
-            break;
-        default: log_info("未知系统调用号: %lu", syscall_num); break;
-    }
-    // ret       = test_syscall();
-    log_info("系统调用返回值: %lu", ret);
-    ctx->regs[9] = ret;  // 将返回值放入 a0 寄存器
+void sys_exit(umb_t exit_code)
+{
+    cur_proc->state = PS_ZOMBIE;
+    log_info("进程%d调用 exit 系统调用, 退出码: %lu", cur_proc->pid, exit_code);
 }
 
-umb_t test_syscall() {
-    for (int i = 0; i < 10; i++) {
-        log_info("syscall test: %d", i);
+void sys_yield()
+{
+    cur_proc->state = PS_YIELD;
+}
+
+void sys_log(const char *msg) {
+    int len = ua_strlen(msg);
+    char *kmsg = (char *)kmalloc(len + 1);
+    if (kmsg == nullptr) {
+        log_info("sys_log: 分配内核缓冲区失败");
+        return;
     }
-    return 1;
+    ua_strcpy(kmsg, msg);
+    log_info("用户进程(pid = %d)日志: %s", cur_proc->pid, kmsg);
+    kfree(kmsg);
+}
+
+// TODO: 这个功能本应交给对应驱动
+// 但目前还没有实现串口驱动, 先放在这里
+int sys_write_serial(const char *msg) {
+    int len = ua_strlen(msg);
+    char *kmsg = (char *)kmalloc(len + 1);
+    if (kmsg == nullptr) {
+        log_info("sys_write_serial: 分配内核缓冲区失败");
+        return 0;
+    }
+    ua_strcpy(kmsg, msg);
+    int ret = kputs(kmsg);
+    kfree(kmsg);
+    return ret;
+}
+
+umb_t syscall_handler(int sysno, RegCtx *ctx, ArgumentGetter arg_getter)
+{
+    switch(sysno) {
+        case SYS_EXIT:
+            sys_exit(arg_getter(ctx, 0));
+            return 0;
+        case SYS_YIELD:
+            sys_yield();
+            return 0;
+        case SYS_LOG:
+            sys_log((const char *)arg_getter(ctx, 0));
+            return 0;
+        case SYS_WRITE_SERIAL:
+            int ret = sys_write_serial((const char *)arg_getter(ctx, 0));
+            return ret;
+        default:
+            log_info("未知系统调用号: %d", sysno);
+            return (umb_t)(-1);
+    }
 }

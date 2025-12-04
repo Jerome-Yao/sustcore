@@ -9,11 +9,16 @@
  *
  */
 
-#include <basec/logger.h>
 #include <sus/list_helper.h>
 #include <sus/paging.h>
 #include <mem/kmem.h>
 #include <task/scheduler.h>
+
+#ifdef DLOG_TASK
+#define DISABLE_LOGGING
+#endif
+
+#include <basec/logger.h>
 
 /**
  * @brief 获得下一个就绪进程, 同时将其弹出就绪队列
@@ -88,7 +93,7 @@ static PCB *fetch_ready_process(void) {
  * @brief 调度器 - 选择下一个就绪进程进行切换
  *
  */
-void schedule(RegCtx **ctx) {
+void schedule(RegCtx **ctx, int time_gap) {
     // cur_proc 为空, 还未到进程调度阶段
     if (cur_proc == nullptr) {
         log_error("schedule: 当前没有运行的进程");
@@ -101,15 +106,17 @@ void schedule(RegCtx **ctx) {
     // 更新当前进程的上下文
     cur_proc->ctx = *ctx;
     // 如果是rp1/rp2进程, 则更新其时间片计数器
-    if (cur_proc->rp_level == 1) {
-        cur_proc->rp1_count--;
-    } else if (cur_proc->rp_level == 2) {
-        cur_proc->rp2_count--;
+    if (time_gap > 0) {
+        if (cur_proc->rp_level == 1) {
+            cur_proc->rp1_count--;
+        } else if (cur_proc->rp_level == 2) {
+            cur_proc->rp2_count--;
+        }
     }
     // 如果是rp3进程, 则更新其运行时间统计
     else if (cur_proc->rp_level == 3)
     {
-        cur_proc->run_time += 10;  // TODO: 根据已经过去的周期数进行更新
+        cur_proc->run_time += time_gap;  // TODO: 根据已经过去的周期数进行更新
     }
 
     // 获取下一个就绪进程
@@ -145,9 +152,9 @@ void schedule(RegCtx **ctx) {
     }
 
     // 更新进程状态
-    // 如果当前进程仍然是RUNNING状态, 则将其设为READY
+    // 如果当前进程仍然是RUNNING状态, 或者是YIELD状态, 则将其设为READY
     int prev_pid = cur_proc->pid;
-    if (cur_proc->state == PS_RUNNING) {
+    if (cur_proc->state == PS_RUNNING || cur_proc->state == PS_YIELD) {
         cur_proc->state = PS_READY;
     }
     // 加入到相应的就绪队列
@@ -198,19 +205,16 @@ void schedule(RegCtx **ctx) {
     *ctx = cur_proc->ctx;
 
     // 更新页表
+    log_info("切换页表到进程 (pid=%d) 的页表 %p", cur_proc->pid,
+             cur_proc->segments.pgd);
     mem_switch_root(KPA2PA(cur_proc->segments.pgd));
 
     // TODO: 更新页表与其它控制寄存器
 }
 
-/**
- * @brief 在系统调用后执行的操作
- *
- * @param ctx 上下文指针
- */
-void after_syscall(RegCtx **ctx) {
+void after_interrupt(RegCtx **ctx) {
     if (cur_proc == nullptr) {
-        log_error("after_syscall: 当前没有运行的进程");
+        log_error("after_interrupt: 当前没有运行的进程");
         return;
     }
     // 继续运行当前进程
@@ -230,5 +234,5 @@ void after_syscall(RegCtx **ctx) {
         }
     }
     // 当前进程已阻塞或终止, 抑或是有高级别就绪进程, 需要调度下一个进程
-    schedule(ctx);
+    schedule(ctx, 0);
 }
