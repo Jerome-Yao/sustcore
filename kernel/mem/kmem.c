@@ -9,10 +9,15 @@
  *
  */
 
-#include <basec/logger.h>
 #include <mem/kmem.h>
 #include <sus/paging.h>
 #include <sus/symbols.h>
+
+#ifdef DLOG_PMM
+#define DISABLE_LOGGING
+#endif
+
+#include <basec/logger.h>
 
 bool post_init_flag = false;
 size_t phymem_sz     = 0;

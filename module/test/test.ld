@@ -1,11 +1,12 @@
 /* test.ld */
 ENTRY(_start)
 OUTPUT_ARCH(riscv)
-BASE_ADDRESS = 0x82000000;
+
+BASE_ADDRESS = 0x8000000;
+. = BASE_ADDRESS;
 
 SECTIONS
 {
-    . = BASE_ADDRESS;
     s_text = .;
     .text : AT(BASE_ADDRESS) {
         *(.text)

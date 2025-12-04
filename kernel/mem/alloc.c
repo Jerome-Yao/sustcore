@@ -9,12 +9,17 @@
  *
  */
 
-#include <basec/logger.h>
 #include <mem/alloc.h>
 #include <mem/kmem.h>
 #include <mem/pmm.h>
 #include <sus/attributes.h>
 #include <sus/bits.h>
+
+#ifdef DLOG_PMM
+#define DISABLE_LOGGING
+#endif
+
+#include <basec/logger.h>
 
 typedef void *(*KAllocator)(size_t size);
 typedef void (*KDeallocator)(void *ptr);

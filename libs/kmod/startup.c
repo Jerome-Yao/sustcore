@@ -42,9 +42,31 @@ void terminate(int code) {
     while (true);
 }
 
+umb_t arg[8];
+
 void _start(void) {
     // 根据约定, a0寄存器保存heap指针
-    register umb_t heap_ptr asm("a0");
+    register umb_t arg0 asm("a0");
+    register umb_t arg1 asm("a1");
+    register umb_t arg2 asm("a2");
+    register umb_t arg3 asm("a3");
+    register umb_t arg4 asm("a4");
+    register umb_t arg5 asm("a5");
+    register umb_t arg6 asm("a6");
+    register umb_t arg7 asm("a7");
+    register umb_t arg8 asm("a8");
+
+    arg[0] = arg0;
+    arg[1] = arg1;
+    arg[2] = arg2;
+    arg[3] = arg3;
+    arg[4] = arg4;
+    arg[5] = arg5;
+    arg[6] = arg6;
+    arg[7] = arg7;
+
+    umb_t heap_ptr = arg[0];
+
     init(heap_ptr);
     // 调用主函数
     int ret = kmod_main();

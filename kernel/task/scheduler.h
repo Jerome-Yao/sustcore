@@ -16,11 +16,10 @@
 /**
  * @brief 调度器 - 从当前进程切换到下一个就绪进程
  */
-void schedule(RegCtx **ctx);
+void schedule(RegCtx **ctx, int time_gap);
 
 /**
- * @brief 在系统调用后执行的操作
+ * @brief 在中断后执行的操作
  *
- * @param ctx 上下文指针
  */
-void after_syscall(RegCtx **ctx);
+void after_interrupt(RegCtx **ctx);

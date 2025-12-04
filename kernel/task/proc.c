@@ -11,7 +11,6 @@
 
 #include "proc.h"
 
-#include <basec/logger.h>
 #include <mem/alloc.h>
 #include <mem/kmem.h>
 #include <mem/pmm.h>
@@ -22,6 +21,12 @@
 #include <sus/list_helper.h>
 #include <sus/paging.h>
 #include <sus/symbols.h>
+
+#ifdef DLOG_TASK
+#define DISABLE_LOGGING
+#endif
+
+#include <basec/logger.h>
 
 PCB *proc_list_head;
 PCB *proc_list_tail;

@@ -32,6 +32,7 @@ typedef enum {
     PS_SUSPENDED = 4,
     PS_ZOMBIE    = 5,
     PS_UNUSED    = 6,
+    PS_YIELD     = 7
 } ProcState;
 
 // 进程内存信息

@@ -21,7 +21,7 @@ typedef dword csr32_t;
  * @brief 设置CSR寄存器
  *
  */
-#define CSR_SET(name, val) asm volatile("csrs " #name ", %0" ::"r"(val));
+#define CSR_SET(name, val) asm volatile("csrw " #name ", %0" ::"r"(val));
 
 /**
  * @brief 获得CSR寄存器值

@@ -33,5 +33,5 @@ void arch_setup_argument(PCB *p, int argno, umb_t value)
         return;
     }
     // 参数通过a0 - a7传递, 分别对应x10 - x17寄存器
-    p->ctx->regs[9 + argno] = value;
+    p->ctx->regs[A0_BASE + argno] = value;
 }
