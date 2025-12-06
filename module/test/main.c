@@ -73,7 +73,7 @@ void test4(void) {
 extern umb_t arg[8];
 
 int kmod_main(void) {
-    umb_t pid = arg[1];
+    umb_t pid = arg[2];
     printf("测试模块启动! PID=%d\n", pid);
     switch (pid)
     {

@@ -16,6 +16,6 @@
 /**
  * @brief 获得系统传递的设备能力
  *
- * @return Capability 设备能力
+ * @return CapPtr 设备能力
  */
-Capability sa_get_device(void);
+CapPtr sa_get_device(void);

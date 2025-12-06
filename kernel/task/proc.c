@@ -95,6 +95,9 @@ void init_pcb(PCB *p, int rp_level) {
 
     // 加入到全局进程链表
     list_push_back(p, PROC_LIST);
+
+    // 构造cspaces
+    p->cap_spaces = (CSpace *)kmalloc(sizeof(CSpace) * PROC_CSPACES);
 }
 
 PCB *new_task(void *pgd, void *code_start, void *code_end, void *data_start,
@@ -160,12 +163,13 @@ PCB *new_task(void *pgd, void *code_start, void *code_end, void *data_start,
     // 设置父子关系
     p->parent = parent;
     if (parent != nullptr) {
-        list_push_back(p, CHILDREN_LIST(parent));
+        list_push_back(p, CHILDREN_TASK_LIST(parent));
     }
 
     // 分配内核栈
     log_info("为进程(PID:%d)分配内核栈: %p", p->pid, p->kstack);
     p->kstack = (umb_t *)kmalloc(PAGE_SIZE);
+    memset(p->kstack, 0, PAGE_SIZE);
 
     log_info("为进程(PID:%d)初始化上下文", p->pid);
     // 留出空间存放上下文
@@ -181,8 +185,18 @@ PCB *new_task(void *pgd, void *code_start, void *code_end, void *data_start,
     *p->ip = entrypoint;
     *p->sp = (void *)((umb_t)stack_start);
 
-    // 将堆指针传递给进程作为第一个参数
-    arch_setup_argument(p, 0, (umb_t)(p->segments.heap_start));
+    // 为当前进程构造自己的PCB能力
+    CapPtr pcb_cap_ptr = create_pcb_cap(
+        p, p,
+        (PCBCapPriv){
+            .priv_yield = true,
+            .priv_exit  = true,
+        });
+    // 将PCB能力传递给进程作为第一个参数
+    arch_setup_argument(p, 0, pcb_cap_ptr.val);
+
+    // 将堆指针传递给进程作为第二个参数
+    arch_setup_argument(p, 1, (umb_t)(p->segments.heap_start));
 
     // 加入到就绪队列
     if (rp_level != 3)

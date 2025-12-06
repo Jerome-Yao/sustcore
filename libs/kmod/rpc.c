@@ -22,13 +22,13 @@
  * @param ret_buf 返回值缓冲区指针
  * @param ret_size 返回值缓冲区大小
  */
-void rpc_call(Capability pid, int fid, const void *args, size_t arg_size,
+void rpc_call(CapPtr pid, int fid, const void *args, size_t arg_size,
               void *ret_buf, size_t ret_size) {
     size_t sharemem_sz = arg_size > ret_size ? arg_size : ret_size;
 
     // 首先分配共享内存
-    Capability shmid = makesharedmem(sharemem_sz);
-    if (shmid.raw == 0) {
+    CapPtr shmid = makesharedmem(sharemem_sz);
+    if (shmid.val == 0) {
         return;
     }
 
@@ -43,10 +43,10 @@ void rpc_call(Capability pid, int fid, const void *args, size_t arg_size,
     const char *rpc_msg = (const char[]){
         (char)RPC_CALL_MSG,
         (char)(fid & 0xFF),
-        (char)((shmid.raw >> 0) & 0xFF),
-        (char)((shmid.raw >> 8) & 0xFF),
-        (char)((shmid.raw >> 16) & 0xFF),
-        (char)((shmid.raw >> 24) & 0xFF),
+        (char)((shmid.val >> 0) & 0xFF),
+        (char)((shmid.val >> 8) & 0xFF),
+        (char)((shmid.val >> 16) & 0xFF),
+        (char)((shmid.val >> 24) & 0xFF),
         (char)((arg_size >> 0) & 0xFF),
         (char)((arg_size >> 8) & 0xFF),
         (char)((arg_size >> 16) & 0xFF),

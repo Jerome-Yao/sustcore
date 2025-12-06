@@ -11,6 +11,7 @@
 
 #include <kmod/syscall.h>
 #include <sus/syscall.h>
+#include <startup.h>
 
 umb_t syscall(int sysno, umb_t arg0, umb_t arg1, umb_t arg2, umb_t arg3, umb_t arg4, umb_t arg5, umb_t arg6)
 {
@@ -35,18 +36,18 @@ umb_t syscall(int sysno, umb_t arg0, umb_t arg1, umb_t arg2, umb_t arg3, umb_t a
 }
 
 void exit(int code) {
-    syscall(SYS_EXIT, (umb_t)(code), 0, 0, 0, 0, 0, 0);
+    syscall(SYS_EXIT, pcb_cap.val, (umb_t)(code), 0, 0, 0, 0, 0);
 }
 
 void yield(void) {
-    syscall(SYS_YIELD, 0, 0, 0, 0, 0, 0, 0);
+    syscall(SYS_YIELD, pcb_cap.val, 0, 0, 0, 0, 0, 0);
 }
 
 int puts(const char *str) {
-    return (int)syscall(SYS_WRITE_SERIAL, (umb_t)(str), 0, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_WRITE_SERIAL, 0, (umb_t)(str), 0, 0, 0, 0, 0);
 }
 
-void *mapmem(Capability cap) {
+void *mapmem(CapPtr cap) {
     // TODO: 实现映射内存系统调用
     return nullptr;
 }

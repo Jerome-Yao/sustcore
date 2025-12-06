@@ -105,6 +105,8 @@ void arch_pre_init(void) {
 }
 
 void arch_post_init(void) {
+    csr_set_sscratch(0);
+
     log_info("初始化中断向量表...");
     init_ivt();
 

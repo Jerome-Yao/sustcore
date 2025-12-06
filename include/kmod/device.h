@@ -20,9 +20,9 @@
  * 返回的是一个MEM能力, 指向设备的寄存器映射空间
  *
  * @param cap 设备能力
- * @return Capability 设备的MEM能力
+ * @return CapPtr 设备的MEM能力
  */
-Capability getdevice(Capability cap);
+CapPtr getdevice(CapPtr cap);
 
 /**
  * @brief 注册中断服务程序
@@ -30,4 +30,4 @@ Capability getdevice(Capability cap);
  * @param int_cap 中断能力
  * @param handler 中断处理函数
  */
-void register_isr(Capability int_cap, void (*handler)(void));
+void register_isr(CapPtr int_cap, void (*handler)(void));

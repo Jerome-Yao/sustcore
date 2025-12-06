@@ -16,16 +16,17 @@
 #include <mem/alloc.h>
 #include <syscall/uaccess.h>
 #include <sus/boot.h>
+#include <task/capability.h>
 
-void sys_exit(umb_t exit_code)
+void sys_exit(CapPtr ptr, umb_t exit_code)
 {
-    cur_proc->state = PS_ZOMBIE;
+    pcb_cap_exit(cur_proc, ptr);
     log_info("进程%d调用 exit 系统调用, 退出码: %lu", cur_proc->pid, exit_code);
 }
 
-void sys_yield()
+void sys_yield(CapPtr ptr)
 {
-    cur_proc->state = PS_YIELD;
+    pcb_cap_yield(cur_proc, ptr);
 }
 
 void sys_log(const char *msg) {
@@ -57,18 +58,21 @@ int sys_write_serial(const char *msg) {
 
 umb_t syscall_handler(int sysno, RegCtx *ctx, ArgumentGetter arg_getter)
 {
+    // 第0个参数一定存放Capability
+    CapPtr cap;
+    cap.val = arg_getter(ctx, 0);
     switch(sysno) {
         case SYS_EXIT:
-            sys_exit(arg_getter(ctx, 0));
+            sys_exit(cap, arg_getter(ctx, 1));
             return 0;
         case SYS_YIELD:
-            sys_yield();
+            sys_yield(cap);
             return 0;
         case SYS_LOG:
-            sys_log((const char *)arg_getter(ctx, 0));
+            sys_log((const char *)arg_getter(ctx, 1));
             return 0;
         case SYS_WRITE_SERIAL:
-            int ret = sys_write_serial((const char *)arg_getter(ctx, 0));
+            int ret = sys_write_serial((const char *)arg_getter(ctx, 1));
             return ret;
         default:
             log_info("未知系统调用号: %d", sysno);

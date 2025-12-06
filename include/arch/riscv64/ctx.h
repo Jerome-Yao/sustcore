@@ -24,9 +24,9 @@ typedef struct {
     csr_sstatus_t sstatus;  // 保存的sstatus
 } InterruptContextRegisterList;
 
-#define X1_BASE (0)
-#define A0_BASE (9)
-#define SP_BASE (1)
+#define X0_BASE (-1)
+#define A0_BASE (X0_BASE + 10)
+#define SP_BASE (X0_BASE + 2)
 #define RA_BASE (0)
 
 typedef InterruptContextRegisterList RegCtx;

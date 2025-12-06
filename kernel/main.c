@@ -24,6 +24,26 @@
 #include <sus/symbols.h>
 #include <task/proc.h>
 
+void assertion_failure(const char *expression, const char *file,
+                       const char *base_file, int line)
+{
+    log_error("In %s(from %s), line %d, assert failed: %s ", file, base_file, line, expression);
+}
+
+void panic_failure(const char *expression, const char *file,
+                   const char *base_file, int line)
+{
+    log_error("In %s(from %s), line %d, assert failed: %s ", file, base_file, line, expression);
+    while (true);
+}
+
+void panic(const char *format, ...)
+{
+    log_error("PANIC!");
+    while (true);
+}
+
+
 /**
  * @brief 内核主函数
  *
@@ -63,7 +83,7 @@ int main(void) {
                 test_prog.program_end,    // 堆起始地址
                 test_prog.entrypoint, 2, nullptr);
 
-        arch_setup_argument(p, 1, p->pid); // 设置第2个参数为pid
+        arch_setup_argument(p, 2, p->pid); // 设置第2个参数为pid
 
         // 输出各项信息
         log_info("创建测试进程完成: PID=%d", p->pid);
