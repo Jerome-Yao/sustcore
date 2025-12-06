@@ -28,18 +28,32 @@ void exit(int code);
 void yield(void);
 
 /**
+ * @brief 获得当前进程的PID
+ * 
+ * @return 当前进程的PID
+ */
+int get_current_pid(void);
+
+/**
+ * @brief 创建当前进程的副本
+ * 
+ * @return int 新进程的PID, 子进程返回0
+ */
+int fork(void);
+
+/**
  * @brief 唤醒指定进程
  *
  * @param pid 进程ID(实际上是进程能力)
  */
-void wakeup_process(Capability pid);
+void wakeup_process(CapPtr pid);
 
 /**
  * @brief 等待指定进程
  *
  * @param pid 进程ID(实际上是进程能力)
  */
-void wait_process(Capability pid);
+void wait_process(CapPtr pid);
 
 /**
  * @brief 使当前进程休眠指定的毫秒数
@@ -52,9 +66,9 @@ void sleep(unsigned int ms);
  * @brief 创建共享内存
  *
  * @param size 共享内存大小
- * @return Capability 共享内存能力
+ * @return CapPtr 共享内存能力
  */
-Capability makesharedmem(size_t size);
+CapPtr makesharedmem(size_t size);
 
 /**
  * @brief 共享内存给指定进程
@@ -62,7 +76,7 @@ Capability makesharedmem(size_t size);
  * @param pid 目标进程ID(实际上是进程能力)
  * @param shmid 共享内存能力
  */
-void sharemem_with(Capability pid, Capability shmid);
+void sharemem_with(CapPtr pid, CapPtr shmid);
 
 /**
  * @brief 获取共享内存
@@ -70,22 +84,22 @@ void sharemem_with(Capability pid, Capability shmid);
  * @param cap 共享内存能力
  * @return void* 指向共享内存的指针
  */
-void *getsharedmem(Capability cap);
+void *getsharedmem(CapPtr cap);
 
 /**
  * @brief 释放共享内存
  *
  * @param cap 共享内存能力
  */
-void freesharedmem(Capability cap);
+void freesharedmem(CapPtr cap);
 
 /**
  * @brief 申请物理内存
  *
  * @param size 物理内存大小
- * @return Capability 物理内存能力
+ * @return CapPtr 物理内存能力
  */
-Capability require_phymem(size_t size);
+CapPtr require_phymem(size_t size);
 
 /**
  * @brief 获得内存物理地址
@@ -95,7 +109,7 @@ Capability require_phymem(size_t size);
  * @param cap 内存能力
  * @return void* 内存的物理地址
  */
-void *getphyaddr(Capability cap);
+void *getphyaddr(CapPtr cap);
 
 /**
  * @brief 映射内存到虚拟地址空间
@@ -103,14 +117,14 @@ void *getphyaddr(Capability cap);
  * @param cap 内存能力
  * @return void* 指向映射后的虚拟内存地址
  */
-void *mapmem(Capability cap);
+void *mapmem(CapPtr cap);
 
 /**
  * @brief 释放内存
  *
  * @param cap 内存能力
  */
-void freemem(Capability cap);
+void freemem(CapPtr cap);
 
 /**
  * @brief 发送消息给指定进程
@@ -119,7 +133,7 @@ void freemem(Capability cap);
  * @param msg 消息指针
  * @param size 消息大小
  */
-void send_message(Capability pid, const void *msg, size_t size);
+void send_message(CapPtr pid, const void *msg, size_t size);
 
 #define RPC_CALL_MSG (0xFF)
 
@@ -133,5 +147,5 @@ void send_message(Capability pid, const void *msg, size_t size);
  * @param ret_buf    返回值缓冲区指针
  * @param ret_size   返回值缓冲区大小
  */
-void rpc_call(Capability pid, int fid, const void *args, size_t arg_size,
+void rpc_call(CapPtr pid, int fid, const void *args, size_t arg_size,
               void *ret_buf, size_t ret_size);

@@ -1,5 +1,7 @@
 # Sustcore
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sustcore-team/sustcore)
+
 # 编译, 运行与调试
 
 ## 编译

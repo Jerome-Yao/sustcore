@@ -14,8 +14,9 @@
 
 #include <sus/bits.h>
 #include <sus/ctx.h>
+#include <cap/capability.h>
 
-typedef umb_t pid_t;
+typedef int pid_t;
 
 static pid_t PIDALLOC = 1;
 
@@ -40,8 +41,8 @@ typedef struct {
     // 页表根地址
     void *pgd;
     // 代码段地址
-    void *code_start;
-    void *code_end;
+    void *text_start;
+    void *text_end;
     // 数据段地址
     void *data_start;
     void *data_end;
@@ -51,6 +52,8 @@ typedef struct {
     // 堆段地址
     void *heap_start;
     void *heap_end;
+    // copy-on-write标志
+    bool cow;
 } MMInfo;
 
 typedef struct PCBStruct {
@@ -123,7 +126,16 @@ typedef struct PCBStruct {
     // rp3 调度信息
     // 进程运行时间统计(只有Daemon队列使用) (ms)
     int run_time;
+
+    // Capabilities
+    CSpace *cap_spaces;
+
+    // 持有的能力链表
+    Capability *all_cap_head;
+    Capability *all_cap_tail;
 } PCB;
 
-#define CHILDREN_LIST(task) \
+#define CHILDREN_TASK_LIST(task) \
     task->children_head, task->children_tail, sibling_next, sibling_prev
+
+#define CAPABILITY_LIST(task) task->all_cap_head, task->all_cap_tail, next, prev

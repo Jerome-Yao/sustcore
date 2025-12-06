@@ -11,7 +11,7 @@
 
 #include <kmod/device.h>
 
-Capability getdevice(Capability cap) {
+CapPtr getdevice(CapPtr cap) {
     // TODO: 实现
-    return (Capability){ .raw = 0 };
+    return INVALID_CAP_PTR;
 }
