@@ -73,7 +73,7 @@ void pcb_cap_exit(PCB *p, CapPtr ptr) {
     pcb->state = PS_ZOMBIE;
 }
 
-PCB *pcb_cap_fork(PCB *p, CapPtr ptr) {
+PCB *pcb_cap_fork(PCB *p, CapPtr ptr, CapPtr *child_cap) {
     PCB_CAP_START(p, ptr, pcb_cap_fork, cap, pcb, priv, nullptr);
 
     // 是否有对应权限
@@ -82,8 +82,15 @@ PCB *pcb_cap_fork(PCB *p, CapPtr ptr) {
         return nullptr;
     }
 
-    // 开始fork操作
+    // 进行fork操作
     PCB *fork_pcb = fork_task(pcb);
+    // 为子进程创建Capability
+    *child_cap = create_pcb_cap(fork_pcb, fork_pcb,
+                                (PCBCapPriv){
+                                    .priv_yield  = true,
+                                    .priv_exit   = true,
+                                    .priv_fork   = true,
+                                    .priv_getpid = true});
     return fork_pcb;
 }
 

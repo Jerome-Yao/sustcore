@@ -99,22 +99,12 @@ void init_pcb(PCB *p, int rp_level) {
 
     // 构造cspaces
     p->cap_spaces = (CSpace *)kmalloc(sizeof(CSpace) * PROC_CSPACES);
+    memset(p->cap_spaces, 0, sizeof(CSpace) * PROC_CSPACES);
 }
 
-PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, PCB *parent)
-{
+PCB *create_pcb(TM *tm, void *entrypoint, int rp_level, PCB *parent) {
     if (rp_level < 0 || rp_level >= RP_LEVELS) {
         log_error("new_task: 无效的RP级别 %d", rp_level);
-        return nullptr;
-    }
-
-    if (stack == nullptr) {
-        log_error("new_task: 无效的栈地址");
-        return nullptr;
-    }
-
-    if (heap == nullptr) {
-        log_error("new_task: 无效的堆地址");
         return nullptr;
     }
 
@@ -129,18 +119,6 @@ PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, P
 
     // 设置基本信息
     p->tm = tm;
-
-    // 设置初始线程栈与堆的VMA
-
-    // 设置64KB的初始栈(stack为栈顶)
-    void *stack_end = stack - 16 * PAGE_SIZE;
-    add_vma(p->tm, stack_end, 16 * PAGE_SIZE, VMAT_STACK);
-    // 设置128MB的堆
-    add_vma(p->tm, heap, 32768 * PAGE_SIZE, VMAT_HEAP);
-
-    // 预分配4KB
-    alloc_pages_for(p->tm, stack_end + 15 * PAGE_SIZE, 1, RWX_MODE_RW, true);
-    alloc_pages_for(p->tm, heap, 1, RWX_MODE_RW, true);
 
     // 入口点
     p->entrypoint = entrypoint;
@@ -165,6 +143,38 @@ PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, P
 
     // 架构相关设置
     arch_setup_proc(p);
+    return p;
+}
+
+PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, PCB *parent)
+{
+    if (stack == nullptr) {
+        log_error("new_task: 无效的栈地址");
+        return nullptr;
+    }
+
+    if (heap == nullptr) {
+        log_error("new_task: 无效的堆地址");
+        return nullptr;
+    }
+
+    // 构造pcb
+    PCB *p = create_pcb(tm, entrypoint, rp_level, parent);
+    if (p == nullptr) {
+        log_error("new_task: 无法创建PCB");
+        return nullptr;
+    }
+
+    // 初始化进程
+    // 设置64KB的初始栈(stack为栈顶)
+    void *stack_end = stack - 16 * PAGE_SIZE;
+    add_vma(p->tm, stack_end, 16 * PAGE_SIZE, VMAT_STACK);
+    // 设置128MB的堆
+    add_vma(p->tm, heap, 32768 * PAGE_SIZE, VMAT_HEAP);
+
+    // 预分配4KB
+    alloc_pages_for(p->tm, stack_end + 15 * PAGE_SIZE, 1, RWX_MODE_RW, true);
+    alloc_pages_for(p->tm, heap, 1, RWX_MODE_RW, true);
 
     // ip, sp寄存器
     *p->ip = entrypoint;
@@ -194,67 +204,34 @@ PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, P
 }
 
 PCB *fork_task(PCB *parent) {
-    // // 代码段是可以直接共享的
-    // // TODO: 为数据段采取Copy-On-Write策略
-    // // 目前先直接复制数据段
+    // 首先对内存进行操作
+    TM *new_tm = setup_task_memory();
+    // 逐VMA复制
+    VMA *vma;
+    foreach_ordered_list(vma, TM_VMA_LIST(parent->tm)) {
+        clone_vma(parent->tm, vma, new_tm);
+    }
 
-    // // 构造新的页表
-    // MMInfo *mm = &parent->segments;
-    // void *pgd  = setup_paging_table();
-    // // 复制代码段映射
-    // // 遍历每个页并建立映射
-    // for (void *addr = mm->text_start; addr < mm->text_end;
-    //      addr       = (void *)((umb_t)addr + PAGE_SIZE))
-    // {
-    //     // 获得每个页的物理地址与大小
-    //     LargablePTEntry entry = mem_get_page(mm->pgd, addr);
-    //     void *paddr           = mem_pte_dst(entry.entry);
-    //     size_t pages          = PAGE_SIZE_BY_LEVEL(entry.level) / PAGE_SIZE;
-    //     // 建立映射
-    //     mem_maps_range_to(pgd, addr, paddr, pages, RWX_MODE_RX, true, false);
-    // }
+    // 构造新的PCB
+    PCB *p = create_pcb(new_tm, parent->entrypoint, parent->rp_level, parent);
 
-    // // 复制数据段
-    // // 首先计算其页数
-    // size_t data_pages =
-    //     ((umb_t)mm->data_end - (umb_t)mm->data_start + PAGE_SIZE - 1) /
-    //     PAGE_SIZE;
-    // // 再分配这么多物理页
-    // alloc_pages_for(pgd, mm->data_start, data_pages, RWX_MODE_RW, true);
-    // // 复制数据
-    // memcpy_u2u(pgd, mm->data_start, mm->pgd, mm->data_start,
-    //            data_pages * PAGE_SIZE);
+    if (p == nullptr) {
+        log_error("fork_task: 无法创建子进程");
+        return nullptr;
+    }
 
-    // // 构造新进程
-    // PCB *p = new_task(pgd, mm->text_start, mm->text_end, mm->data_start,
-    //                   mm->data_end, mm->stack_start, mm->heap_start,
-    //                   parent->entrypoint, parent->rp_level, parent);
-    // if (p == nullptr) {
-    //     log_error("fork_task: 无法创建子进程");
-    // }
+    // 对fork进程进行初始化
+    // 栈, 堆无需额外处理, 因为已经在clone_vma中完成
+    // 复制上下文
+    memcpy(p->ctx, parent->ctx, sizeof(RegCtx));
 
-    // // 复制栈, 堆内容
-    // // TODO: 其实首先应当拓展预分配的栈与堆的空间
-    // // 但目前先默认预分配的空间足够用
+    // 对Capability的复制等交由调用者完成
+    // 加入到就绪队列
+    if (p->rp_level != 3)
+        list_push_back(p, RP_LIST(p->rp_level));
+    else
+        ordered_list_insert(p, RP3_LIST);
 
-    // // 复制栈内容
-    // size_t stack_pages =
-    //     ((umb_t)parent->segments.stack_start - (umb_t)parent->segments.stack_end) /
-    //     PAGE_SIZE;
-    // memcpy_u2u(pgd, p->segments.stack_end, parent->segments.pgd,
-    //            parent->segments.stack_end, stack_pages * PAGE_SIZE);
-
-    // // 复制堆内容
-    // size_t heap_pages =
-    //     ((umb_t)parent->segments.heap_end - (umb_t)parent->segments.heap_start) /
-    //     PAGE_SIZE;
-    // memcpy_u2u(pgd, p->segments.heap_start, parent->segments.pgd,
-    //            parent->segments.heap_start, heap_pages * PAGE_SIZE);
-
-    // // 复制上下文
-    // memcpy(p->ctx, parent->ctx, sizeof(RegCtx));
-
-    // mem_display_mapping_layout(pgd);
-    // return p;
-    return nullptr;
+    mem_display_mapping_layout(p->tm->pgd);
+    return p;
 }
