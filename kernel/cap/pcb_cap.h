@@ -57,9 +57,10 @@ void pcb_cap_exit(PCB *p, CapPtr ptr);
  * 
  * @param p 当前进程的PCB
  * @param ptr 能力指针
+ * @param child_cap 返回新进程的能力指针
  * @return PCB* 新进程的PCB指针
  */
-PCB *pcb_cap_fork(PCB *p, CapPtr ptr);
+PCB *pcb_cap_fork(PCB *p, CapPtr ptr, CapPtr *child_cap);
 
 /**
  * @brief 获取进程的PID

@@ -67,6 +67,15 @@ TM *setup_task_memory(void);
 void add_vma(TM *tm, void *vaddr, size_t size, VMAType type);
 
 /**
+ * @brief 从源进程克隆VMA到目标进程
+ * 
+ * @param src_tm 源进程内存信息
+ * @param vma 要克隆的VMA
+ * @param dst_tm 目标进程内存信息
+ */
+void clone_vma(TM *src_tm, VMA *vma, TM *dst_tm);
+
+/**
  * @brief 移除VMA
  *
  * @param tm 进程内存信息

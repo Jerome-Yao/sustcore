@@ -33,13 +33,17 @@ pid_t sys_getpid(CapPtr ptr) {
 }
 
 CapPtr sys_fork(CapPtr ptr) {
-    PCB *child = pcb_cap_fork(cur_proc, ptr);
+    CapPtr child_cap;
+    PCB *child = pcb_cap_fork(cur_proc, ptr, &child_cap);
     if (child == nullptr) {
         return INVALID_CAP_PTR;
     }
+    // 我们需要为子进程设置返回值
     // 对子进程, 设置副返回值为0
-    // 主返回值为子进程的Capability(在构造task时已设置)
+    // 主返回值为子进程的Capability
+    arch_setup_argument(child, 0, child_cap.val);
     arch_setup_argument(child, 1, 0);
+
     // 主进程的副返回值为子进程的PID
     arch_setup_argument(cur_proc, 1, (umb_t)(child->pid));
     // 移动子进程的pc
@@ -48,6 +52,7 @@ CapPtr sys_fork(CapPtr ptr) {
     *(child->ip) += 4;
     // 返回子进程的能力
     // 父进程对子进程享有全部权限
+    // TODO: 改成从child_cap中派生
     return create_pcb_cap(cur_proc, child,
                           (PCBCapPriv){.priv_yield  = true,
                                        .priv_exit   = true,

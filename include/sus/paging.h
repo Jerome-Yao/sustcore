@@ -15,7 +15,9 @@
 #include <sus/arch.h>
 #include <sus/bits.h>
 
-#define PAGE_SIZE (4096)
+#define PAGE_SIZE                  (0x1000)  // 4KB
+#define PAGE_SIZE_ALIGN_DOWN(addr) ((void *)((umb_t)(addr) & ~(0xFFF)))
+#define PAGE_SIZE_ALIGN_UP(addr)   ((void *)(((umb_t)(addr) + 0xFFF) & ~(0xFFF)))
 
 #if __ARCHITECTURE__ == riscv64
 

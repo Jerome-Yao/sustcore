@@ -14,21 +14,131 @@
 #include <mem/pmm.h>
 #include <mem/vmm.h>
 #include <string.h>
-#include <sus/paging.h>
 #include <sus/list_helper.h>
-
-
-#ifdef DLOG_PMM
-#define DISABLE_LOGGING
-#endif
-
+#include <sus/paging.h>
 #include <basec/logger.h>
+
+/**
+ * @brief 物理内存区域结构体
+ *
+ */
+typedef struct PMAStruct {
+    // 形成链表结构
+    struct PMAStruct *prev;
+    struct PMAStruct *next;
+
+    // 物理地址
+    void *paddr;
+    // 大小
+    int pages;
+} PMA;
+
+PMA *pma_list_head = nullptr;
+PMA *pma_list_tail = nullptr;
+
+#define PMA_LIST pma_list_head, pma_list_tail, prev, next, paddr, ascending
+
+/**
+ * @brief 添加PMA
+ *
+ * @param paddr 物理地址
+ * @param pages 大小(页数)
+ */
+void add_pma(void *paddr, int pages) {
+    PMA *pma = (PMA *)kmalloc(sizeof(PMA));
+    if (pma == nullptr) {
+        log_error("add_pma: 分配PMA结构体失败 paddr=%p pages=%d", paddr, pages);
+        return;
+    }
+
+    pma->paddr = paddr;
+    pma->pages = pages;
+
+    // 插入PMA链表
+    ordered_list_insert(pma, PMA_LIST);
+}
+
+/**
+ * @brief 分配物理页并添加到PMA链表
+ *
+ * @param remain_pages 剩余页数
+ * @return void* 分配的物理地址
+ */
+void *pma_alloc_pages(int remain_pages) {
+    void *paddr = alloc_pages(remain_pages);
+    if (paddr == nullptr) {
+        return nullptr;
+    }
+
+    add_pma(paddr, remain_pages);
+    return paddr;
+}
+
+/**
+ * @brief 分配order阶物理页并添加到PMA链表
+ *
+ * @param order 阶数
+ * @return void* 分配的物理地址
+ */
+void *pma_alloc_pages_in_order(int order) {
+    void *paddr = alloc_pages_in_order(order);
+    if (paddr == nullptr) {
+        return nullptr;
+    }
+
+    add_pma(paddr, 1ul << order);
+    return paddr;
+}
+
+/**
+ * @brief 分配单个物理页并添加到PMA链表
+ *
+ * @return void* 分配的物理地址
+ */
+void *pma_alloc_page(void) {
+    return pma_alloc_pages_in_order(0);
+}
+
+PMA *pma_find(void *paddr) {
+    PMA *pma = nullptr;
+
+    // 遍历链表查找paddr所在的PMA
+    foreach_ordered_list(pma, PMA_LIST) {
+        // 如果pma->paddr > paddr
+        // 说明已经越过了可能的PMA
+        if (pma->paddr > paddr) {
+            break;
+        }
+
+        // 检查paddr是否在pma范围内
+        if ((umb_t)pma->paddr + pma->pages * PAGE_SIZE > (umb_t)paddr) {
+            return pma;
+        }
+    }
+
+    return pma;
+}
+
+int from_seg_to_rwx(VMAType type) {
+    switch (type) {
+        case VMAT_CODE:      return RWX_MODE_RX;
+        case VMAT_DATA:
+        case VMAT_STACK:
+        case VMAT_HEAP:
+        case VMAT_MMAP:
+        case VMAT_SHARE_RW:  return RWX_MODE_RW;
+        case VMAT_SHARE_RO:  return RWX_MODE_R;
+        case VMAT_SHARE_RX:  return RWX_MODE_RX;
+        case VMAT_SHARE_RWX: return RWX_MODE_RWX;
+        default:             return 0;
+    }
+}
 
 TM *setup_task_memory(void) {
     TM *tm = (TM *)kmalloc(sizeof(TM));
     // 初始化VMA链表
     ordered_list_init(TM_VMA_LIST(tm));
-    tm->pgd           = mem_construct_root();
+    tm->pgd = mem_construct_root();
     // 加载内核分页
     create_kernel_paging(tm->pgd);
     return tm;
@@ -37,8 +147,8 @@ TM *setup_task_memory(void) {
 void add_vma(TM *tm, void *vaddr, size_t size, VMAType type) {
     VMA *vma = (VMA *)kmalloc(sizeof(VMA));
     if (vma == nullptr) {
-        log_error("add_vma: 分配VMA结构体失败 vaddr=%p size=%lu type=%d",
-                  vaddr, size, type);
+        log_error("add_vma: 分配VMA结构体失败 vaddr=%p size=%lu type=%d", vaddr,
+                  size, type);
         return;
     }
     vma->vaddr = vaddr;
@@ -47,6 +157,43 @@ void add_vma(TM *tm, void *vaddr, size_t size, VMAType type) {
 
     // 插入有序链表
     ordered_list_insert(vma, TM_VMA_LIST(tm));
+}
+
+void clone_vma(TM *src_tm, VMA *vma, TM *dst_tm) {
+    log_info("克隆VMA vaddr=%p size=%lu type=%d", vma->vaddr, vma->size,
+             vma->type);
+    // 在目标进程中添加相同的VMA
+    add_vma(dst_tm, vma->vaddr, vma->size, vma->type);
+    // 遍历VMA中的页
+    void *cur_vaddr = (void *)PAGE_SIZE_ALIGN_DOWN((umb_t)vma->vaddr);
+    while (cur_vaddr < (vma->vaddr + vma->size))
+    {
+        // 获取源进程的页表项
+        LargablePTEntry __entry = mem_get_page(src_tm->pgd, cur_vaddr);
+        PTEntry *entry = __entry.entry;
+        int level = __entry.level;
+        if (entry == nullptr || ! PAGE_VALID(entry) || ! PAGE_P(entry)) {
+            // skip
+            // 说明该页未分配
+            cur_vaddr += PAGE_SIZE;
+            continue;
+        }
+        void *paddr = mem_pte_dst(entry);
+        PMA *pma = pma_find(paddr);
+        if (pma == nullptr) {
+            log_error("clone_vma: 未找到对应PMA paddr=%p", paddr);
+            cur_vaddr += PAGE_SIZE_BY_LEVEL(level);
+            continue;
+        }
+        log_info("克隆页 vaddr=%p paddr=%p pages=%d", cur_vaddr, paddr,
+                 pma->pages);
+        // 为目标进程分配物理页
+        alloc_pages_for(dst_tm, cur_vaddr, pma->pages,
+                        from_seg_to_rwx(vma->type), true);
+        // 复制数据
+        memcpy_u2u(dst_tm, cur_vaddr, src_tm, cur_vaddr, pma->pages * PAGE_SIZE);
+        cur_vaddr += pma->pages * PAGE_SIZE;
+    }
 }
 
 void remove_vma(TM *tm, void *vaddr) {
@@ -82,112 +229,7 @@ VMA *find_vma(TM *tm, void *vaddr) {
     return vma;
 }
 
-/**
- * @brief 物理内存区域结构体
- * 
- */
-typedef struct PMAStruct {
-    // 形成链表结构
-    struct PMAStruct *prev;
-    struct PMAStruct *next;
-
-    // 物理地址
-    void *paddr;
-    // 大小
-    int pages;
-} PMA;
-
-PMA *pma_list_head = nullptr;
-PMA *pma_list_tail = nullptr;
-
-#define PMA_LIST \
-    pma_list_head, pma_list_tail, prev, next, paddr, ascending
-
-/**
- * @brief 添加PMA
- * 
- * @param paddr 物理地址
- * @param pages 大小(页数)
- */
-void add_pma(void *paddr, int pages) {
-    PMA *pma = (PMA *)kmalloc(sizeof(PMA));
-    if (pma == nullptr) {
-        log_error("add_pma: 分配PMA结构体失败 paddr=%p pages=%d", paddr, pages);
-        return;
-    }
-
-    pma->paddr         = paddr;
-    pma->pages         = pages;
-
-    // 插入PMA链表
-    ordered_list_insert(pma, PMA_LIST);
-}
-
-/**
- * @brief 分配物理页并添加到PMA链表
- * 
- * @param remain_pages 剩余页数
- * @return void* 分配的物理地址
- */
-void *pma_alloc_pages(int remain_pages) {
-    void *paddr = alloc_pages(remain_pages);
-    if (paddr == nullptr) {
-        return nullptr;
-    }
-
-    add_pma(paddr, remain_pages);
-    return paddr;
-}
-
-/**
- * @brief 分配order阶物理页并添加到PMA链表
- * 
- * @param order 阶数
- * @return void* 分配的物理地址
- */
-void *pma_alloc_pages_in_order(int order) {
-    void *paddr = alloc_pages_in_order(order);
-    if (paddr == nullptr) {
-        return nullptr;
-    }
-
-    add_pma(paddr, 1ul << order);
-    return paddr;
-}
-
-/**
- * @brief 分配单个物理页并添加到PMA链表
- * 
- * @return void* 分配的物理地址
- */
-void *pma_alloc_page(void) {
-    return pma_alloc_pages_in_order(0);
-}
-
-int from_seg_to_rwx(VMAType type)
-{
-    switch (type) {
-        case VMAT_CODE:
-            return RWX_MODE_RX;
-        case VMAT_DATA:
-        case VMAT_STACK:
-        case VMAT_HEAP:
-        case VMAT_MMAP:
-        case VMAT_SHARE_RW:
-            return RWX_MODE_RW;
-        case VMAT_SHARE_RO:
-            return RWX_MODE_R;
-        case VMAT_SHARE_RX:
-            return RWX_MODE_RX;
-        case VMAT_SHARE_RWX:
-            return RWX_MODE_RWX;
-        default:
-            return 0;
-    }
-}
-
-bool alloc_pages_for(TM *tm, void *vaddr, size_t pages, int rwx, bool user)
-{
+bool alloc_pages_for(TM *tm, void *vaddr, size_t pages, int rwx, bool user) {
     // 首先判断[vaddr, vaddr + pages * PAGE_SIZE)是否在某个VMA内
     VMA *vma = find_vma(tm, vaddr);
     if (vma == nullptr) {
@@ -195,11 +237,10 @@ bool alloc_pages_for(TM *tm, void *vaddr, size_t pages, int rwx, bool user)
                   pages);
         return false;
     }
-    if ((umb_t)vaddr + pages * PAGE_SIZE >
-        (umb_t)vma->vaddr + vma->size)
-    {
+    if ((umb_t)vaddr + pages * PAGE_SIZE > (umb_t)vma->vaddr + vma->size) {
         log_error(
-            "alloc_pages_for: 分配范围超出VMA边界 vaddr=%p pages=%lu vma_vaddr=%p vma_size=%lu",
+            "alloc_pages_for: 分配范围超出VMA边界 vaddr=%p pages=%lu "
+            "vma_vaddr=%p vma_size=%lu",
             vaddr, pages, vma->vaddr, vma->size);
         return false;
     }
@@ -262,7 +303,8 @@ bool alloc_pages_for(TM *tm, void *vaddr, size_t pages, int rwx, bool user)
             block_pages = remain_pages;
         }
         // 分配成功, 映射该块
-        mem_maps_range_to(tm->pgd, cur_vaddr, paddr, block_pages, rwx, user, true);
+        mem_maps_range_to(tm->pgd, cur_vaddr, paddr, block_pages, rwx, user,
+                          true);
 
         // 重置paddr以便下一次分配
         paddr         = nullptr;
@@ -273,8 +315,7 @@ bool alloc_pages_for(TM *tm, void *vaddr, size_t pages, int rwx, bool user)
     return true;
 }
 
-bool on_np_page_fault(TM *tm, void *vaddr)
-{
+bool on_np_page_fault(TM *tm, void *vaddr) {
     VMA *vma = find_vma(tm, vaddr);
     if (vma == nullptr) {
         log_error("on_np_page_fault: 未找到对应VMA vaddr=%p", vaddr);
@@ -285,32 +326,29 @@ bool on_np_page_fault(TM *tm, void *vaddr)
     // 我们需要为其分配页
     // 我们暂时先一次分配4个页(16KB)
     size_t page_start = (umb_t)vaddr & ~(PAGE_SIZE - 1);
-    bool ret = alloc_pages_for(tm, (void *)page_start, 4, from_seg_to_rwx(vma->type),
-                    true);
-    if (! ret) {
+    bool ret          = alloc_pages_for(tm, (void *)page_start, 4,
+                                        from_seg_to_rwx(vma->type), true);
+    if (!ret) {
         log_error("on_np_page_fault: 为vaddr=%p分配页失败", vaddr);
         return false;
     }
     return true;
 }
 
-bool on_write_ro_page_fault(TM *tm, void *vaddr)
-{
+bool on_write_ro_page_fault(TM *tm, void *vaddr) {
     return false;
 }
 
-bool on_write_rx_page_fault(TM *tm, void *vaddr)
-{
+bool on_write_rx_page_fault(TM *tm, void *vaddr) {
     return false;
 }
 
-bool on_execute_rw_page_fault(TM *tm, void *vaddr)
-{
+bool on_execute_rw_page_fault(TM *tm, void *vaddr) {
     return false;
 }
 
-void memcpy_u2u(TM *dst_tm, void *dst_vaddr, TM *src_tm,
-                void *src_vaddr, size_t size) {
+void memcpy_u2u(TM *dst_tm, void *dst_vaddr, TM *src_tm, void *src_vaddr,
+                size_t size) {
     // 临时缓冲区
     void *temp_buf = kmalloc(size);
     if (temp_buf == nullptr) {
@@ -331,8 +369,8 @@ void memcpy_k2u(TM *tm, void *dst_vaddr, void *src_kaddr, size_t size) {
     // 从内核空间复制到用户空间
     // 我们从页表出发逐页复制
     void *cur_dst_vaddr = dst_vaddr;
-    void *cur_src_kaddr  = src_kaddr;
-    int remain_size      = size;
+    void *cur_src_kaddr = src_kaddr;
+    int remain_size     = size;
 
     while (remain_size > 0) {
         // 获得cur_dst_vaddr所在页表项
@@ -358,8 +396,8 @@ void memcpy_k2u(TM *tm, void *dst_vaddr, void *src_kaddr, size_t size) {
 
         // 更新指针和剩余大小
         cur_dst_vaddr  = (void *)((umb_t)cur_dst_vaddr + copysz);
-        cur_src_kaddr  += copysz;
-        remain_size    -= copysz;
+        cur_src_kaddr += copysz;
+        remain_size   -= copysz;
     }
 }
 
@@ -367,8 +405,8 @@ void memcpy_u2k(TM *tm, void *dst_kaddr, void *src_vaddr, size_t size) {
     // 这个与k2u是类似的, 只是反过来
 
     void *cur_dst_kaddr = dst_kaddr;
-    void *cur_src_vaddr  = src_vaddr;
-    int remain_size      = size;
+    void *cur_src_vaddr = src_vaddr;
+    int remain_size     = size;
 
     while (remain_size > 0) {
         // 获得cur_src_vaddr所在页表项
@@ -394,8 +432,8 @@ void memcpy_u2k(TM *tm, void *dst_kaddr, void *src_vaddr, size_t size) {
 
         // 更新指针和剩余大小
         cur_dst_kaddr  = (void *)((umb_t)cur_dst_kaddr + copysz);
-        cur_src_vaddr   = (void *)((umb_t)cur_src_vaddr + copysz);
-        remain_size    -= copysz;
+        cur_src_vaddr  = (void *)((umb_t)cur_src_vaddr + copysz);
+        remain_size   -= copysz;
     }
 }
 
@@ -433,7 +471,7 @@ void memset_u(TM *tm, void *vaddr, int byte, size_t size) {
 
 /**
  * @brief 用户空间内存比较
- * 
+ *
  * @param root1 页表根指针1
  * @param vaddr1 虚拟地址1
  * @param root2 页表根指针2
@@ -441,8 +479,7 @@ void memset_u(TM *tm, void *vaddr, int byte, size_t size) {
  * @param size 大小
  * @return int 比较结果
  */
-int memcmp_u2u(TM *tm1, void *vaddr1, TM *tm2, void *vaddr2, size_t size)
-{
+int memcmp_u2u(TM *tm1, void *vaddr1, TM *tm2, void *vaddr2, size_t size) {
     // 设置一个临时缓冲区
     void *temp_buf1 = kmalloc(size);
     if (temp_buf1 == nullptr) {
@@ -472,12 +509,12 @@ int memcmp_u2u(TM *tm1, void *vaddr1, TM *tm2, void *vaddr2, size_t size)
 
 void ua_start_access(void) {
     csr_sstatus_t sstatus = csr_get_sstatus();
-    sstatus.sum = 1;  // 允许S-MODE访问U-MODE内存
+    sstatus.sum           = 1;  // 允许S-MODE访问U-MODE内存
     csr_set_sstatus(sstatus);
 }
 
 void ua_end_access(void) {
     csr_sstatus_t sstatus = csr_get_sstatus();
-    sstatus.sum = 0;  // 禁止S-MODE访问U-MODE内存
+    sstatus.sum           = 0;  // 禁止S-MODE访问U-MODE内存
     csr_set_sstatus(sstatus);
 }
