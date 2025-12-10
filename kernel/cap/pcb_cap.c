@@ -57,7 +57,7 @@ void pcb_cap_yield(PCB *p, CapPtr ptr) {
     }
 
     // 让渡进程
-    pcb->state = PS_YIELD;
+    pcb->state = TS_YIELD;
 }
 
 void pcb_cap_exit(PCB *p, CapPtr ptr) {
@@ -70,7 +70,7 @@ void pcb_cap_exit(PCB *p, CapPtr ptr) {
     }
 
     // 结束进程
-    pcb->state = PS_ZOMBIE;
+    pcb->state = TS_ZOMBIE;
 }
 
 PCB *pcb_cap_fork(PCB *p, CapPtr ptr, CapPtr *child_cap) {

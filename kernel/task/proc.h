@@ -62,6 +62,13 @@ void proc_init(void);
 void terminate_pcb(PCB *p);
 
 /**
+ * @brief 清理TCB相关资源
+ * 
+ * @param t TCB指针
+ */
+void terminate_tcb(TCB *t);
+
+/**
  * @brief 初始化PCB
  *
  * @param p PCB
