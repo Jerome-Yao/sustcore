@@ -43,6 +43,7 @@ CapPtr sys_fork(CapPtr ptr) {
     // 主返回值为子进程的Capability
     arch_setup_argument(child->main_thread, 0, child_cap.val);
     arch_setup_argument(child->main_thread, 1, 0);
+    // TODO: 为子进程传递主线程的Capability
 
     // 主进程的副返回值为子进程的PID
     arch_setup_argument(cur_proc->current_thread, 1, (umb_t)(child->pid));
@@ -51,13 +52,8 @@ CapPtr sys_fork(CapPtr ptr) {
     // 应当通过架构相关方法获得
     *(child->main_thread->ip) += 4;
     // 返回子进程的能力
-    // 父进程对子进程享有全部权限
-    // TODO: 改成从child_cap中派生
-    return create_pcb_cap(cur_proc, child,
-                          (PCBCapPriv){.priv_yield  = true,
-                                       .priv_exit   = true,
-                                       .priv_fork   = true,
-                                       .priv_getpid = true});
+    // 父进程对子进程享有同等权限
+    return pcb_cap_clone(child, child_cap, cur_proc);
 }
 
 void sys_log(const char *msg) {

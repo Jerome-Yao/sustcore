@@ -50,30 +50,30 @@ typedef struct TCBStruct {
     void *entrypoint;
     /**
      * @brief 线程优先级
-     * 
+     *
      * 进程中的线程采取优先级调度.
      * 优先调度优先级高(数值低)的线程.
-     * 
+     *
      */
     int priority;
     /**
      * @brief 线程状态
-     * 
+     *
      */
     ThreadState state;
     /**
      * @brief 线程上下文
-     * 
+     *
      */
     RegCtx *ctx;
     /**
      * @brief 线程指令指针
-     * 
+     *
      */
     void **ip;
     /**
      * @brief 线程栈指针
-     * 
+     *
      */
     void **sp;
 } TCB;
@@ -102,6 +102,8 @@ typedef struct PCBStruct {
     ThreadState state;
     // 进程内存信息
     TM *tm;
+    // 线程栈基址
+    void *thread_stack_base;
 
     // 进程优先级
     int rp_level;
@@ -169,8 +171,8 @@ typedef struct PCBStruct {
 
 #define CAPABILITY_LIST(task) task->all_cap_head, task->all_cap_tail, next, prev
 
-#define THREAD_LIST(task) \
-    task->threads_head, task->threads_tail, next, prev
+#define THREAD_LIST(task) task->threads_head, task->threads_tail, next, prev
 
-#define READY_THREAD_LIST(task) \
-    task->ready_threads_head, task->ready_threads_tail, snext, sprev, priority, ascending
+#define READY_THREAD_LIST(task)                                       \
+    task->ready_threads_head, task->ready_threads_tail, snext, sprev, \
+        priority, ascending

@@ -9,9 +9,9 @@
  *
  */
 
+#include <mem/kmem.h>
 #include <sus/list_helper.h>
 #include <sus/paging.h>
-#include <mem/kmem.h>
 #include <task/scheduler.h>
 
 #ifdef DLOG_TASK
@@ -91,7 +91,7 @@ static PCB *fetch_ready_process(void) {
 
 /**
  * @brief 获得进程中的下一个就绪线程, 同时将其弹出就绪队列
- * 
+ *
  * @param p 进程PCB指针
  * @return TCB* 下一个就绪线程的TCB指针, 如果是nullptr, 则表示没有就绪线程
  */
@@ -104,10 +104,12 @@ static TCB *fetch_ready_thread(PCB *p) {
     TCB *t;
     // 获得优先级最高的就绪线程
     ordered_list_front(t, READY_THREAD_LIST(p));
+
+    bool p_ready = (p->current_thread != nullptr &&
+                    p->current_thread->state == TS_RUNNING);
+
     // 与当前线程比较
-    if (p->current_thread != nullptr &&
-        p->current_thread->state == TS_RUNNING &&
-        p->current_thread->priority <= t->priority)
+    if (p_ready && (t == nullptr || t->priority >= p->current_thread->priority))
     {
         // 继续运行当前线程
         return p->current_thread;
@@ -136,17 +138,16 @@ void schedule(RegCtx **ctx, int time_gap) {
         cur_proc->current_thread->ctx = *ctx;
     }
     // 如果是rp3进程, 更新其运行时间统计
-    if (cur_proc->rp_level == 3)
-    {
+    if (cur_proc->rp_level == 3) {
         cur_proc->run_time += time_gap;  // TODO: 根据已经过去的周期数进行更新
     }
 
     // 获取下一个就绪进程
-    PCB *next_proc = fetch_ready_process();
+    PCB *next_proc   = fetch_ready_process();
     bool switch_proc = (next_proc != cur_proc);
 
     // 继续运行当前进程
-    if (! switch_proc) {
+    if (!switch_proc) {
         log_debug("继续运行当前进程 (pid=%d), rp_level = %d", cur_proc->pid,
                   cur_proc->rp_level);
         if (cur_proc->rp_level == 1) {
@@ -177,12 +178,13 @@ void schedule(RegCtx **ctx, int time_gap) {
     TCB *next_thread = fetch_ready_thread(next_proc);
     if (next_thread == nullptr) {
         log_error("schedule: 进程 (pid=%d) 没有可运行的线程", next_proc->pid);
-        return;;
+        return;
+        ;
     }
     bool switch_thread = (next_thread != next_proc->current_thread);
 
     // 如果没发生进程切换, 更新时间片计数器
-    if (! switch_proc) {
+    if (!switch_proc) {
         // 如果是rp1/rp2进程, 则更新其时间片计数器
         if (time_gap > 0) {
             if (cur_proc->rp_level == 1) {
@@ -194,7 +196,7 @@ void schedule(RegCtx **ctx, int time_gap) {
     }
 
     // 如果不需要切换进程和线程, 则直接返回
-    if (! switch_proc && ! switch_thread) {
+    if (!switch_proc && !switch_thread) {
         return;
     }
 
@@ -235,7 +237,7 @@ void schedule(RegCtx **ctx, int time_gap) {
 
         // 更新页表
         log_info("切换页表到进程 (pid=%d) 的页表 %p", cur_proc->pid,
-                cur_proc->tm->pgd);
+                 cur_proc->tm->pgd);
         mem_switch_root(KPA2PA(cur_proc->tm->pgd));
     }
 
@@ -248,23 +250,27 @@ void schedule(RegCtx **ctx, int time_gap) {
         // 更新切换前线程状态
         if (cur_proc->current_thread != nullptr) {
             // 如果当前线程仍然是RUNNING或YIELD状态, 则将其设为READY
-            if (cur_proc->current_thread->state == TS_RUNNING || cur_proc->current_thread->state == TS_YIELD) {
+            if (cur_proc->current_thread->state == TS_RUNNING ||
+                cur_proc->current_thread->state == TS_YIELD)
+            {
                 cur_proc->current_thread->state = TS_READY;
                 // 加入到就绪队列
-                ordered_list_insert(cur_proc->current_thread, READY_THREAD_LIST(cur_proc));
+                ordered_list_insert(cur_proc->current_thread,
+                                    READY_THREAD_LIST(cur_proc));
             }
             // 如果线程状态为ZOMBIE, 则进行资源清理
             if (cur_proc->current_thread->state == TS_ZOMBIE) {
-                log_info("线程 (tid=%d) 进入僵尸状态, 进行资源清理", cur_proc->current_thread->tid);
+                log_info("线程 (tid=%d) 进入僵尸状态, 进行资源清理",
+                         cur_proc->current_thread->tid);
                 // 释放相关资源
                 terminate_tcb(cur_proc->current_thread);
             }
         }
         // 切换到下一个线程
-        cur_proc->current_thread = next_thread;
+        cur_proc->current_thread        = next_thread;
         cur_proc->current_thread->state = TS_RUNNING;
         // 更新上下文
-        *ctx = cur_proc->current_thread->ctx;
+        *ctx                            = cur_proc->current_thread->ctx;
     }
 }
 

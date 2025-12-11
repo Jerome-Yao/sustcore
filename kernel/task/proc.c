@@ -159,11 +159,11 @@ PCB *create_pcb(TM *tm, int rp_level, PCB *parent) {
 
 /**
  * @brief 创建线程控制块
- * 
+ *
  * @param proc 进程PCB指针
  * @param entrypoint 线程入口点
  * @param stack 线程栈指针
- * @return TCB* 
+ * @return TCB*
  */
 TCB *create_tcb(PCB *proc, int priority) {
     if (proc == nullptr) {
@@ -176,17 +176,17 @@ TCB *create_tcb(PCB *proc, int priority) {
     memset(t, 0, sizeof(TCB));
 
     // 设置基本信息
-    t->tid = get_current_tid();
+    t->tid      = get_current_tid();
     t->priority = priority;
 
     // 初始化内核栈
-    t->kstack = (umb_t *)kmalloc(PAGE_SIZE);
+    t->kstack = kmalloc(PAGE_SIZE);
     memset(t->kstack, 0, PAGE_SIZE);
 
     // 在内核栈中预留空间存放上下文
-    void *stack_top  = (void *)((umb_t)t->kstack + PAGE_SIZE);
-    stack_top        -= sizeof(RegCtx) / sizeof(umb_t);
-    t->ctx            = (RegCtx *)stack_top;
+    void *stack_top  = t->kstack + PAGE_SIZE;
+    stack_top       -= sizeof(RegCtx);
+    t->ctx           = (RegCtx *)stack_top;
     memset(t->ctx, 0, sizeof(RegCtx));
 
     // 设置架构相关内容
@@ -201,11 +201,11 @@ TCB *create_tcb(PCB *proc, int priority) {
 
 /**
  * @brief 创建线程控制块
- * 
+ *
  * @param proc 进程PCB指针
  * @param entrypoint 线程入口点
  * @param stack 线程栈指针
- * @return TCB* 
+ * @return TCB*
  */
 TCB *new_thread(PCB *proc, void *entrypoint, void *stack, int priority) {
     if (entrypoint == nullptr) {
@@ -218,14 +218,8 @@ TCB *new_thread(PCB *proc, void *entrypoint, void *stack, int priority) {
         return nullptr;
     }
 
-    TCB *t = create_tcb(proc, priority);
+    TCB *t        = create_tcb(proc, priority);
     t->entrypoint = entrypoint;
-
-    // 添加线程栈到VMA
-    // 线程栈大小64KB(从stack向下增长)
-    add_vma(proc->tm, stack - 16 * PAGE_SIZE, 16 * PAGE_SIZE, VMAT_STACK);
-    // 预分配线程栈顶页
-    alloc_pages_for(proc->tm, stack - PAGE_SIZE, 1, RWX_MODE_RW, true);
 
     // 设置ip, sp
     *t->ip = entrypoint;
@@ -236,8 +230,8 @@ TCB *new_thread(PCB *proc, void *entrypoint, void *stack, int priority) {
     return t;
 }
 
-PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, PCB *parent)
-{
+PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level,
+              PCB *parent) {
     if (stack == nullptr) {
         log_error("new_task: 无效的栈地址");
         return nullptr;
@@ -254,6 +248,7 @@ PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, P
         log_error("new_task: 无法创建PCB");
         return nullptr;
     }
+    p->thread_stack_base = (void *)THREAD_STACK_BASE;
 
     // 初始化进程
     // 设置128MB的堆
@@ -261,18 +256,24 @@ PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level, P
     // 预分配4KB
     alloc_pages_for(p->tm, heap, 1, RWX_MODE_RW, true);
 
-    // 创建主线程
-    p->main_thread = new_thread(p, entrypoint, stack, 0);
+    // 添加主线程栈到VMA
+    // 主线程栈大小64KB(从stack向下增长)
+    add_vma(p->tm, stack - 16 * PAGE_SIZE, 16 * PAGE_SIZE, VMAT_STACK);
+    // 预分配主线程栈顶页
+    alloc_pages_for(p->tm, stack - PAGE_SIZE, 1, RWX_MODE_RW, true);
+    p->main_thread    = new_thread(p, entrypoint, stack, 0);
     p->current_thread = nullptr;
 
     // 为当前进程构造自己的PCB能力
-    CapPtr pcb_cap_ptr = create_pcb_cap(p, p,
-                                        (PCBCapPriv){
-                                            .priv_yield = true,
-                                            .priv_exit  = true,
-                                            .priv_fork  = true,
-                                            .priv_getpid = true,
-                                        });
+    CapPtr pcb_cap_ptr =
+        create_pcb_cap(p, p,
+                       (PCBCapPriv){.priv_unwrap        = true,
+                                    .priv_derive        = true,
+                                    .priv_yield         = true,
+                                    .priv_exit          = true,
+                                    .priv_fork          = true,
+                                    .priv_getpid        = true,
+                                    .priv_create_thread = true});
     // 将PCB能力传递给进程作为第一个参数
     arch_setup_argument(p->main_thread, 0, pcb_cap_ptr.val);
 
@@ -300,7 +301,7 @@ TCB *fork_thread(PCB *proc, TCB *parent_thread) {
     }
 
     // 创建新的线程
-    TCB *t = create_tcb(proc, parent_thread->priority);
+    TCB *t        = create_tcb(proc, parent_thread->priority);
     t->entrypoint = parent_thread->entrypoint;
     if (t == nullptr) {
         log_error("fork_thread: 无法创建子线程");
@@ -343,7 +344,7 @@ PCB *fork_task(PCB *parent) {
         terminate_pcb(p);
         return nullptr;
     }
-    p->main_thread = child_main_thread;
+    p->main_thread    = child_main_thread;
     p->current_thread = nullptr;
 
     // 将主线程加入到就绪线程链表
@@ -358,4 +359,40 @@ PCB *fork_task(PCB *parent) {
 
     mem_display_mapping_layout(p->tm->pgd);
     return p;
+}
+
+/**
+ * @brief 分配线程栈
+ *
+ * @param proc 进程PCB指针
+ * @param size 线程栈大小
+ *
+ * @return void* 线程栈顶地址
+ */
+void *alloc_thread_stack(PCB *proc, size_t size) {
+    if (proc == nullptr) {
+        log_error("alloc_thread_stack: 无效的进程指针");
+        return nullptr;
+    }
+
+    // 对齐栈大小到页边界
+    size_t aligned_size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    // 计算栈顶地址
+    void *stack_top = proc->thread_stack_base;
+
+    // 计算栈底地址
+    void *stack_bottom = stack_top - aligned_size;
+
+    // 更新进程的线程栈基址
+    proc->thread_stack_base = stack_bottom;
+
+    // 添加VMA
+    add_vma(proc->tm, stack_bottom, aligned_size, VMAT_STACK);
+
+    // 预分配栈空间的栈顶页
+    size_t num_pages = aligned_size / PAGE_SIZE;
+    alloc_pages_for(proc->tm, stack_top - PAGE_SIZE, 1, RWX_MODE_RW, true);
+
+    return stack_top;
 }
