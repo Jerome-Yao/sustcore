@@ -140,7 +140,7 @@ CapPtr sys_create_thread(PCB *p, TCB *t, CapPtr ptr, void *entrypoint,
     // 创建新线程
     CapPtr tcb_ptr = pcb_cap_create_thread(p, ptr, entrypoint, priority);
     // 也将该能力传递给新线程
-    TCB *tcb       = tcb_cap_unwrap(p, tcb_ptr);
+    TCB *tcb       = tcb_cap_unpack(p, tcb_ptr);
     arch_setup_argument(tcb, 0, tcb_ptr.val);
     return tcb_ptr;
 }

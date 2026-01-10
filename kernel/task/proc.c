@@ -379,23 +379,7 @@ void remove_from_cspace(Capability *cap) {
  * @param cap 能力节点
  */
 void terminate_cap_tree(Capability *cap) {
-    // 递归删除子节点
-    Capability *child;
-    foreach_list(child, CHILDREN_CAP_LIST(cap)) {
-        terminate_cap_tree(child);
-    }
-    // 从进程能力链表中移除
-    list_remove(cap, CAPABILITY_LIST(cap->pcb));
-    // 释放cap_priv
-    if (cap->cap_priv != nullptr) {
-        kfree(cap->cap_priv);
-        cap->cap_priv = nullptr;
-    }
-
-    remove_from_cspace(cap);
-
-    // 释放能力结构体
-    kfree(cap);
+    // TODO: 实现该函数
 }
 
 void terminate_caps(PCB *p) {

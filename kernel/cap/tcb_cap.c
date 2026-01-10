@@ -20,30 +20,55 @@
 
 #include <basec/logger.h>
 
-CapPtr create_tcb_cap(PCB *p, TCB *tcb) {
-    TCBCapPriv default_priv = {
-        .priv_unwrap            = true,
-        .priv_set_priority      = true,
-        .priv_suspend           = true,
-        .priv_resume            = true,
-        .priv_terminate         = true,
-        .priv_yield             = true,
-        .priv_wait_notification = true,
-    };
+const qword TCB_PRIV_SET_PRIORITY[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0001ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
 
-    TCBCapPriv *priv = (TCBCapPriv *)kmalloc(sizeof(TCBCapPriv));
-    memcpy(priv, &default_priv, sizeof(TCBCapPriv));
-    return create_cap(p, CAP_TYPE_TCB, (void *)tcb, (void *)priv);
+const qword TCB_PRIV_SUSPEND[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0002ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+const qword TCB_PRIV_RESUME[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0004ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+const qword TCB_PRIV_TERMINATE[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0008ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+const qword TCB_PRIV_YIELD[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0010ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+const qword TCB_PRIV_WAIT_NOTIFICATION[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0020ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+CapPtr create_tcb_cap(PCB *p, TCB *tcb) {
+    return create_cap(p, CAP_TYPE_TCB, (void *)tcb, CAP_ALL_PRIV, nullptr);
 }
 
-TCB *tcb_cap_unwrap(PCB *p, CapPtr ptr) {
-    TCB_CAP_START(p, ptr, tcb_cap_unwrap, cap, tcb, priv, nullptr);
-
-    // 是否有对应权限
-    if (!priv->priv_unwrap) {
-        log_error("该能力不具有unwrap权限!");
-        return nullptr;
-    }
+TCB *tcb_cap_unpack(PCB *p, CapPtr cap_ptr) {
+    TCB_CAP_START(p, cap_ptr, tcb_cap_unpack, cap, tcb, CAP_PRIV_UNPACK,
+                  nullptr);
 
     return tcb;
 }
@@ -54,14 +79,8 @@ TCB *tcb_cap_unwrap(PCB *p, CapPtr ptr) {
  * @param p 当前进程的PCB
  * @param ptr 能力指针
  */
-void tcb_cap_yield(PCB *p, CapPtr ptr) {
-    TCB_CAP_START(p, ptr, tcb_cap_yield, cap, tcb, priv, );
-
-    // 是否有对应权限
-    if (!priv->priv_yield) {
-        log_error("该能力不具有yield权限!");
-        return;
-    }
+void tcb_cap_yield(PCB *p, CapPtr cap_ptr) {
+    TCB_CAP_START(p, cap_ptr, tcb_cap_yield, cap, tcb, TCB_PRIV_YIELD, );
 
     // 切换线程状态到yield
     if (tcb->state != TS_RUNNING) {

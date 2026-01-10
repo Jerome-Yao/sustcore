@@ -14,22 +14,12 @@
 #include <cap/capability.h>
 #include <task/task_struct.h>
 
-// TCB能力
-typedef struct {
-    bool priv_unwrap;
-    // 设置线程优先级的能力
-    bool priv_set_priority;
-    // 挂起线程的能力
-    bool priv_suspend;
-    // 恢复线程的能力
-    bool priv_resume;
-    // 终止线程的能力
-    bool priv_terminate;
-    // 让出CPU的能力
-    bool priv_yield;
-    // 等待通知的能力
-    bool priv_wait_notification;
-} TCBCapPriv;
+extern const qword TCB_PRIV_SET_PRIORITY[PRIVILEDGE_QWORDS];
+extern const qword TCB_PRIV_SUSPEND[PRIVILEDGE_QWORDS];
+extern const qword TCB_PRIV_RESUME[PRIVILEDGE_QWORDS];
+extern const qword TCB_PRIV_TERMINATE[PRIVILEDGE_QWORDS];
+extern const qword TCB_PRIV_YIELD[PRIVILEDGE_QWORDS];
+extern const qword TCB_PRIV_WAIT_NOTIFICATION[PRIVILEDGE_QWORDS];
 
 /**
  * @brief 构造TCB能力
@@ -44,36 +34,39 @@ CapPtr create_tcb_cap(PCB *p, TCB *tcb);
  * @brief 解包TCB能力, 获得TCB指针
  *
  * @param p 当前进程PCB指针
- * @param ptr 能力指针
+ * @param cap_ptr 能力指针
  * @return TCB* TCB指针
  */
-TCB *tcb_cap_unwrap(PCB *p, CapPtr ptr);
+TCB *tcb_cap_unpack(PCB *p, CapPtr cap_ptr);
 
 /**
  * @brief 将线程切换到yield状态
  *
  * @param p 当前进程的PCB
- * @param ptr 能力指针
+ * @param cap_ptr 能力指针
  */
-void tcb_cap_yield(PCB *p, CapPtr ptr);
+void tcb_cap_yield(PCB *p, CapPtr cap_ptr);
 
-#define TCB_CAP_START(p, ptr, fun, cap, tcb, priv, ret) \
-    Capability *cap = fetch_cap(p, ptr);                \
-    if (cap == nullptr) {                               \
-        log_error(#fun ":指针指向的能力不存在!");       \
-        return ret;                                     \
-    }                                                   \
-    if (cap->type != CAP_TYPE_TCB) {                    \
-        log_error(#fun ":该能力不为TCB能力!");          \
-        return ret;                                     \
-    }                                                   \
-    if (cap->cap_data == nullptr) {                     \
-        log_error(#fun ":能力数据为空!");               \
-        return ret;                                     \
-    }                                                   \
-    if (cap->cap_priv == nullptr) {                     \
-        log_error(#fun ":能力权限为空!");               \
-        return ret;                                     \
-    }                                                   \
-    TCB *tcb         = (TCB *)cap->cap_data;            \
-    TCBCapPriv *priv = (TCBCapPriv *)cap->cap_priv
+#define TCB_CAP_START(proc, cap_ptr, func_name, cap, tcb, priv_check, ret_val) \
+    Capability *cap = fetch_cap(proc, cap_ptr);                                \
+    if (cap == nullptr) {                                                      \
+        log_error(#func_name ":指针指向的能力不存在!");                        \
+        return ret_val;                                                        \
+    }                                                                          \
+    if (cap->type != CAP_TYPE_TCB) {                                           \
+        log_error(#func_name ":该能力不为TCB能力!");                           \
+        return ret_val;                                                        \
+    }                                                                          \
+    if (cap->cap_data == nullptr) {                                            \
+        log_error(#func_name ":能力数据为空!");                                \
+        return ret_val;                                                        \
+    }                                                                          \
+    if (cap->cap_priv == nullptr) {                                            \
+        log_error(#func_name ":能力权限为空!");                                \
+        return ret_val;                                                        \
+    }                                                                          \
+    TCB *tcb = (TCB *)cap->cap_data;                                           \
+    if (!derivable(cap->cap_priv, priv_check)) {                               \
+        log_error(#func_name ":能力权限不足!");                                \
+        return ret_val;                                                        \
+    }

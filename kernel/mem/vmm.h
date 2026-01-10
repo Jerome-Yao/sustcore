@@ -26,6 +26,7 @@ typedef enum {
     VMAT_SHARE_RWX = 9
 } VMAType;
 
+// Virtual Memory Area
 typedef struct VMAStruct {
     struct VMAStruct *prev;
     struct VMAStruct *next;

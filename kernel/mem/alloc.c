@@ -194,7 +194,7 @@ static size_t heap_free_dwords = 0;
  * @brief 分配一个堆页索引
  *
  */
-static bool alloc_heap_page() {
+static bool alloc_heap_page(void) {
     // 首先请求一个order 5内存块
     void *new_heap_pages = PA2KPA(alloc_pages_in_order(5));
     if (new_heap_pages == nullptr) {

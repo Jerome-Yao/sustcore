@@ -22,19 +22,108 @@
 #endif
 #include <basec/logger.h>
 
+const NotCapPriv NOTIFICATION_ALL_PRIV = {
+    .priv_check = {QWORD_MAX, QWORD_MAX, QWORD_MAX, QWORD_MAX},
+    .priv_set   = {QWORD_MAX, QWORD_MAX, QWORD_MAX, QWORD_MAX},
+    .priv_reset = {QWORD_MAX, QWORD_MAX, QWORD_MAX, QWORD_MAX},
+};
+
+const NotCapPriv NOTIFICATION_NONE_PRIV = {
+    .priv_check = {0, 0, 0, 0},
+    .priv_set   = {0, 0, 0, 0},
+    .priv_reset = {0, 0, 0, 0},
+};
+
+static int nid_qword_idx(int nid) {
+    return nid / 64;
+}
+
+static int nid_bit_idx(int nid) {
+    return nid % 64;
+}
+
+NotCapPriv *not_priv_set(NotCapPriv *priv, int nid) {
+    int qword_index = nid_qword_idx(nid);
+    int bit_index   = nid_bit_idx(nid);
+
+    if (0 > qword_index || qword_index >= NOTIFICATION_BITMAP_QWORDS) {
+        log_error("通知ID超出范围!");
+        return priv;
+    }
+
+    if (bit_index < 0 || bit_index >= 64) {
+        log_error("通知ID超出范围!");
+        return priv;
+    }
+
+    priv->priv_set[qword_index] |= (1UL << bit_index);
+    return priv;
+}
+
+NotCapPriv *not_priv_reset(NotCapPriv *priv, int nid) {
+    int qword_index = nid_qword_idx(nid);
+    int bit_index   = nid_bit_idx(nid);
+
+    if (0 > qword_index || qword_index >= NOTIFICATION_BITMAP_QWORDS) {
+        log_error("通知ID超出范围!");
+        return priv;
+    }
+
+    if (bit_index < 0 || bit_index >= 64) {
+        log_error("通知ID超出范围!");
+        return priv;
+    }
+
+    priv->priv_reset[qword_index] |= (1UL << bit_index);
+    return priv;
+}
+
+NotCapPriv *not_priv_check(NotCapPriv *priv, int nid) {
+    int qword_index = nid_qword_idx(nid);
+    int bit_index   = nid_bit_idx(nid);
+
+    if (0 > qword_index || qword_index >= NOTIFICATION_BITMAP_QWORDS) {
+        log_error("通知ID超出范围!");
+        return priv;
+    }
+
+    if (bit_index < 0 || bit_index >= 64) {
+        log_error("通知ID超出范围!");
+        return priv;
+    }
+
+    priv->priv_check[qword_index] |= (1UL << bit_index);
+    return priv;
+}
+
+bool notification_derivable(const NotCapPriv *parent_priv, const NotCapPriv *child_priv)
+{
+    for (int i = 0; i < NOTIFICATION_BITMAP_QWORDS; i++) {
+        if ((parent_priv->priv_set[i] & child_priv->priv_set[i]) !=
+            child_priv->priv_set[i])
+        {
+            return false;
+        }
+        if ((parent_priv->priv_reset[i] & child_priv->priv_reset[i]) !=
+            child_priv->priv_reset[i])
+        {
+            return false;
+        }
+        if ((parent_priv->priv_check[i] & child_priv->priv_check[i]) !=
+            child_priv->priv_check[i])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 static int NID_COUNTER = 0;
 
 CapPtr create_notification_cap(PCB *p) {
-    static const NotificationCapPriv NOTIFICATION_ALL_PRIV = {
-        .priv_check  = {QWORD_MAX, QWORD_MAX, QWORD_MAX, QWORD_MAX},
-        .priv_set    = {QWORD_MAX, QWORD_MAX, QWORD_MAX, QWORD_MAX},
-        .priv_reset  = {QWORD_MAX, QWORD_MAX, QWORD_MAX, QWORD_MAX},
-        .priv_derive = true};
-
     // 构造权限
-    NotificationCapPriv *priv =
-        (NotificationCapPriv *)kmalloc(sizeof(NotificationCapPriv));
-    memcpy(priv, &NOTIFICATION_ALL_PRIV, sizeof(NotificationCapPriv));
+    NotCapPriv *priv = (NotCapPriv *)kmalloc(sizeof(NotCapPriv));
+    memcpy(priv, &NOTIFICATION_ALL_PRIV, sizeof(NotCapPriv));
 
     // 构造通知
     Notification *notif = (Notification *)kmalloc(sizeof(Notification));
@@ -42,7 +131,8 @@ CapPtr create_notification_cap(PCB *p) {
     notif->notif_id = NID_COUNTER;
     NID_COUNTER++;
 
-    return create_cap(p, CAP_TYPE_NOT, (void *)notif, (void *)priv);
+    return create_cap(p, CAP_TYPE_NOT, (void *)notif, CAP_ALL_PRIV,
+                      (void *)priv);
 }
 
 /**
@@ -55,41 +145,32 @@ CapPtr create_notification_cap(PCB *p) {
  * @return CapPtr 派生出的能力指针
  */
 CapPtr not_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p,
-                      NotificationCapPriv priv) {
-    NOT_CAP_START(src_p, src_ptr, not_cap_derive, cap, notif, old_priv,
-                  INVALID_CAP_PTR);
-
+                      qword cap_priv[PRIVILEDGE_QWORDS],
+                      NotCapPriv *notif_priv) {
+    NOT_CAP_START(src_p, src_ptr, not_cap_derive, cap, notif, CAP_NONE_PRIV,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
-    if (!old_priv->priv_derive) {
-        log_error("该能力不具有derive权限!");
+    // Capability权限由derive_cap检查
+    // 此处检查通知权限
+    // 并申请一块内存来拷贝权限数据
+    if (!notification_derivable((NotCapPriv *)cap->attached_priv, notif_priv)) {
+        log_error("not_cap_derive: 父能力权限不包含子能力权限, 无法派生!");
         return INVALID_CAP_PTR;
     }
 
-    // 检查新权限是否有效
-    // 逐个QWORD检查
-    // 新权限位图必须是旧权限位图的子集
-    // 即 old_priv => priv
-    for (int i = 0; i < NOTIFICATION_BITMAP_QWORDS; i++) {
-        if (!BITS_IMPLIES(old_priv->priv_check[i], priv.priv_check[i]) ||
-            !BITS_IMPLIES(old_priv->priv_set[i], priv.priv_set[i]) ||
-            !BITS_IMPLIES(old_priv->priv_reset[i], priv.priv_reset[i]))
-        {
-            log_error("派生的权限无效!");
-            return INVALID_CAP_PTR;
-        }
-    }
-
-    if (!BOOL_IMPLIES(old_priv->priv_derive, priv.priv_derive)) {
-        log_error("派生的权限无效!");
-        return INVALID_CAP_PTR;
-    }
+    NotCapPriv *new_notif_priv = (NotCapPriv *)kmalloc(sizeof(NotCapPriv));
+    memcpy(new_notif_priv, notif_priv, sizeof(NotCapPriv));
 
     // 进行派生
-    NotificationCapPriv *new_priv =
-        (NotificationCapPriv *)kmalloc(sizeof(NotificationCapPriv));
-    memcpy(new_priv, &priv, sizeof(NotificationCapPriv));
-    return derive_cap(dst_p, cap, (void *)new_priv);
+    CapPtr ptr = derive_cap(dst_p, cap, cap_priv, (void *)new_notif_priv);
+    if (ptr.val == INVALID_CAP_PTR.val) {
+        // 派生失败, 释放内存
+        kfree(new_notif_priv);
+        return INVALID_CAP_PTR;
+    }
+
+    return ptr;
 }
 
 /**
@@ -101,13 +182,13 @@ CapPtr not_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p,
  * @return CapPtr 派生出的能力指针
  */
 CapPtr not_cap_clone(PCB *src_p, CapPtr src_ptr, PCB *dst_p) {
-    NOT_CAP_START(src_p, src_ptr, not_cap_clone, cap, notif, old_priv,
-                  INVALID_CAP_PTR);
-
+    NOT_CAP_START(src_p, src_ptr, not_cap_derive, cap, notif, CAP_NONE_PRIV,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
     // 进行完全克隆
-    return not_cap_derive(src_p, src_ptr, dst_p, *old_priv);
+    return not_cap_derive(src_p, src_ptr, dst_p, cap->cap_priv,
+                          (NotCapPriv *)cap->attached_priv);
 }
 
 void check_notification(Notification *notif) {
@@ -137,30 +218,21 @@ void check_notification(Notification *notif) {
     }
 }
 
-void not_cap_set(PCB *p, CapPtr ptr, int notification_id) {
-    NOT_CAP_START(p, ptr, not_cap_set, cap, notif, priv, );
+void not_cap_set(PCB *p, CapPtr cap_ptr, int nid) {
+    // 计算需要的权限
+    NotCapPriv required_priv = {
+        .priv_check = {0, 0, 0, 0},
+        .priv_set   = {0, 0, 0, 0},
+        .priv_reset = {0, 0, 0, 0},
+    };
+    not_priv_set(&required_priv, nid);
 
-    int qword_index = notification_id / 64;
-    int bit_index   = notification_id % 64;
-
-    if (0 > qword_index || qword_index >= NOTIFICATION_BITMAP_QWORDS) {
-        log_error("通知ID超出范围!");
-        return;
-    }
-
-    if (bit_index < 0 || bit_index >= 64) {
-        log_error("通知ID超出范围!");
-        return;
-    }
-
-    // 检查权限
-    if ((priv->priv_set[qword_index] & (1UL << bit_index)) == 0) {
-        log_error("该能力不具有设置该通知ID的权限!");
-        return;
-    }
+    // 处理能力指针并校验能力
+    NOT_CAP_START(p, cap_ptr, not_cap_set, cap, notif, CAP_NONE_PRIV,
+                  &required_priv, );
 
     // 设置通知位
-    notif->bitmap[qword_index] |= (1UL << bit_index);
+    notif->bitmap[nid_qword_idx(nid)] |= (1UL << nid_bit_idx(nid));
 
     // 检查是否有线程/进程在等待该通知, 并唤醒它们
     check_notification(notif);
@@ -171,32 +243,23 @@ void not_cap_set(PCB *p, CapPtr ptr, int notification_id) {
  *
  * @param p 当前进程PCB指针
  * @param ptr 能力指针
- * @param notification_id 通知ID (0-255)
+ * @param nid 通知ID (0-255)
  */
-void not_cap_reset(PCB *p, CapPtr ptr, int notification_id) {
-    NOT_CAP_START(p, ptr, not_cap_reset, cap, notif, priv, );
+void not_cap_reset(PCB *p, CapPtr cap_ptr, int nid) {
+    // 计算需要的权限
+    NotCapPriv required_priv = {
+        .priv_check = {0, 0, 0, 0},
+        .priv_set   = {0, 0, 0, 0},
+        .priv_reset = {0, 0, 0, 0},
+    };
+    not_priv_reset(&required_priv, nid);
 
-    int qword_index = notification_id / 64;
-    int bit_index   = notification_id % 64;
+    // 处理能力指针并校验能力
+    NOT_CAP_START(p, cap_ptr, not_cap_set, cap, notif, CAP_NONE_PRIV,
+                  &required_priv, );
 
-    if (0 > qword_index || qword_index >= NOTIFICATION_BITMAP_QWORDS) {
-        log_error("通知ID超出范围!");
-        return;
-    }
-
-    if (bit_index < 0 || bit_index >= 64) {
-        log_error("通知ID超出范围!");
-        return;
-    }
-
-    // 检查权限
-    if ((priv->priv_reset[qword_index] & (1UL << bit_index)) == 0) {
-        log_error("该能力不具有清除该通知ID的权限!");
-        return;
-    }
-
-    // 清除通知位
-    notif->bitmap[qword_index] &= ~(1UL << bit_index);
+    // 设置通知位
+    notif->bitmap[nid_qword_idx(nid)] &= ~(1UL << nid_bit_idx(nid));
 }
 
 /**
@@ -204,34 +267,25 @@ void not_cap_reset(PCB *p, CapPtr ptr, int notification_id) {
  *
  * @param p 当前进程PCB指针
  * @param ptr 能力指针
- * @param notification_id 通知ID (0-255)
+ * @param nid 通知ID (0-255)
  * @return true 通知已设置
  * @return false 通知未设置
  */
-bool not_cap_check(PCB *p, CapPtr ptr, int notification_id) {
-    NOT_CAP_START(p, ptr, not_cap_reset, cap, notif, priv, false);
+bool not_cap_check(PCB *p, CapPtr cap_ptr, int nid) {
+    // 计算需要的权限
+    NotCapPriv required_priv = {
+        .priv_check = {0, 0, 0, 0},
+        .priv_set   = {0, 0, 0, 0},
+        .priv_reset = {0, 0, 0, 0},
+    };
+    not_priv_check(&required_priv, nid);
 
-    int qword_index = notification_id / 64;
-    int bit_index   = notification_id % 64;
-
-    if (0 > qword_index || qword_index >= NOTIFICATION_BITMAP_QWORDS) {
-        log_error("通知ID超出范围!");
-        return false;
-    }
-
-    if (bit_index < 0 || bit_index >= 64) {
-        log_error("通知ID超出范围!");
-        return false;
-    }
-
-    // 检查权限
-    if ((priv->priv_reset[qword_index] & (1UL << bit_index)) == 0) {
-        log_error("该能力不具有检查该通知ID的权限!");
-        return false;
-    }
+    // 处理能力指针并校验能力
+    NOT_CAP_START(p, cap_ptr, not_cap_set, cap, notif, CAP_NONE_PRIV,
+                  &required_priv, false);
 
     // 检查通知位
-    return (notif->bitmap[qword_index] & (1UL << bit_index)) != 0;
+    return (notif->bitmap[nid_qword_idx(nid)] & (1UL << nid_bit_idx(nid))) != 0;
 }
 
 /**
@@ -246,24 +300,19 @@ bool not_cap_check(PCB *p, CapPtr ptr, int notification_id) {
  */
 bool tcb_cap_wait_notification(PCB *p, CapPtr tcb_ptr, CapPtr not_ptr,
                                qword *wait_bitmap) {
-    NOT_CAP_START(p, not_ptr, pcb_cap_wait_notification, not_cap, notif,
-                  not_priv, false);
-    TCB_CAP_START(p, tcb_ptr, pcb_cap_wait_notification, tcb_cap, tcb, tcb_priv,
-                  false);
+    // 计算需要的权限
+    NotCapPriv required_priv = {
+        .priv_check = {0, 0, 0, 0},
+        .priv_set   = {0, 0, 0, 0},
+        .priv_reset = {0, 0, 0, 0},
+    };
+    memcpy(&required_priv.priv_check, wait_bitmap,
+           sizeof(qword) * NOTIFICATION_BITMAP_QWORDS);
+    NOT_CAP_START(p, not_ptr, tcb_cap_wait_notification, cap, notif,
+                  CAP_NONE_PRIV, &required_priv, false);
 
-    if (tcb_priv->priv_wait_notification == false) {
-        log_error("该PCB能力不具有等待通知的权限!");
-        return false;
-    }
-
-    // 遍历位图确认是否可以等待
-    for (int i = 0; i < NOTIFICATION_BITMAP_QWORDS; i++) {
-        // 检查是否每个位都有权限等待
-        if (wait_bitmap[i] & ~(not_priv->priv_check[i])) {
-            log_error("等待位图中包含无权限等待的通知ID!");
-            return false;
-        }
-    }
+    TCB_CAP_START(p, tcb_ptr, tcb_cap_wait_notification, tcb_cap, tcb,
+                  TCB_PRIV_WAIT_NOTIFICATION, false);
 
     // 向等待队列中添加当前线程
     // TODO: 这部分应当移交到scheduler模块中处理

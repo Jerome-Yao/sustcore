@@ -34,8 +34,16 @@ typedef struct {
     qword priv_set[NOTIFICATION_BITMAP_QWORDS];  // 设置通知的权限位图
     qword priv_reset[NOTIFICATION_BITMAP_QWORDS];  // 清除通知的权限位
     qword priv_check[NOTIFICATION_BITMAP_QWORDS];  // 检查通知的权限位
-    bool priv_derive;                              // 派生能力的权限
-} NotificationCapPriv;
+} NotCapPriv;
+
+extern const NotCapPriv NOTIFICATION_ALL_PRIV;
+extern const NotCapPriv NOTIFICATION_NONE_PRIV;
+
+NotCapPriv *not_priv_set(NotCapPriv *priv, int nid);
+NotCapPriv *not_priv_reset(NotCapPriv *priv, int nid);
+NotCapPriv *not_priv_check(NotCapPriv *priv, int nid);
+
+bool notification_derivable(const NotCapPriv *parent_priv, const NotCapPriv *child_priv);
 
 /**
  * @brief 构造Notification能力
@@ -55,7 +63,8 @@ CapPtr create_notification_cap(PCB *p);
  * @return CapPtr 派生出的能力指针
  */
 CapPtr not_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p,
-                      NotificationCapPriv priv);
+                      qword cap_priv[PRIVILEDGE_QWORDS],
+                      NotCapPriv *notif_priv);
 
 /**
  * @brief 从src_p的src_ptr能力克隆一个Notification能力到dst_p
@@ -71,30 +80,30 @@ CapPtr not_cap_clone(PCB *src_p, CapPtr src_ptr, PCB *dst_p);
  * @brief 设置通知位
  *
  * @param p 当前进程PCB指针
- * @param ptr 能力指针
- * @param notification_id 通知ID (0-255)
+ * @param cap_ptr 能力指针
+ * @param nid 通知ID (0-255)
  */
-void not_cap_set(PCB *p, CapPtr ptr, int notification_id);
+void not_cap_set(PCB *p, CapPtr cap_ptr, int nid);
 
 /**
  * @brief 清除通知位
  *
  * @param p 当前进程PCB指针
- * @param ptr 通知能力指针
- * @param notification_id 通知ID (0-255)
+ * @param cap_ptr 通知能力指针
+ * @param nid 通知ID (0-255)
  */
-void not_cap_reset(PCB *p, CapPtr ptr, int notification_id);
+void not_cap_reset(PCB *p, CapPtr cap_ptr, int nid);
 
 /**
  * @brief 检查通知位
  *
  * @param p 当前进程PCB指针
- * @param ptr 通知能力指针
- * @param notification_id 通知ID (0-255)
+ * @param cap_ptr 通知能力指针
+ * @param nid 通知ID (0-255)
  * @return true 通知已设置
  * @return false 通知未设置
  */
-bool not_cap_check(PCB *p, CapPtr ptr, int notification_id);
+bool not_cap_check(PCB *p, CapPtr cap_ptr, int nid);
 
 /**
  * @brief 等待通知
@@ -109,23 +118,36 @@ bool not_cap_check(PCB *p, CapPtr ptr, int notification_id);
 bool tcb_cap_wait_notification(PCB *p, CapPtr tcb_ptr, CapPtr not_ptr,
                                qword *wait_bitmap);
 
-#define NOT_CAP_START(src_p, src_ptr, fun, cap, notif, priv, ret) \
-    Capability *cap = fetch_cap(src_p, src_ptr);                  \
-    if (cap == nullptr) {                                         \
-        log_error(#fun ":指针指向的能力不存在!");                 \
-        return ret;                                               \
-    }                                                             \
-    if (cap->type != CAP_TYPE_NOT) {                              \
-        log_error(#fun ":该能力不为Notification能力!");           \
-        return ret;                                               \
-    }                                                             \
-    if (cap->cap_data == nullptr) {                               \
-        log_error(#fun ":能力数据为空!");                         \
-        return ret;                                               \
-    }                                                             \
-    if (cap->cap_priv == nullptr) {                               \
-        log_error(#fun ":能力权限为空!");                         \
-        return ret;                                               \
-    }                                                             \
-    Notification *notif       = (Notification *)cap->cap_data;    \
-    NotificationCapPriv *priv = (NotificationCapPriv *)cap->cap_priv
+#define NOT_CAP_START(proc, cap_ptr, func_name, cap, notif, cap_priv_check, \
+                      notif_priv_check, ret_val)                            \
+    /** 获取能力 */                                                     \
+    Capability *cap = fetch_cap(proc, cap_ptr);                             \
+    if (cap == nullptr) {                                                   \
+        log_error(#func_name ":指针指向的能力不存在!");                     \
+        return ret_val;                                                     \
+    }                                                                       \
+    if (cap->type != CAP_TYPE_NOT) {                                        \
+        log_error(#func_name ":该能力不为Notification能力!");               \
+        return ret_val;                                                     \
+    }                                                                       \
+    if (cap->cap_data == nullptr) {                                         \
+        log_error(#func_name ":能力数据为空!");                             \
+        return ret_val;                                                     \
+    }                                                                       \
+    Notification *notif = (Notification *)cap->cap_data;                    \
+    /** 检验权限 */                                                     \
+    if (cap->attached_priv == nullptr) {                                    \
+        log_error(#func_name ":能力权限数据为空!");                         \
+        return ret_val;                                                     \
+    }                                                                       \
+    if (!derivable(cap->cap_priv, cap_priv_check)) {                        \
+        log_error(#func_name ":能力权限不包含所需权限!");                   \
+        return ret_val;                                                     \
+    }                                                                       \
+    if (!notification_derivable((NotCapPriv *)cap->attached_priv,           \
+                                notif_priv_check))                          \
+    {                                                                       \
+        log_error(#func_name ":能力通知权限不包含所需权限!");               \
+        return ret_val;                                                     \
+    }                                                                       \
+    /** 处理函数主体部分 */

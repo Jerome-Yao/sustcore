@@ -22,6 +22,34 @@
 
 #include <basec/logger.h>
 
+const qword CAP_PRIV_UNPACK[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0001ull,
+    [1] = 0x0000'0000'0000'0000ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+const qword CAP_PRIV_DERIVE[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0002ull,
+    [1] = 0x0000'0000'0000'0000ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
+const qword CAP_ALL_PRIV[PRIVILEDGE_QWORDS] = {
+    [0] = 0xFFFF'FFFF'FFFF'FFFFull,
+    [1] = 0xFFFF'FFFF'FFFF'FFFFull,
+    [2] = 0xFFFF'FFFF'FFFF'FFFFull,
+    [3] = 0xFFFF'FFFF'FFFF'FFFFull,
+};
+
+const qword CAP_NONE_PRIV[PRIVILEDGE_QWORDS] = {
+    [0] = 0x0000'0000'0000'0000ull,
+    [1] = 0x0000'0000'0000'0000ull,
+    [2] = 0x0000'0000'0000'0000ull,
+    [3] = 0x0000'0000'0000'0000ull,
+};
+
 Capability *fetch_cap(PCB *pcb, CapPtr ptr) {
     log_info("fetch_cap: cspace=%d, cindex=%d", ptr.cspace, ptr.cindex);
 
@@ -103,7 +131,9 @@ CapPtr insert_cap(PCB *pcb, Capability *cap) {
     return INVALID_CAP_PTR;
 }
 
-CapPtr create_cap(PCB *p, CapType type, void *cap_data, void *cap_priv) {
+CapPtr create_cap(PCB *p, CapType type, void *cap_data,
+                  const qword cap_priv[PRIVILEDGE_QWORDS],
+                  void *attached_priv) {
     if (p == nullptr) {
         log_error("create_cap: PCB不能为空!");
         return INVALID_CAP_PTR;
@@ -125,11 +155,11 @@ CapPtr create_cap(PCB *p, CapType type, void *cap_data, void *cap_priv) {
     cap->type     = type;
     cap->pcb      = p;
     cap->cap_data = cap_data;
-    cap->cap_priv = cap_priv;
+    memcpy(cap->cap_priv, cap_priv, sizeof(qword) * PRIVILEDGE_QWORDS);
+    cap->attached_priv = attached_priv;
     // 插入能力到PCB
     return insert_cap(p, cap);
 }
-
 
 /**
  * @brief 派生能力
@@ -139,8 +169,8 @@ CapPtr create_cap(PCB *p, CapType type, void *cap_data, void *cap_priv) {
  * @param cap_priv 子能力权限
  * @return CapPtr 能力指针
  */
-CapPtr derive_cap(PCB *p, Capability *parent, void *cap_priv)
-{
+CapPtr derive_cap(PCB *p, Capability *parent, qword cap_priv[PRIVILEDGE_QWORDS],
+                  void *attached_priv) {
     if (parent == nullptr) {
         log_error("derive_cap: 父能力不能为空!");
         return INVALID_CAP_PTR;
@@ -149,6 +179,15 @@ CapPtr derive_cap(PCB *p, Capability *parent, void *cap_priv)
         log_error("derive_cap: 子能力权限不能为空!");
         return INVALID_CAP_PTR;
     }
+
+    // 进行权限检查
+    if (!derivable(parent->cap_priv, cap_priv) ||
+        !derivable(parent->cap_priv, CAP_PRIV_DERIVE))
+    {
+        log_error("derive_cap: 父能力权限不包含子能力权限, 无法派生!");
+        return INVALID_CAP_PTR;
+    }
+
     // 构造能力对象
     Capability *cap = (Capability *)kmalloc(sizeof(Capability));
     memset(cap, 0, sizeof(Capability));
@@ -157,47 +196,37 @@ CapPtr derive_cap(PCB *p, Capability *parent, void *cap_priv)
     // 设置能力属性
     cap->type     = parent->type;
     cap->cap_data = parent->cap_data;
-    cap->cap_priv = cap_priv;
-    cap->parent   = parent;
+
+    memcpy(cap->cap_priv, cap_priv, sizeof(qword) * PRIVILEDGE_QWORDS);
+    cap->attached_priv = attached_priv;
+
     // 插入能力到PCB
     CapPtr ptr = insert_cap(p, cap);
     if (ptr.val == INVALID_CAP_PTR.val) {
+        kfree(cap);
         return INVALID_CAP_PTR;
     }
+
     // 将新能力加入到父能力的派生链表中
+    cap->parent = parent;
     list_push_back(cap, CHILDREN_CAP_LIST(parent));
     return ptr;
 }
 
-
 const char *cap_type_to_string(CapType type) {
-    switch (type)
-    {
-    case CAP_TYPE_NUL:
-        return "CAP_TYPE_NUL";
-    case CAP_TYPE_PRC:
-        return "CAP_TYPE_PRC";
-    case CAP_TYPE_PCB:
-        return "CAP_TYPE_PCB";
-    case CAP_TYPE_THR:
-        return "CAP_TYPE_THR";
-    case CAP_TYPE_TCB:
-        return "CAP_TYPE_TCB";
-    case CAP_TYPE_DEV:
-        return "CAP_TYPE_DEV";
-    case CAP_TYPE_FLE:
-        return "CAP_TYPE_FLE";
-    case CAP_TYPE_INT:
-        return "CAP_TYPE_INT";
-    case CAP_TYPE_MEM:
-        return "CAP_TYPE_MEM";
-    case CAP_TYPE_PRO:
-        return "CAP_TYPE_PRO";
-    case CAP_TYPE_CUSTOM:
-        return "CAP_TYPE_CUSTOM";
-    case CAP_TYPE_NOT:
-        return "CAP_TYPE_NOT";
-    default:
-        return "Invalid type";
+    switch (type) {
+        case CAP_TYPE_NUL:    return "CAP_TYPE_NUL";
+        case CAP_TYPE_PRC:    return "CAP_TYPE_PRC";
+        case CAP_TYPE_PCB:    return "CAP_TYPE_PCB";
+        case CAP_TYPE_THR:    return "CAP_TYPE_THR";
+        case CAP_TYPE_TCB:    return "CAP_TYPE_TCB";
+        case CAP_TYPE_DEV:    return "CAP_TYPE_DEV";
+        case CAP_TYPE_FLE:    return "CAP_TYPE_FLE";
+        case CAP_TYPE_INT:    return "CAP_TYPE_INT";
+        case CAP_TYPE_MEM:    return "CAP_TYPE_MEM";
+        case CAP_TYPE_PRO:    return "CAP_TYPE_PRO";
+        case CAP_TYPE_CUSTOM: return "CAP_TYPE_CUSTOM";
+        case CAP_TYPE_NOT:    return "CAP_TYPE_NOT";
+        default:              return "Invalid type";
     }
 }
