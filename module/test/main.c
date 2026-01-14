@@ -17,12 +17,12 @@
 
 void thread_test_1(void) {
     register umb_t arg0 asm("a0");
-    CapPtr thread_cap;
+    CapIdx thread_cap;
     thread_cap.val = arg0;
     printf("THREAD 1\n");
 
     // 测试通知
-    CapPtr notif = get_notification_cap();
+    CapIdx notif = get_notification_cap();
 
     // 监听32号通知
     printf("线程1等待通知32号\n");
@@ -47,12 +47,12 @@ void thread_test_1(void) {
 
 void thread_test_2(void) {
     register umb_t arg0 asm("a0");
-    CapPtr thread_cap;
+    CapIdx thread_cap;
     thread_cap.val = arg0;
     printf("THREAD 2\n");
 
     // 测试通知
-    CapPtr notif = get_notification_cap();
+    CapIdx notif = get_notification_cap();
 
     printf("线程2发送通知32号\n");
     notification_set(notif, 32);
@@ -74,21 +74,21 @@ void thread_test_2(void) {
 void test_2(int a, const char *str) {
     printf("测试函数test_2被调用! %d是%s\n", a, str);
 
-    CapPtr main_thread_cap = get_main_thread_cap();
+    CapIdx main_thread_cap = get_main_thread_cap();
 
-    CapPtr thread_cap_1 = create_thread((void *)thread_test_1, 129);
-    if (CAPPTR_INVALID(thread_cap_1)) {
+    CapIdx thread_cap_1 = create_thread((void *)thread_test_1, 129);
+    if (CAPIDX_INVALID(thread_cap_1)) {
         printf("创建线程失败!\n");
         return;
     }
 
-    CapPtr thread_cap_2 = create_thread((void *)thread_test_2, 129);
-    if (CAPPTR_INVALID(thread_cap_2)) {
+    CapIdx thread_cap_2 = create_thread((void *)thread_test_2, 129);
+    if (CAPIDX_INVALID(thread_cap_2)) {
         printf("创建线程失败!\n");
         return;
     }
 
-    CapPtr notif = get_notification_cap();
+    CapIdx notif = get_notification_cap();
     wait_notification(main_thread_cap, notif, 96);
     printf("主线程收到通知96号\n");
     printf("主线程重置通知96号\n");

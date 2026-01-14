@@ -166,18 +166,18 @@ PCB *new_task(TM *tm, void *stack, void *heap, void *entrypoint, int rp_level,
     p->main_thread = main_thread;
 
     // 为当前进程构造自己的PCB能力
-    CapPtr pcb_cap_ptr   = create_pcb_cap(p);
+    CapIdx pcb_idx   = create_pcb_cap(p);
     // 为当前进程构造主线程能力
-    CapPtr main_tcb_ptr  = create_tcb_cap(p, main_thread);
+    CapIdx main_tcb_ptr  = create_tcb_cap(p, main_thread);
     // 为当前进程构造Notification能力
-    CapPtr notif_cap_ptr = create_notification_cap(p);
+    CapIdx notif_idx = create_notification_cap(p);
 
     // 三个参数:
-    // PCB能力指针, 进程堆指针, 主线程能力, 初始Notification能力指针
-    arch_setup_argument(p->main_thread, 0, pcb_cap_ptr.val);
+    // PCB能力索引, 进程堆指针, 主线程能力, 初始Notification能力索引
+    arch_setup_argument(p->main_thread, 0, pcb_idx.val);
     arch_setup_argument(p->main_thread, 1, (umb_t)(heap));
     arch_setup_argument(p->main_thread, 2, main_tcb_ptr.val);
-    arch_setup_argument(p->main_thread, 3, notif_cap_ptr.val);
+    arch_setup_argument(p->main_thread, 3, notif_idx.val);
 
     // 将主线程加入到就绪线程链表
     insert_ready_thread(main_thread);
@@ -189,7 +189,7 @@ static void fork_caps(PCB *parent, PCB *child) {
     Capability *cap;
     // 遍历父进程的能力链表
     foreach_list(cap, CAPABILITY_LIST(parent)) {
-        CapPtr ptr = cap->cap_ptr;
+        // CapIdx idx = cap->idx;
         // 克隆能力到子进程, 且位置相同
         // cap_clone_at(parent, ptr, child, ptr);
     }
@@ -378,20 +378,20 @@ void remove_from_cspace(Capability *cap) {
                   p->pid);
         return;
     }
-    if (p->cap_spaces[cap->cap_ptr.cspace] == nullptr) {
+    if (p->cap_spaces[cap->idx.cspace] == nullptr) {
         log_error(
             "remove_from_cspace: 进程的cspace未初始化 (pid=%d, cspace=%d)",
-            p->pid, cap->cap_ptr.cspace);
+            p->pid, cap->idx.cspace);
         return;
     }
-    if (p->cap_spaces[cap->cap_ptr.cspace][cap->cap_ptr.cindex] != cap) {
+    if (p->cap_spaces[cap->idx.cspace][cap->idx.cindex] != cap) {
         log_error(
             "remove_from_cspace: 进程的cspace中对应位置的能力不匹配 (pid=%d, "
             "cspace=%d, cindex=%d)",
-            p->pid, cap->cap_ptr.cspace, cap->cap_ptr.cindex);
+            p->pid, cap->idx.cspace, cap->idx.cindex);
         return;
     }
-    p->cap_spaces[cap->cap_ptr.cspace][cap->cap_ptr.cindex] = nullptr;
+    p->cap_spaces[cap->idx.cspace][cap->idx.cindex] = nullptr;
 }
 
 // TODO: 正式实现下列的terminate函数

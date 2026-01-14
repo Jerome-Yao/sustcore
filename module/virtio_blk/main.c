@@ -41,8 +41,8 @@ int detect_virtio_blk(void *base_addr) {
 
 int kmod_main(void) {
     // 获得系统传递的virtio设备能力
-    CapPtr device_cap = sa_get_device();
-    CapPtr mem_cap = getdevice(device_cap);
+    CapIdx device_cap = sa_get_device();
+    CapIdx mem_cap = getdevice(device_cap);
     void *device_base = mapmem(mem_cap);
     int ret = detect_virtio_blk(device_base);
     if (ret != 0) {

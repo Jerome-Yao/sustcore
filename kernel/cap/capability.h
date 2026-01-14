@@ -48,8 +48,8 @@ typedef struct CapStruct {
     void *attached_priv;
     // 所归属的进程控制块
     PCB *pcb;
-    // 在块中的指针
-    CapPtr cap_ptr;
+    // 在块中的索引
+    CapIdx idx;
     // 派生出的能力, 形成链表结构
     struct CapStruct *children_head;
     struct CapStruct *children_tail;
@@ -78,10 +78,10 @@ typedef Capability **CSpace;
  * @brief 从pcb中取出ptr指向的cap
  *
  * @param pcb 能力所附属的进程控制块
- * @param ptr 能力指针
+ * @param ptr 能力索引
  * @return Capability* 能力
  */
-Capability *fetch_cap(PCB *pcb, CapPtr ptr);
+Capability *fetch_cap(PCB *pcb, CapIdx idx);
 
 /**
  * @brief 创建一个新的CSpace
@@ -95,19 +95,19 @@ CSpace new_cspace(void);
  *
  * @param pcb 能力需要插入的进程控制块
  * @param cap 能力
- * @return CapPtr 能力指针
+ * @return CapIdx 能力索引
  */
-CapPtr insert_cap(PCB *pcb, Capability *cap);
+CapIdx insert_cap(PCB *pcb, Capability *cap);
 
 /**
  * @brief 向pcb的指定位置中插入cap
  *
  * @param pcb 能力需要插入的进程控制块
  * @param cap 能力
- * @param cap_ptr 指定位置的能力指针
- * @return CapPtr 能力指针
+ * @param idx 指定位置的能力索引
+ * @return CapIdx 能力索引
  */
-CapPtr insert_cap_at(PCB *pcb, Capability *cap, CapPtr cap_ptr);
+CapIdx insert_cap_at(PCB *pcb, Capability *cap, CapIdx idx);
 
 /**
  * @brief 构造能力
@@ -117,9 +117,9 @@ CapPtr insert_cap_at(PCB *pcb, Capability *cap, CapPtr cap_ptr);
  * @param cap_data 能力数据
  * @param cap_priv 能力权限
  * @param attached_priv 附加权限
- * @return CapPtr 能力指针
+ * @return CapIdx 能力索引
  */
-CapPtr create_cap(PCB *p, CapType type, void *cap_data, const qword cap_priv,
+CapIdx create_cap(PCB *p, CapType type, void *cap_data, const qword cap_priv,
                   void *attached_priv);
 
 /**
@@ -130,11 +130,11 @@ CapPtr create_cap(PCB *p, CapType type, void *cap_data, const qword cap_priv,
  * @param cap_data 能力数据
  * @param cap_priv 能力权限
  * @param attached_priv 附加权限
- * @param cap_ptr 指定位置的能力指针
- * @return CapPtr 能力指针
+ * @param idx 指定位置的能力索引
+ * @return CapIdx 能力索引
  */
-CapPtr create_cap_at(PCB *p, CapType type, void *cap_data, const qword cap_priv,
-                     void *attached_priv, CapPtr cap_ptr);
+CapIdx create_cap_at(PCB *p, CapType type, void *cap_data, const qword cap_priv,
+                     void *attached_priv, CapIdx idx);
 
 /**
  * @brief 权限检查
@@ -166,9 +166,9 @@ inline static bool derivable(const qword parent_priv, const qword child_priv) {
  * @param parent 父能力
  * @param cap_priv 子能力权限
  * @param attached_priv 附加权限
- * @return CapPtr 能力指针
+ * @return CapIdx 能力索引
  */
-CapPtr derive_cap(PCB *p, Capability *parent, qword cap_priv,
+CapIdx derive_cap(PCB *p, Capability *parent, qword cap_priv,
                   void *attached_priv);
 
 /**
@@ -178,11 +178,11 @@ CapPtr derive_cap(PCB *p, Capability *parent, qword cap_priv,
  * @param parent 父能力
  * @param cap_priv 子能力权限
  * @param attached_priv 附加权限
- * @param cap_ptr 指定位置的能力指针
- * @return CapPtr 能力指针
+ * @param idx 指定位置的能力索引
+ * @return CapIdx 能力索引
  */
-CapPtr derive_cap_at(PCB *p, Capability *parent, qword cap_priv,
-                     void *attached_priv, CapPtr cap_ptr);
+CapIdx derive_cap_at(PCB *p, Capability *parent, qword cap_priv,
+                     void *attached_priv, CapIdx idx);
 
 /**
  * @brief 降级能力

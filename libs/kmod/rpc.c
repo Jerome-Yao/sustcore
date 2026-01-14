@@ -22,13 +22,13 @@
  * @param ret_buf 返回值缓冲区指针
  * @param ret_size 返回值缓冲区大小
  */
-void rpc_call(CapPtr pid, int fid, const void *args, size_t arg_size,
+void rpc_call(CapIdx pid, int fid, const void *args, size_t arg_size,
               void *ret_buf, size_t ret_size) {
     size_t sharemem_sz = arg_size > ret_size ? arg_size : ret_size;
 
     // 首先分配共享内存
-    CapPtr shmid = makesharedmem(sharemem_sz);
-    if (CAPPTR_INVALID(shmid)) {
+    CapIdx shmid = makesharedmem(sharemem_sz);
+    if (CAPIDX_INVALID(shmid)) {
         return;
     }
 

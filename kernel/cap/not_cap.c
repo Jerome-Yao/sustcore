@@ -133,7 +133,7 @@ bool notification_derivable(const NotCapPriv *parent_priv,
 // NID分配计数器
 static int NID_COUNTER = 0;
 
-CapPtr create_notification_cap(PCB *p) {
+CapIdx create_notification_cap(PCB *p) {
     // 构造权限
     NotCapPriv *priv = (NotCapPriv *)kmalloc(sizeof(NotCapPriv));
     memcpy(priv, &NOTIFICATION_ALL_PRIV, sizeof(NotCapPriv));
@@ -144,21 +144,21 @@ CapPtr create_notification_cap(PCB *p) {
     notif->notif_id = NID_COUNTER;
     NID_COUNTER++;
 
-    CapPtr ptr = create_cap(p, CAP_TYPE_NOT, (void *)notif, CAP_PRIV_ALL,
+    CapIdx ptr = create_cap(p, CAP_TYPE_NOT, (void *)notif, CAP_PRIV_ALL,
                       (void *)priv);
-    if (CAPPTR_INVALID(ptr)) {
+    if (CAPIDX_INVALID(ptr)) {
         // 创建失败, 释放内存
         kfree(priv);
         kfree(notif);
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
     return ptr;
 }
 
-CapPtr not_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p, qword cap_priv,
+CapIdx not_cap_derive(PCB *sproc, CapIdx sidx, PCB *dproc, qword cap_priv,
                       NotCapPriv *notif_priv) {
-    NOT_CAP_START(src_p, src_ptr, cap, notif, CAP_PRIV_NONE,
-                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
+    NOT_CAP_START(sproc, sidx, cap, notif, CAP_PRIV_NONE,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_IDX);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
     // Capability权限由derive_cap检查
@@ -166,27 +166,27 @@ CapPtr not_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p, qword cap_priv,
     // 并申请一块内存来拷贝权限数据
     if (!notification_derivable((NotCapPriv *)cap->attached_priv, notif_priv)) {
         log_error("not_cap_derive: 父能力权限不包含子能力权限, 无法派生!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     NotCapPriv *new_notif_priv = (NotCapPriv *)kmalloc(sizeof(NotCapPriv));
     memcpy(new_notif_priv, notif_priv, sizeof(NotCapPriv));
 
     // 进行派生
-    CapPtr ptr = derive_cap(dst_p, cap, cap_priv, (void *)new_notif_priv);
-    if (CAPPTR_INVALID(ptr)) {
+    CapIdx ptr = derive_cap(dproc, cap, cap_priv, (void *)new_notif_priv);
+    if (CAPIDX_INVALID(ptr)) {
         // 派生失败, 释放内存
         kfree(new_notif_priv);
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     return ptr;
 }
 
-CapPtr not_cap_derive_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr,
+CapIdx not_cap_derive_at(PCB *sproc, CapIdx sidx, PCB *dproc, CapIdx didx,
                          qword cap_priv, NotCapPriv *notif_priv) {
-    NOT_CAP_START(src_p, src_ptr, cap, notif, CAP_PRIV_NONE,
-                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
+    NOT_CAP_START(sproc, sidx, cap, notif, CAP_PRIV_NONE,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_IDX);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
     // Capability权限由derive_cap检查
@@ -194,68 +194,68 @@ CapPtr not_cap_derive_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr,
     // 并申请一块内存来拷贝权限数据
     if (!notification_derivable((NotCapPriv *)cap->attached_priv, notif_priv)) {
         log_error("not_cap_derive_at: 父能力权限不包含子能力权限, 无法派生!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     NotCapPriv *new_notif_priv = (NotCapPriv *)kmalloc(sizeof(NotCapPriv));
     memcpy(new_notif_priv, notif_priv, sizeof(NotCapPriv));
 
     // 进行派生
-    CapPtr ptr =
-        derive_cap_at(dst_p, cap, cap_priv, (void *)new_notif_priv, dst_ptr);
-    if (CAPPTR_INVALID(ptr)) {
+    CapIdx idx =
+        derive_cap_at(dproc, cap, cap_priv, (void *)new_notif_priv, didx);
+    if (CAPIDX_INVALID(idx)) {
         // 派生失败, 释放内存
         kfree(new_notif_priv);
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
-    return ptr;
+    return idx;
 }
 
-CapPtr not_cap_clone(PCB *src_p, CapPtr src_ptr, PCB *dst_p) {
-    NOT_CAP_START(src_p, src_ptr, cap, notif, CAP_PRIV_NONE,
-                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
+CapIdx not_cap_clone(PCB *sproc, CapIdx sidx, PCB *dproc) {
+    NOT_CAP_START(sproc, sidx, cap, notif, CAP_PRIV_NONE,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_IDX);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
     // 进行完全克隆
-    return not_cap_derive(src_p, src_ptr, dst_p, cap->cap_priv,
+    return not_cap_derive(sproc, sidx, dproc, cap->cap_priv,
                           (NotCapPriv *)cap->attached_priv);
 }
 
-CapPtr not_cap_clone_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p,
-                        CapPtr dst_ptr) {
-    NOT_CAP_START(src_p, src_ptr, cap, notif, CAP_PRIV_NONE,
-                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
+CapIdx not_cap_clone_at(PCB *sproc, CapIdx sidx, PCB *dproc,
+                        CapIdx didx) {
+    NOT_CAP_START(sproc, sidx, cap, notif, CAP_PRIV_NONE,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_IDX);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
     // 进行完全克隆
-    return not_cap_derive_at(src_p, src_ptr, dst_p, dst_ptr, cap->cap_priv,
+    return not_cap_derive_at(sproc, sidx, dproc, didx, cap->cap_priv,
                              (NotCapPriv *)cap->attached_priv);
 }
 
-CapPtr not_cap_degrade(PCB *p, CapPtr cap_ptr, qword cap_priv,
+CapIdx not_cap_degrade(PCB *p, CapIdx idx, qword cap_priv,
                        NotCapPriv *notif_priv) {
-    NOT_CAP_START(p, cap_ptr, cap, notif, CAP_PRIV_NONE,
-                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_PTR);
+    NOT_CAP_START(p, idx, cap, notif, CAP_PRIV_NONE,
+                  &NOTIFICATION_NONE_PRIV, INVALID_CAP_IDX);
     (void)notif;  // 未使用, 特地标记以避免编译器警告
 
     // 只需要检查附加权限即可
     if (!notification_derivable((NotCapPriv *)cap->attached_priv, notif_priv)) {
         log_error("not_cap_degrade: 父能力权限不包含子能力权限, 无法降级!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 基础权限降级成功再进行附加权限更新
     if (!degrade_cap(p, cap, cap_priv)) {
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     memcpy(cap->attached_priv, notif_priv, sizeof(NotCapPriv));
-    return cap_ptr;
+    return idx;
 }
 
-Notification *not_cap_unpack(PCB *p, CapPtr cap_ptr) {
-    NOT_CAP_START(p, cap_ptr, cap, notif, CAP_PRIV_UNPACK,
+Notification *not_cap_unpack(PCB *p, CapIdx idx) {
+    NOT_CAP_START(p, idx, cap, notif, CAP_PRIV_UNPACK,
                   &NOTIFICATION_NONE_PRIV, nullptr);
     return notif;
 }
@@ -300,7 +300,7 @@ static void check_notification(Notification *notif) {
     }
 }
 
-void not_cap_set(PCB *p, CapPtr cap_ptr, int nid) {
+void not_cap_set(PCB *p, CapIdx idx, int nid) {
     // 计算需要的权限
     NotCapPriv required_priv = {
         .priv_check = {0, 0, 0, 0},
@@ -309,8 +309,8 @@ void not_cap_set(PCB *p, CapPtr cap_ptr, int nid) {
     };
     not_priv_set(&required_priv, nid);
 
-    // 处理能力指针并校验能力
-    NOT_CAP_START(p, cap_ptr, cap, notif, CAP_PRIV_NONE, &required_priv, );
+    // 处理能力索引并校验能力
+    NOT_CAP_START(p, idx, cap, notif, CAP_PRIV_NONE, &required_priv, );
 
     // 设置通知位
     notif->bitmap[nid_qword_idx(nid)] |= (1UL << nid_bit_idx(nid));
@@ -323,10 +323,10 @@ void not_cap_set(PCB *p, CapPtr cap_ptr, int nid) {
  * @brief 清除通知位
  *
  * @param p 当前进程PCB指针
- * @param ptr 能力指针
+ * @param ptr 能力索引
  * @param nid 通知ID (0-255)
  */
-void not_cap_reset(PCB *p, CapPtr cap_ptr, int nid) {
+void not_cap_reset(PCB *p, CapIdx idx, int nid) {
     // 计算需要的权限
     NotCapPriv required_priv = {
         .priv_check = {0, 0, 0, 0},
@@ -335,8 +335,8 @@ void not_cap_reset(PCB *p, CapPtr cap_ptr, int nid) {
     };
     not_priv_reset(&required_priv, nid);
 
-    // 处理能力指针并校验能力
-    NOT_CAP_START(p, cap_ptr, cap, notif, CAP_PRIV_NONE, &required_priv, );
+    // 处理能力索引并校验能力
+    NOT_CAP_START(p, idx, cap, notif, CAP_PRIV_NONE, &required_priv, );
 
     // 设置通知位
     notif->bitmap[nid_qword_idx(nid)] &= ~(1UL << nid_bit_idx(nid));
@@ -346,12 +346,12 @@ void not_cap_reset(PCB *p, CapPtr cap_ptr, int nid) {
  * @brief 检查通知位
  *
  * @param p 当前进程PCB指针
- * @param ptr 能力指针
+ * @param ptr 能力索引
  * @param nid 通知ID (0-255)
  * @return true 通知已设置
  * @return false 通知未设置
  */
-bool not_cap_check(PCB *p, CapPtr cap_ptr, int nid) {
+bool not_cap_check(PCB *p, CapIdx idx, int nid) {
     // 计算需要的权限
     NotCapPriv required_priv = {
         .priv_check = {0, 0, 0, 0},
@@ -360,8 +360,8 @@ bool not_cap_check(PCB *p, CapPtr cap_ptr, int nid) {
     };
     not_priv_check(&required_priv, nid);
 
-    // 处理能力指针并校验能力
-    NOT_CAP_START(p, cap_ptr, cap, notif, CAP_PRIV_NONE, &required_priv, false);
+    // 处理能力索引并校验能力
+    NOT_CAP_START(p, idx, cap, notif, CAP_PRIV_NONE, &required_priv, false);
 
     // 检查通知位
     return (notif->bitmap[nid_qword_idx(nid)] & (1UL << nid_bit_idx(nid))) != 0;
@@ -371,13 +371,13 @@ bool not_cap_check(PCB *p, CapPtr cap_ptr, int nid) {
  * @brief 等待通知
  *
  * @param p 当前进程PCB指针
- * @param tcb_ptr TCB能力指针
- * @param not_ptr 通知能力指针
+ * @param tcb_idx TCB能力索引
+ * @param not_idx 通知能力索引
  * @param wait_bitmap 等待位图(应当总长256位)
  * @return true 通知已到达
  * @return false 通知未到达
  */
-bool tcb_cap_wait_notification(PCB *p, CapPtr tcb_ptr, CapPtr not_ptr,
+bool tcb_cap_wait_notification(PCB *p, CapIdx tcb_idx, CapIdx not_idx,
                                qword *wait_bitmap) {
     // 计算需要的权限
     NotCapPriv required_priv = {
@@ -387,9 +387,9 @@ bool tcb_cap_wait_notification(PCB *p, CapPtr tcb_ptr, CapPtr not_ptr,
     };
     memcpy(&required_priv.priv_check, wait_bitmap,
            sizeof(qword) * NOTIFICATION_BITMAP_QWORDS);
-    NOT_CAP_START(p, not_ptr, cap, notif, CAP_PRIV_NONE, &required_priv, false);
+    NOT_CAP_START(p, not_idx, cap, notif, CAP_PRIV_NONE, &required_priv, false);
 
-    TCB_CAP_START(p, tcb_ptr, tcb_cap, tcb, TCB_PRIV_WAIT_NOTIFICATION, false);
+    TCB_CAP_START(p, tcb_idx, tcb_cap, tcb, TCB_PRIV_WAIT_NOTIFICATION, false);
 
     if (is_notified(notif, wait_bitmap)) {
         return true;
@@ -401,7 +401,7 @@ bool tcb_cap_wait_notification(PCB *p, CapPtr tcb_ptr, CapPtr not_ptr,
     wtcb->tcb                   = tcb;
     wtcb->reason.type           = WAITING_NOTIFICATION;
     wtcb->reason.notif.notif_id = notif->notif_id;
-    wtcb->reason.notif.cap_ptr  = not_ptr;
+    wtcb->reason.notif.idx  = not_idx;
     memcpy(wtcb->reason.notif.bitmap, wait_bitmap,
            sizeof(qword) * NOTIFICATION_BITMAP_QWORDS);
     tcb->state = TS_WAITING;

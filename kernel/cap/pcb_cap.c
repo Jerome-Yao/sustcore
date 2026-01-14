@@ -26,59 +26,59 @@
 // PCB能力构造相关操作
 //============================================
 
-CapPtr create_pcb_cap(PCB *p) {
+CapIdx create_pcb_cap(PCB *p) {
     return create_cap(p, CAP_TYPE_PCB, (void *)p, CAP_PRIV_ALL, nullptr);
 }
 
-CapPtr pcb_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p, qword priv) {
-    PCB_CAP_START(src_p, src_ptr, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_PTR);
+CapIdx pcb_cap_derive(PCB *sproc, CapIdx sidx, PCB *dproc, qword priv) {
+    PCB_CAP_START(sproc, sidx, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_IDX);
     (void)pcb;
 
     // 进行派生
-    return derive_cap(dst_p, cap, priv, nullptr);
+    return derive_cap(dproc, cap, priv, nullptr);
 }
 
-CapPtr pcb_cap_derive_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr,
+CapIdx pcb_cap_derive_at(PCB *sproc, CapIdx sidx, PCB *dproc, CapIdx didx,
                          qword priv) {
-    PCB_CAP_START(src_p, src_ptr, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_PTR);
+    PCB_CAP_START(sproc, sidx, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_IDX);
     (void)pcb;
 
     // 进行派生
-    return derive_cap_at(dst_p, cap, priv, nullptr, dst_ptr);
+    return derive_cap_at(dproc, cap, priv, nullptr, didx);
 }
 
-CapPtr pcb_cap_clone(PCB *src_p, CapPtr src_ptr, PCB *dst_p) {
-    PCB_CAP_START(src_p, src_ptr, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_PTR);
+CapIdx pcb_cap_clone(PCB *sproc, CapIdx sidx, PCB *dproc) {
+    PCB_CAP_START(sproc, sidx, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_IDX);
 
     (void)pcb;  // 未使用, 特地标记以避免编译器警告
 
     // 进行完全克隆
-    return pcb_cap_derive(src_p, src_ptr, dst_p, cap->cap_priv);
+    return pcb_cap_derive(sproc, sidx, dproc, cap->cap_priv);
 }
 
-CapPtr pcb_cap_clone_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p,
-                        CapPtr dst_ptr) {
-    PCB_CAP_START(src_p, src_ptr, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_PTR);
+CapIdx pcb_cap_clone_at(PCB *sproc, CapIdx sidx, PCB *dproc,
+                        CapIdx didx) {
+    PCB_CAP_START(sproc, sidx, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_IDX);
 
     (void)pcb;  // 未使用, 特地标记以避免编译器警告
 
     // 进行完全克隆
-    return pcb_cap_derive_at(src_p, src_ptr, dst_p, dst_ptr, cap->cap_priv);
+    return pcb_cap_derive_at(sproc, sidx, dproc, didx, cap->cap_priv);
 }
 
-CapPtr pcb_cap_degrade(PCB *p, CapPtr cap_ptr, qword cap_priv) {
-    PCB_CAP_START(p, cap_ptr, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_PTR);
+CapIdx pcb_cap_degrade(PCB *p, CapIdx idx, qword cap_priv) {
+    PCB_CAP_START(p, idx, cap, pcb, CAP_PRIV_NONE, INVALID_CAP_IDX);
     (void)pcb;  // 未使用, 特地标记以避免编译器警告
 
     if (!degrade_cap(p, cap, cap_priv)) {
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
-    return cap_ptr;
+    return idx;
 }
 
-PCB *pcb_cap_unpack(PCB *p, CapPtr cap_ptr) {
-    PCB_CAP_START(p, cap_ptr, cap, pcb, CAP_PRIV_UNPACK, nullptr);
+PCB *pcb_cap_unpack(PCB *p, CapIdx idx) {
+    PCB_CAP_START(p, idx, cap, pcb, CAP_PRIV_UNPACK, nullptr);
     return pcb;
 }
 
@@ -86,16 +86,16 @@ PCB *pcb_cap_unpack(PCB *p, CapPtr cap_ptr) {
 // PCB能力对象操作相关操作
 //============================================
 
-void pcb_cap_exit(PCB *p, CapPtr cap_ptr) {
-    PCB_CAP_START(p, cap_ptr, cap, pcb, PCB_PRIV_EXIT, );
+void pcb_cap_exit(PCB *p, CapIdx idx) {
+    PCB_CAP_START(p, idx, cap, pcb, PCB_PRIV_EXIT, );
 
     (void)pcb;
 
     // TODO: 结束进程
 }
 
-PCB *pcb_cap_fork(PCB *p, CapPtr cap_ptr, CapPtr *child_cap) {
-    PCB_CAP_START(p, cap_ptr, cap, pcb, PCB_PRIV_FORK, nullptr);
+PCB *pcb_cap_fork(PCB *p, CapIdx idx, CapIdx *child_cap) {
+    PCB_CAP_START(p, idx, cap, pcb, PCB_PRIV_FORK, nullptr);
     // 进行fork操作
     PCB *fork_pcb = fork_task(pcb);
     // 为子进程创建Capability
@@ -103,16 +103,16 @@ PCB *pcb_cap_fork(PCB *p, CapPtr cap_ptr, CapPtr *child_cap) {
     return fork_pcb;
 }
 
-pid_t pcb_cap_getpid(PCB *p, CapPtr cap_ptr) {
-    PCB_CAP_START(p, cap_ptr, cap, pcb, PCB_PRIV_GETPID, (pid_t)(-1));
+pid_t pcb_cap_getpid(PCB *p, CapIdx idx) {
+    PCB_CAP_START(p, idx, cap, pcb, PCB_PRIV_GETPID, (pid_t)(-1));
 
     return pcb->pid;
 }
 
-CapPtr pcb_cap_create_thread(PCB *p, CapPtr cap_ptr, void *entrypoint,
+CapIdx pcb_cap_create_thread(PCB *p, CapIdx idx, void *entrypoint,
                              int priority) {
-    PCB_CAP_START(p, cap_ptr, cap, pcb, PCB_PRIV_CREATE_THREAD,
-                  INVALID_CAP_PTR);
+    PCB_CAP_START(p, idx, cap, pcb, PCB_PRIV_CREATE_THREAD,
+                  INVALID_CAP_IDX);
 
     // 分配线程栈
     void *stack = alloc_thread_stack(pcb, 16 * PAGE_SIZE);

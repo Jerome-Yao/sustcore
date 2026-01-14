@@ -94,80 +94,80 @@ bool notification_derivable(const NotCapPriv *parent_priv,
  * @brief 构造Notification能力
  *
  * @param p 在p内构造一个Notification能力
- * @return  CapPtr 能力指针
+ * @return  CapIdx 能力索引
  */
-CapPtr create_notification_cap(PCB *p);
+CapIdx create_notification_cap(PCB *p);
 
 /**
- * @brief 从src_p的src_ptr能力派生一个新的Notification能力到dst_p
+ * @brief 从sproc的sidx能力派生一个新的Notification能力到dproc
  *
- * @param src_p   源进程
- * @param src_ptr 源能力
- * @param dst_p   目标进程
+ * @param sproc   源进程
+ * @param sidx 源能力
+ * @param dproc   目标进程
  * @param cap_priv    新权限
  * @param notif_priv 新通知权限
- * @return CapPtr 派生出的能力指针
+ * @return CapIdx 派生出的能力索引
  */
-CapPtr not_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p,
+CapIdx not_cap_derive(PCB *sproc, CapIdx sidx, PCB *dproc,
                       qword cap_priv,
                       NotCapPriv *notif_priv);
 
 /**
- * @brief 从src_p的src_ptr能力派生一个新的Notification能力到dst_p
+ * @brief 从sproc的sidx能力派生一个新的Notification能力到dproc
  *
- * @param src_p   源进程
- * @param src_ptr 源能力
- * @param dst_p   目标进程
- * @param dst_ptr 目标能力指针位置
+ * @param sproc   源进程
+ * @param sidx 源能力
+ * @param dproc   目标进程
+ * @param dproc 目标能力索引位置
  * @param cap_priv    新权限
  * @param notif_priv 新通知权限
- * @return CapPtr 派生出的能力指针
+ * @return CapIdx 派生出的能力索引
  */
-CapPtr not_cap_derive_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr,
+CapIdx not_cap_derive_at(PCB *sproc, CapIdx sidx, PCB *dproc, CapIdx didx,
                          qword cap_priv,
                          NotCapPriv *notif_priv);
 
 /**
- * @brief 从src_p的src_ptr能力克隆一个Notification能力到dst_p
+ * @brief 从sproc的sidx能力克隆一个Notification能力到dproc
  *
- * @param src_p   源进程
- * @param src_ptr 源能力
- * @param dst_p   目标进程
- * @return CapPtr 派生出的能力指针
+ * @param sproc   源进程
+ * @param sidx 源能力
+ * @param dproc   目标进程
+ * @return CapIdx 派生出的能力索引
  */
-CapPtr not_cap_clone(PCB *src_p, CapPtr src_ptr, PCB *dst_p);
+CapIdx not_cap_clone(PCB *sproc, CapIdx sidx, PCB *dproc);
 
 /**
- * @brief 从src_p的src_ptr能力克隆一个Notification能力到dst_p
+ * @brief 从sproc的sidx能力克隆一个Notification能力到dproc
  *
- * @param src_p   源进程
- * @param src_ptr 源能力
- * @param dst_p   目标进程
- * @param dst_ptr 目标能力指针位置
- * @return CapPtr 派生出的能力指针
+ * @param sproc   源进程
+ * @param sidx 源能力
+ * @param dproc   目标进程
+ * @param dproc 目标能力索引位置
+ * @return CapIdx 派生出的能力索引
  */
-CapPtr not_cap_clone_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr);
+CapIdx not_cap_clone_at(PCB *sproc, CapIdx sidx, PCB *dproc, CapIdx didx);
 
 /**
  * @brief 将能力降级为更低权限的能力
  *
  * @param p 当前进程PCB指针
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @param cap_priv 新的能力权限
  * @param notif_priv 新的通知权限
- * @return CapPtr 降级后的能力指针(和cap_ptr相同)
+ * @return CapIdx 降级后的能力索引(和idx相同)
  */
-CapPtr not_cap_degrade(PCB *p, CapPtr cap_ptr,
+CapIdx not_cap_degrade(PCB *p, CapIdx idx,
                        qword cap_priv,
                        NotCapPriv *notif_priv);
 
 /**
  * @brief 解包Notification能力, 获取其数据指针
  * @param p 当前进程PCB指针
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @return Notification* 通知数据指针
  */
-Notification *not_cap_unpack(PCB *p, CapPtr cap_ptr);
+Notification *not_cap_unpack(PCB *p, CapIdx idx);
 
 //====================================================
 
@@ -175,48 +175,48 @@ Notification *not_cap_unpack(PCB *p, CapPtr cap_ptr);
  * @brief 设置通知位
  *
  * @param p 当前进程PCB指针
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @param nid 通知ID (0-255)
  */
-void not_cap_set(PCB *p, CapPtr cap_ptr, int nid);
+void not_cap_set(PCB *p, CapIdx idx, int nid);
 
 /**
  * @brief 清除通知位
  *
  * @param p 当前进程PCB指针
- * @param cap_ptr 通知能力指针
+ * @param idx 通知能力索引
  * @param nid 通知ID (0-255)
  */
-void not_cap_reset(PCB *p, CapPtr cap_ptr, int nid);
+void not_cap_reset(PCB *p, CapIdx idx, int nid);
 
 /**
  * @brief 检查通知位
  *
  * @param p 当前进程PCB指针
- * @param cap_ptr 通知能力指针
+ * @param idx 通知能力索引
  * @param nid 通知ID (0-255)
  * @return true 通知已设置
  * @return false 通知未设置
  */
-bool not_cap_check(PCB *p, CapPtr cap_ptr, int nid);
+bool not_cap_check(PCB *p, CapIdx idx, int nid);
 
 /**
  * @brief 等待通知
  *
  * @param p 当前进程PCB指针
- * @param tcb_ptr TCB能力指针
- * @param not_ptr 通知能力指针
+ * @param tcb_cap TCB能力索引
+ * @param not_cap 通知能力索引
  * @param wait_bitmap 等待位图(应当总长256位)
  * @return true 通知已到达
  * @return false 通知未到达
  */
-bool tcb_cap_wait_notification(PCB *p, CapPtr tcb_ptr, CapPtr not_ptr,
+bool tcb_cap_wait_notification(PCB *p, CapIdx tcb_idx, CapIdx not_idx,
                                qword *wait_bitmap);
 
-#define NOT_CAP_START(proc, cap_ptr, cap, notif, cap_priv_check, \
+#define NOT_CAP_START(proc, idx, cap, notif, cap_priv_check, \
                       notif_priv_check, ret_val)                            \
     /** 获取能力 */                                                     \
-    Capability *cap = fetch_cap(proc, cap_ptr);                             \
+    Capability *cap = fetch_cap(proc, idx);                             \
     if (cap == nullptr) {                                                   \
         log_error("%s:指针指向的能力不存在!", __FUNCTION__);                \
         return ret_val;                                                     \

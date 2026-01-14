@@ -99,7 +99,7 @@ typedef struct {
     union {
         struct {
             int notif_id;
-            CapPtr cap_ptr;
+            CapIdx idx;
             qword bitmap[NOTIFICATION_BITMAP_QWORDS];
         } notif;
     };

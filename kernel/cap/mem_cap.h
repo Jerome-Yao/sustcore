@@ -42,25 +42,57 @@ typedef struct {
 
 /**
  * @brief 为指定内存创建内存能力
- * 
+ *
  * @param p 内存能力所属进程
  * @param paddr 内存物理地址
  * @param size 内存大小
  * @param shared 是否为共享内存
  * @param mmio 是否为内存映射IO区域
  * @param allocated 是否是kmalloc分配的内存
- * @return CapPtr 能力指针
+ * @return CapIdx 能力索引
  */
-CapPtr mem_cap_create(PCB *p, void *paddr, size_t size, bool shared, bool mmio, bool allocated);
+CapIdx mem_cap_create(PCB *p, void *paddr, size_t size, bool shared, bool mmio,
+                      bool allocated);
 
 /**
  * @brief 分配一块内存并为其创建内存能力
- * 
+ *
  * 该函数会分配一块指定大小的内存, 并为这块内存创建一个内存能力.
- * 
- * @param p 
- * @param size 
- * @param shared 
- * @return CapPtr 
+ *
+ * @param p 内存能力所属进程
+ * @param size 内存大小
+ * @param shared 是否为共享内存
+ * @return CapIdx 能力索引
  */
-CapPtr mem_cap_alloc_and_create(PCB *p, size_t size, bool shared);
+CapIdx mem_cap_alloc_and_create(PCB *p, size_t size, bool shared);
+
+/**
+ * @brief 从源进程的源能力派生一个新的内存能力到目标进程
+ * 
+ * @param src_p 源进程
+ * @param src_ptr 源能力索引
+ * @param dst_p 目标进程
+ * @param priv 新权限
+ * @return CapIdx 新的能力索引
+ */
+CapIdx mem_cap_derive(PCB *src_p, CapIdx src_ptr, PCB *dst_p, qword priv);
+
+#define MEM_CAP_START(proc, idx, cap, mem, priv_check, ret_val) \
+    Capability *cap = fetch_cap(proc, idx);                     \
+    if (cap == nullptr) {                                           \
+        log_error("%s:指针指向的能力不存在!", __FUNCTION__);        \
+        return ret_val;                                             \
+    }                                                               \
+    if (cap->type != CAP_TYPE_MEM) {                                \
+        log_error("%s:该能力不为MEM能力!", __FUNCTION__);           \
+        return ret_val;                                             \
+    }                                                               \
+    if (cap->cap_data == nullptr) {                                 \
+        log_error("%s:能力数据为空!", __FUNCTION__);                \
+        return ret_val;                                             \
+    }                                                               \
+    MemoryData *pcb = (MemoryData *)cap->mem;                       \
+    if (!derivable(cap->cap_priv, priv_check)) {                    \
+        log_error("%s:能力权限不足!", __FUNCTION__);                \
+        return ret_val;                                             \
+    }

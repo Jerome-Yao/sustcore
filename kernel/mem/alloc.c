@@ -692,15 +692,14 @@ static AllocInfo *match_alloc_info(void *addr) {
 static void *__stage2_kmalloc__(size_t size) {
     if (size >= 4096) {
         // 将其向上对齐至page, 并分配page
-        size_t needed_pages = (size + 4095) / 4096;
-        void *paddr = alloc_pages(needed_pages);
+        void *paddr = alloc_pages(SIZE2PAGES(size));
         void *addr          = PA2KPA(paddr);
         if (addr == nullptr) {
             log_error("__stage2_kmalloc__: 大页分配失败 size=%u", size);
             return nullptr;
         }
         // 将其记录在分配记录中
-        add_page_alloc_info(addr, needed_pages);
+        add_page_alloc_info(addr, SIZE2PAGES(size));
         return addr;
     }
 

@@ -205,8 +205,7 @@ void load_elf_segment(Elf64_Phdr *phdr, void *elf_base_addr,
     // 根据rwx权限向TM中添加VMA
     add_vma(prog_info->tm, (void *)(phdr->p_vaddr), phdr->p_memsz, type);
     // 分配内存存放该段
-    int pages = (phdr->p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-    alloc_pages_for(prog_info->tm, (void *)(phdr->p_vaddr), pages, rwx_code,
+    alloc_pages_for(prog_info->tm, (void *)(phdr->p_vaddr), SIZE2PAGES(phdr->p_memsz), rwx_code,
                     true);
 
     // 计算源地址与目标地址

@@ -50,6 +50,16 @@
 例如, 进程A创建了一个Notification能力. 在这之后, 它将该能力派生到进程B中, 并命名为"notif1".
 那么, 进程B就可以通过名称"notif1"来获得该能力的Capability指针.
 
+(See Also IMPORTANT #7, #8)
+
+### 3.5 Capability Basic Trait 与 Capability Specific Trait
+
+可以将Trait理解成一个由函数指针组成的结构体, 用于定义某一类Capability所支持的操作.
+首先, 每一个Capability都应当实现一个Basic Trait, 该Trait定义了所有Capability都应当支持的基本操作,
+如获取Capability类型, 获取Capability权限, 克隆Capability, 序列化Capability等.
+其次, 每一类Capability还应当实现一个Specific Trait, 该Trait定义了该类Capability所特有的操作,
+如PCB Capability的获取PCB指针操作, 内存能力的映射和解除映射操作等.
+
 ## 4. 实现内存能力, 支持对内存页的能力管理
 
 实现内存能力(Memory Capability), 允许进程通过内存能力对内存页进行访问和管理.
@@ -166,11 +176,11 @@ CSpaceCapability允许进程对其CSlot进行分配和释放操作. 其存储有
 当进程不再需要某个Capability时, 其通过CSpaceCapability释放该Capability对应的CSlot.
 当进程需要向某个进程派生Capability时, 其应当遵守以下步骤:
 
-1. 通过系统调用进行不带CapPtr的派生. 该请求将被保存在内核中, 并分配一个独特的Request ID, 并等待目标进程处理.
+1. 通过系统调用进行不带CapIdx的派生. 该请求将被保存在内核中, 并分配一个独特的Request ID, 并等待目标进程处理.
 2. 通过某种方式将Request ID发送给目标进程. 接下来目标进程有多种选择:
     - 拒绝该请求, 使得该请求失效.
-    - 接受该请求, 并委托系统调用为其分配一个新的CSlot用于存放该Capability. 系统将在稍后将CapPtr传递给目标进程.
-    - 接受该请求, 并向系统传递一个有效的CapPtr.
+    - 接受该请求, 并委托系统调用为其分配一个新的CSlot用于存放该Capability. 系统将在稍后将CapIdx传递给目标进程.
+    - 接受该请求, 并向系统传递一个有效的CapIdx.
 
 如果进程间需要频繁地派生Capability, 则可以预先将CSpaceCapability派生给目标进程, 使得目标进程可以通过CSpaceCapability自行分配CSlot.
 

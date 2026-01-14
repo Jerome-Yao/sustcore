@@ -100,14 +100,14 @@ typedef union {
         dword cspace;
         dword cindex;
     };
-} CapPtr;
+} CapIdx;
 
-#define INVALID_CAP_PTR \
-    (CapPtr) {          \
+#define INVALID_CAP_IDX \
+    (CapIdx) {          \
         .val = 0        \
     }
 
-#define CAPPTR_INVALID(ptr) ((ptr).val == INVALID_CAP_PTR.val)
+#define CAPIDX_INVALID(idx) ((idx).val == INVALID_CAP_IDX.val)
 
 typedef enum {
     CAP_TYPE_NUL = 0,  // 空能力

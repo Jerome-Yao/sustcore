@@ -65,11 +65,11 @@ typedef struct {
 允许进程通过内存能力获取内存区域的物理地址和大小。
 
 ```c
-void *memcap_get_addr(PCB *pcb, CapPtr cap);
+void *memcap_get_addr(PCB *pcb, CapIdx cap);
 ```
 
 ```c
-size_t memcap_get_size(PCB *pcb, CapPtr cap);
+size_t memcap_get_size(PCB *pcb, CapIdx cap);
 ```
 
 #### 2.2 映射内存区域
@@ -83,7 +83,7 @@ size_t memcap_get_size(PCB *pcb, CapPtr cap);
 允许进程将内存区域映射到其虚拟地址空间。映射时需要指定访问权限（读/写/执行），并且必须遵循内存能力本身的权限限制。
 
 ```c
-void *memcap_map(PCB *pcb, CapPtr cap, MemMapFlags flags);
+void *memcap_map(PCB *pcb, CapIdx cap, MemMapFlags flags);
 ```
 
 #### 2.3 解除映射内存区域
@@ -93,7 +93,7 @@ void *memcap_map(PCB *pcb, CapPtr cap, MemMapFlags flags);
 允许进程将内存区域从其虚拟地址空间中解除映射。
 
 ```c
-void memcap_unmap(PCB *pcb, CapPtr cap, void *vaddr);
+void memcap_unmap(PCB *pcb, CapIdx cap, void *vaddr);
 ```
 
 #### 2.4 创建共享内存能力
@@ -101,7 +101,7 @@ void memcap_unmap(PCB *pcb, CapPtr cap, void *vaddr);
 允许进程创建一个新的共享内存能力。
 
 ```c
-CapPtr memcap_create_shm(PCB *pcb, size_t size, MemMapFlags flags);
+CapIdx memcap_create_shm(PCB *pcb, size_t size, MemMapFlags flags);
 ```
 
 创建出的能力权限为:
@@ -131,7 +131,7 @@ CapPtr memcap_create_shm(PCB *pcb, size_t size, MemMapFlags flags);
  - `DevCapPriv::priv_mmio`
 
 ```c
-CapPtr memcap_create_mmio(PCB *pcb, CapPtr device_cap);
+CapIdx memcap_create_mmio(PCB *pcb, CapIdx device_cap);
 ```
 
 创建出的能力权限为:
@@ -159,7 +159,7 @@ CapPtr memcap_create_mmio(PCB *pcb, CapPtr device_cap);
 前提: `PCBCapPriv::priv_alloc_naked`
 
 ```c
-CapPtr memcap_create_naked(PCB *pcb, size_t size, MemMapFlags flags);
+CapIdx memcap_create_naked(PCB *pcb, size_t size, MemMapFlags flags);
 ```
 
 创建出的能力权限为:
@@ -187,7 +187,7 @@ CapPtr memcap_create_naked(PCB *pcb, size_t size, MemMapFlags flags);
 前提: `MemCapPriv::priv_share`
 
 ```c
-CapPtr memcap_forward(PCB *src_pcb, CapPtr src_cap, PCB *dst_pcb);
+CapIdx memcap_forward(PCB *src_pcb, CapIdx src_cap, PCB *dst_pcb);
 ```
 
 #### 2.7 派生内存能力
@@ -205,7 +205,7 @@ CapPtr memcap_forward(PCB *src_pcb, CapPtr src_cap, PCB *dst_pcb);
  - `new_priv.priv_share <= src_priv.priv_share`
 
 ```c
-CapPtr memcap_derive(PCB *pcb, CapPtr src_cap, MemCapPriv new_priv);
+CapIdx memcap_derive(PCB *pcb, CapIdx src_cap, MemCapPriv new_priv);
 ```
 
 创建出的能力权限为`new_priv`，属性与`src_cap`相同。
@@ -218,7 +218,7 @@ CapPtr memcap_derive(PCB *pcb, CapPtr src_cap, MemCapPriv new_priv);
 允许进程注销其内存能力，释放相关的内存资源。
 
 ```c
-void memcap_revoke(PCB *pcb, CapPtr cap);
+void memcap_revoke(PCB *pcb, CapIdx cap);
 ```
 
 当`MemCapData::root`时, 释放该内存区域所占用的物理内存.

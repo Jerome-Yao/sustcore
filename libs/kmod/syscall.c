@@ -66,7 +66,7 @@ void exit(int code) {
     syscall(SYS_EXIT, pcb_cap.val, (umb_t)(code), 0, 0, 0, 0, 0);
 }
 
-void yield(CapPtr thread) {
+void yield(CapIdx thread) {
 	if (thread.val != 0) {
 		// 线程级让出
 		syscall(SYS_YIELD_THREAD, thread.val, 0, 0, 0, 0, 0, 0);
@@ -81,7 +81,7 @@ int puts(const char *str) {
     return (int)syscall(SYS_WRITE_SERIAL, 0, (umb_t)(str), 0, 0, 0, 0, 0);
 }
 
-int get_pid(CapPtr cap) {
+int get_pid(CapIdx cap) {
 	umb_t pid = syscall(SYS_GETPID, cap.val, 0, 0, 0, 0, 0, 0);
 	return (int)pid;
 }
@@ -95,7 +95,7 @@ int get_current_pid(void) {
 
 typedef struct ProcCapNodeStruct {
 	int pid;
-	CapPtr cap;
+	CapIdx cap;
 	struct ProcCapNodeStruct *next;
 	struct ProcCapNodeStruct *prev;
 } ProcCapNode;
@@ -115,7 +115,7 @@ void init_proc_cap_table(void) {
 	}
 }
 
-CapPtr get_proc_cap(int pid) {
+CapIdx get_proc_cap(int pid) {
 	ProcCapNode *node;
 	foreach_list(node, PROC_CAP_LIST(pid)) {
 		if (node->pid == pid) {
@@ -123,12 +123,12 @@ CapPtr get_proc_cap(int pid) {
 		}
 	}
 	// 未找到
-	CapPtr null_cap;
+	CapIdx null_cap;
 	null_cap.val = 0;
 	return null_cap;
 }
 
-void insert_proc_cap(int pid, CapPtr cap) {
+void insert_proc_cap(int pid, CapIdx cap) {
 	// 首先先判断是否存在
 	// 已存在, 更新
 	ProcCapNode *node;
@@ -147,7 +147,7 @@ void insert_proc_cap(int pid, CapPtr cap) {
 }
 
 int fork(void) {
-	CapPtr cap;
+	CapIdx cap;
 	smb_t _pid;
 	cap.val = syscall_2(SYS_FORK, pcb_cap.val, 0, 0, 0, 0, 0, 0, (umb_t *)&_pid);
 	int pid = (int)_pid;
@@ -163,19 +163,19 @@ int fork(void) {
 	return pid;
 }
 
-void *mapmem(CapPtr cap) {
+void *mapmem(CapIdx cap) {
     // TODO: 实现映射内存系统调用
     return nullptr;
 }
 
-CapPtr create_thread(void *entrypoint, int priority)
+CapIdx create_thread(void *entrypoint, int priority)
 {
-	return (CapPtr){
+	return (CapIdx){
 		.val = syscall(SYS_CREATE_THREAD, pcb_cap.val, (umb_t)(entrypoint), (umb_t)(priority), 0, 0, 0, 0)
 	};
 }
 
-void wait_notifications(CapPtr thread, CapPtr notif_cap, qword *wait_bitmap)
+void wait_notifications(CapIdx thread, CapIdx notif_cap, qword *wait_bitmap)
 {
 	if (thread.val != 0) {
 		// 线程级等待
@@ -190,11 +190,11 @@ void wait_notifications(CapPtr thread, CapPtr notif_cap, qword *wait_bitmap)
 /**
  * @brief 等待通知
  *
- * @param thread 线程能力. 如果是INVALID_CAP_PTR, 则表示以进程级别让出CPU
+ * @param thread 线程能力. 如果是INVALID_CAP_IDX, 则表示以进程级别让出CPU
  * @param notif_cap 通知能力
  * @param notification_id 等待的通知ID
  */
-void wait_notification(CapPtr thread, CapPtr notif_cap, int notification_id)
+void wait_notification(CapIdx thread, CapIdx notif_cap, int notification_id)
 {
 	qword wait_bitmap[NOTIFICATION_BITMAP_QWORDS] = {0};
 	int qword_index = notification_id / (8 * sizeof(qword));
@@ -209,7 +209,7 @@ void wait_notification(CapPtr thread, CapPtr notif_cap, int notification_id)
  * @param notif_cap 通知能力
  * @param notification_id 通知ID
  */
-void notification_set(CapPtr notif_cap, int notification_id)
+void notification_set(CapIdx notif_cap, int notification_id)
 {
 	syscall(SYS_SET_NOTIFICATION, notif_cap.val, (umb_t)(notification_id), 0, 0, 0, 0, 0);
 }
@@ -220,7 +220,7 @@ void notification_set(CapPtr notif_cap, int notification_id)
  * @param notif_cap 通知能力
  * @param notification_id 通知ID
  */
-void notification_reset(CapPtr notif_cap, int notification_id)
+void notification_reset(CapIdx notif_cap, int notification_id)
 {
 	syscall(SYS_RESET_NOTIFICATION, notif_cap.val, (umb_t)(notification_id), 0, 0, 0, 0, 0);
 }
@@ -233,20 +233,20 @@ void notification_reset(CapPtr notif_cap, int notification_id)
  * @return true 通知已设置
  * @return false 通知未设置
  */
-bool check_notification(CapPtr notif_cap, int notification_id)
+bool check_notification(CapIdx notif_cap, int notification_id)
 {
 	umb_t ret = syscall(SYS_CHECK_NOTIFICATION, notif_cap.val, (umb_t)(notification_id), 0, 0, 0, 0, 0);
 	return ret != 0;
 }
 
-CapPtr get_pcb_cap(void) {
+CapIdx get_pcb_cap(void) {
 	return pcb_cap;
 }
 
-CapPtr get_main_thread_cap(void) {
+CapIdx get_main_thread_cap(void) {
 	return main_thread_cap;
 }
 
-CapPtr get_notification_cap(void) {
+CapIdx get_notification_cap(void) {
 	return default_notif_cap;
 }

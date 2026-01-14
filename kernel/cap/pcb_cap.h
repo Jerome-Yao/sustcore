@@ -31,116 +31,116 @@
  * @brief 构造PCB能力
  *
  * @param p 需要构造PCB能力的进程
- * @return CapPtr 能力指针
+ * @return CapIdx 能力索引
  */
-CapPtr create_pcb_cap(PCB *p);
+CapIdx create_pcb_cap(PCB *p);
 
 /**
  * @brief 从源进程的源能力派生一个新的PCB能力到目标进程
  *
- * @param src_p 源进程
- * @param src_ptr 源能力
- * @param dst_p 目标进程
+ * @param sproc 源进程
+ * @param sidx 源能力
+ * @param dproc 目标进程
  * @param priv 新权限
- * @return CapPtr 新的能力指针
+ * @return CapIdx 新的能力索引
  */
-CapPtr pcb_cap_derive(PCB *src_p, CapPtr src_ptr, PCB *dst_p, qword priv);
+CapIdx pcb_cap_derive(PCB *sproc, CapIdx sidx, PCB *dproc, qword priv);
 
 /**
  * @brief 从源进程的源能力派生一个新的PCB能力到目标进程的指定位置
  *
- * @param src_p 源进程
- * @param src_ptr 源能力
- * @param dst_p 目标进程
- * @param dst_ptr 目标能力指针位置
+ * @param sproc 源进程
+ * @param sidx 源能力
+ * @param dproc 目标进程
+ * @param didx 目标能力索引位置
  * @param priv 新权限
- * @return CapPtr 新的能力指针
+ * @return CapIdx 新的能力索引
  */
-CapPtr pcb_cap_derive_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr,
+CapIdx pcb_cap_derive_at(PCB *sproc, CapIdx sidx, PCB *dproc, CapIdx didx,
                          qword priv);
 
 /**
  * @brief 从源进程的源能力克隆一个PCB能力到目标进程
  *
- * @param src_p 源进程
- * @param src_ptr 源能力
- * @param dst_p 目标进程
+ * @param sproc 源进程
+ * @param sidx 源能力
+ * @param dproc 目标进程
  * @param priv 新权限
- * @return CapPtr 新的能力指针
+ * @return CapIdx 新的能力索引
  */
-CapPtr pcb_cap_clone(PCB *src_p, CapPtr src_ptr, PCB *dst_p);
+CapIdx pcb_cap_clone(PCB *sproc, CapIdx sidx, PCB *dproc);
 
 /**
  * @brief 从源进程的源能力克隆一个PCB能力到目标进程的指定位置
  *
- * @param src_p 源进程
- * @param src_ptr 源能力
- * @param dst_p 目标进程
- * @param dst_ptr 目标能力指针位置
- * @return CapPtr 新的能力指针
+ * @param sproc 源进程
+ * @param sidx 源能力
+ * @param dproc 目标进程
+ * @param didx 目标能力索引位置
+ * @return CapIdx 新的能力索引
  */
-CapPtr pcb_cap_clone_at(PCB *src_p, CapPtr src_ptr, PCB *dst_p, CapPtr dst_ptr);
+CapIdx pcb_cap_clone_at(PCB *sproc, CapIdx sidx, PCB *dproc, CapIdx didx);
 
 /**
  * @brief 将能力降级为更低权限的能力
  *
  * @param p 当前进程PCB指针
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @param cap_priv 新的能力权限
- * @return CapPtr 降级后的能力指针(和cap_ptr相同)
+ * @return CapIdx 降级后的能力索引(和idx相同)
  */
-CapPtr pcb_cap_degrade(PCB *p, CapPtr cap_ptr, qword cap_priv);
+CapIdx pcb_cap_degrade(PCB *p, CapIdx idx, qword cap_priv);
 
 /**
  * @brief 解包PCB能力, 获得PCB指针
  *
  * @param p 当前进程PCB指针
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @return PCB* PCB指针
  */
-PCB *pcb_cap_unpack(PCB *p, CapPtr cap_ptr);
+PCB *pcb_cap_unpack(PCB *p, CapIdx idx);
 
 /**
  * @brief 退出进程
  *
  * @param p 当前进程的PCB
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  */
-void pcb_cap_exit(PCB *p, CapPtr cap_ptr);
+void pcb_cap_exit(PCB *p, CapIdx idx);
 
 /**
  * @brief fork一个新进程
  *
  * @param p 当前进程的PCB
- * @param cap_ptr 能力指针
- * @param child_cap 返回新进程的能力指针
+ * @param idx 能力索引
+ * @param child_cap 返回新进程的能力索引
  * @return PCB* 新进程的PCB指针
  */
-PCB *pcb_cap_fork(PCB *p, CapPtr cap_ptr, CapPtr *child_cap);
+PCB *pcb_cap_fork(PCB *p, CapIdx idx, CapIdx *child_cap);
 
 /**
  * @brief 获取进程的PID
  *
  * @param p 当前进程的PCB
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @return pid_t 进程的PID
  */
-pid_t pcb_cap_getpid(PCB *p, CapPtr cap_ptr);
+pid_t pcb_cap_getpid(PCB *p, CapIdx idx);
 
 /**
- * @brief 在cap_ptr所指向的进程创建一个新线程
+ * @brief 在idx所指向的进程创建一个新线程
  *
  * @param p 当前进程的PCB
- * @param cap_ptr 能力指针
+ * @param idx 能力索引
  * @param entrypoint 线程入口点
  * @param priority 线程优先级
- * @return CapPtr 新线程的能力指针
+ * @return CapIdx 新线程的能力索引
  */
-CapPtr pcb_cap_create_thread(PCB *p, CapPtr cap_ptr, void *entrypoint,
+CapIdx pcb_cap_create_thread(PCB *p, CapIdx idx, void *entrypoint,
                              int priority);
 
-#define PCB_CAP_START(proc, cap_ptr, cap, pcb, priv_check, ret_val) \
-    Capability *cap = fetch_cap(proc, cap_ptr);                     \
+#define PCB_CAP_START(proc, idx, cap, pcb, priv_check, ret_val) \
+    Capability *cap = fetch_cap(proc, idx);                     \
     if (cap == nullptr) {                                           \
         log_error("%s:指针指向的能力不存在!", __FUNCTION__);        \
         return ret_val;                                             \

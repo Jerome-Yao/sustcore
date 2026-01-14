@@ -11,7 +11,7 @@
 
 #include <kmod/device.h>
 
-CapPtr getdevice(CapPtr cap) {
+CapIdx getdevice(CapIdx cap) {
     // TODO: 实现
-    return INVALID_CAP_PTR;
+    return INVALID_CAP_IDX;
 }

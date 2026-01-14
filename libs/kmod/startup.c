@@ -17,19 +17,19 @@
 
 extern int kmod_main(void);
 
-static CapPtr device_cap;
-CapPtr main_thread_cap;
-CapPtr pcb_cap;
-CapPtr default_notif_cap;
+static CapIdx device_cap;
+CapIdx main_thread_cap;
+CapIdx pcb_cap;
+CapIdx default_notif_cap;
 
-CapPtr sa_get_device(void) {
+CapIdx sa_get_device(void) {
     return device_cap;
 }
 
 void init(umb_t heap_ptr) {
     // 初始化堆指针
     init_malloc((void *)heap_ptr);
-    device_cap = INVALID_CAP_PTR; // TODO: 从系统参数获取设备能力
+    device_cap = INVALID_CAP_IDX; // TODO: 从系统参数获取设备能力
 }
 
 void terminate(int code) {

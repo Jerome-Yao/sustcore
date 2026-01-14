@@ -18,7 +18,7 @@
  * @param cap 能力
  * @return int 能力类型
  */
-int get_cap_type(CapPtr cap);
+int get_cap_type(CapIdx cap);
 
 /**
  * @brief 检查能力是否合法
@@ -27,16 +27,16 @@ int get_cap_type(CapPtr cap);
  * @return true 合法
  * @return false 不合法
  */
-bool valid_cap(CapPtr cap);
+bool valid_cap(CapIdx cap);
 
 /**
  * @brief 为自己创建空能力
  *
  * @param provider 能力提供者能力
  *
- * @return CapPtr 空能力
+ * @return CapIdx 空能力
  */
-CapPtr make_null_cap(CapPtr provider);
+CapIdx make_null_cap(CapIdx provider);
 
 /**
  * @brief 为自己创建能力
@@ -46,18 +46,18 @@ CapPtr make_null_cap(CapPtr provider);
  * @param provider 能力提供者能力
  * @param data_ptr 能力数据指针
  *
- * @return CapPtr 能力
+ * @return CapIdx 能力
  */
-CapPtr make_cap(CapPtr provider, void *data_ptr);
+CapIdx make_cap(CapIdx provider, void *data_ptr);
 
 /**
  * @brief 将能力派生给指定进程
  *
  * @param parent 父能力
  * @param pid 目标进程能力, 该能力指向目标进程(被伪装成pid)
- * @return CapPtr 派生后的能力
+ * @return CapIdx 派生后的能力
  */
-CapPtr derive_cap(CapPtr parent, CapPtr pid);
+CapIdx derive_cap(CapIdx parent, CapIdx pid);
 
 /**
  * @brief 使能力失效
@@ -67,4 +67,4 @@ CapPtr derive_cap(CapPtr parent, CapPtr pid);
  *
  * @param cap 能力
  */
-void unvalid_cap(CapPtr cap);
+void unvalid_cap(CapIdx cap);

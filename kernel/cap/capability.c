@@ -33,8 +33,8 @@ CSpace new_cspace(void) {
     return space;
 }
 
-Capability *fetch_cap(PCB *pcb, CapPtr ptr) {
-    log_info("fetch_cap: cspace=%d, cindex=%d", ptr.cspace, ptr.cindex);
+Capability *fetch_cap(PCB *pcb, CapIdx idx) {
+    log_info("fetch_cap: cspace=%d, cindex=%d", idx.cspace, idx.cindex);
 
     // PCB中无CSpaces
     if (pcb->cap_spaces == nullptr) {
@@ -42,30 +42,30 @@ Capability *fetch_cap(PCB *pcb, CapPtr ptr) {
         return nullptr;
     }
 
-    // 指定的CapPtr无效
-    if (CAPPTR_INVALID(ptr)) {
-        log_error("fetch_cap: 指定的CapPtr无效");
+    // 指定的CapIdx无效
+    if (CAPIDX_INVALID(idx)) {
+        log_error("fetch_cap: 指定的CapIdx无效");
         return nullptr;
     }
 
     // 对应CSpace不存在
-    if (ptr.cspace < 0 || ptr.cspace >= PROC_CSPACES) {
+    if (idx.cspace < 0 || idx.cspace >= PROC_CSPACES) {
         log_error("fetch_cap: CSpace超出范围");
         return nullptr;
     }
 
-    if (pcb->cap_spaces[ptr.cspace] == nullptr) {
+    if (pcb->cap_spaces[idx.cspace] == nullptr) {
         log_error("fetch_cap: 对应的CSpace不存在");
         return nullptr;
     }
 
-    if (ptr.cindex < 0 || ptr.cindex >= CSPACE_ITEMS) {
+    if (idx.cindex < 0 || idx.cindex >= CSPACE_ITEMS) {
         log_error("fetch_cap: CIndex超出范围");
         return nullptr;
     }
 
-    CSpace *space   = &pcb->cap_spaces[ptr.cspace];
-    Capability *cap = (*space)[ptr.cindex];
+    CSpace *space   = &pcb->cap_spaces[idx.cspace];
+    Capability *cap = (*space)[idx.cindex];
     if (cap == nullptr) {
         log_error("fetch_cap: CIndex对应的Capability不存在");
         return nullptr;
@@ -73,15 +73,15 @@ Capability *fetch_cap(PCB *pcb, CapPtr ptr) {
     return cap;
 }
 
-CapPtr lookup_slot(PCB *pcb) {
+CapIdx lookup_slot(PCB *pcb) {
     if (pcb == nullptr) {
         log_error("lookup_slot: pcb不能为空!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     if (pcb->cap_spaces == nullptr) {
         log_error("lookup_slot: PCB块中无CSpaces");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 遍历CSpaces
@@ -92,19 +92,19 @@ CapPtr lookup_slot(PCB *pcb) {
         }
         CSpace *space = &pcb->cap_spaces[i];
         for (int j = 0; j < CSPACE_ITEMS; j++) {
-            // 跳过INVALID_CAP_PTR
+            // 跳过INVALID_CAP_IDX
             if (i + j == 0) {
                 continue;
             }
             // 找到空位
             if ((*space)[j] == nullptr) {
-                return (CapPtr){.cspace = i, .cindex = j};
+                return (CapIdx){.cspace = i, .cindex = j};
             }
         }
     }
 
     log_error("lookup_slot: PCB中槽位已满!");
-    return INVALID_CAP_PTR;
+    return INVALID_CAP_IDX;
 }
 
 /**
@@ -112,57 +112,57 @@ CapPtr lookup_slot(PCB *pcb) {
  *
  * @param pcb 进程控制块
  * @param cap 能力
- * @param cap_ptr 指定位置的能力指针
- * @return CapPtr 能力指针
+ * @param idx 指定位置的能力索引
+ * @return CapIdx 能力索引
  */
-CapPtr insert_cap_at(PCB *pcb, Capability *cap, CapPtr cap_ptr) {
+CapIdx insert_cap_at(PCB *pcb, Capability *cap, CapIdx idx) {
     if (cap == nullptr) {
         log_error("insert_cap_at: cap不能为空!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     if (pcb == nullptr) {
         log_error("insert_cap_at: pcb不能为空!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     if (pcb->cap_spaces == nullptr) {
         log_error("insert_cap_at: PCB块中无CSpaces");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
-    // 检查cap_ptr是否合法
-    if (cap_ptr.cspace < 0 || cap_ptr.cspace >= PROC_CSPACES) {
+    // 检查idx是否合法
+    if (idx.cspace < 0 || idx.cspace >= PROC_CSPACES) {
         log_error("insert_cap_at: CSpace超出范围");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
-    if (cap_ptr.cindex < 0 || cap_ptr.cindex >= CSPACE_ITEMS) {
+    if (idx.cindex < 0 || idx.cindex >= CSPACE_ITEMS) {
         log_error("insert_cap_at: CIndex超出范围");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 若对应CSpace不存在, 则创建
-    if (pcb->cap_spaces[cap_ptr.cspace] == nullptr) {
-        pcb->cap_spaces[cap_ptr.cspace] = new_cspace();
+    if (pcb->cap_spaces[idx.cspace] == nullptr) {
+        pcb->cap_spaces[idx.cspace] = new_cspace();
     }
 
-    CSpace *space = &pcb->cap_spaces[cap_ptr.cspace];
+    CSpace *space = &pcb->cap_spaces[idx.cspace];
     // 检查指定位置是否已被占用
-    if ((*space)[cap_ptr.cindex] != nullptr) {
+    if ((*space)[idx.cindex] != nullptr) {
         log_error("insert_cap_at: 指定位置已被占用");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 插入能力
-    (*space)[cap_ptr.cindex] = cap;
-    cap->cap_ptr             = cap_ptr;
+    (*space)[idx.cindex] = cap;
+    cap->idx             = idx;
     // 插入链表
     list_push_back(cap, CAPABILITY_LIST(pcb));
-    return cap_ptr;
+    return idx;
 }
 
-CapPtr insert_cap(PCB *pcb, Capability *cap) {
+CapIdx insert_cap(PCB *pcb, Capability *cap) {
     return insert_cap_at(pcb, cap, lookup_slot(pcb));
 }
 
@@ -174,7 +174,7 @@ CapPtr insert_cap(PCB *pcb, Capability *cap) {
  * @param cap_data 能力数据
  * @param cap_priv 能力权限
  * @param attached_priv 附加权限
- * @return Capability* 能力指针
+ * @return Capability* 能力索引
  */
 static Capability *__create_cap(PCB *p, CapType type, void *cap_data,
                                 const qword cap_priv, void *attached_priv) {
@@ -200,24 +200,24 @@ static Capability *__create_cap(PCB *p, CapType type, void *cap_data,
     return cap;
 }
 
-CapPtr create_cap_at(PCB *p, CapType type, void *cap_data, const qword cap_priv,
-                     void *attached_priv, CapPtr cap_ptr) {
+CapIdx create_cap_at(PCB *p, CapType type, void *cap_data, const qword cap_priv,
+                     void *attached_priv, CapIdx idx) {
     // 构造能力对象
     Capability *cap = __create_cap(p, type, cap_data, cap_priv, attached_priv);
     if (cap == nullptr) {
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 插入能力到PCB
-    CapPtr ret = insert_cap_at(p, cap, cap_ptr);
-    if (CAPPTR_INVALID(ret)) {
+    CapIdx ret = insert_cap_at(p, cap, idx);
+    if (CAPIDX_INVALID(ret)) {
         kfree(cap);
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
     return ret;
 }
 
-CapPtr create_cap(PCB *p, CapType type, void *cap_data, const qword cap_priv,
+CapIdx create_cap(PCB *p, CapType type, void *cap_data, const qword cap_priv,
                   void *attached_priv) {
     return create_cap_at(p, type, cap_data, cap_priv, attached_priv,
                          lookup_slot(p));
@@ -247,33 +247,33 @@ static Capability *__derive_cap(PCB *dst_p, Capability *parent, qword cap_priv,
                         attached_priv);
 }
 
-CapPtr derive_cap_at(PCB *p, Capability *parent, qword cap_priv,
-                     void *attached_priv, CapPtr cap_ptr) {
+CapIdx derive_cap_at(PCB *p, Capability *parent, qword cap_priv,
+                     void *attached_priv, CapIdx idx) {
     if (parent == nullptr) {
         log_error("derive_cap_at: 父能力不能为空!");
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 派生能力对象
     Capability *cap = __derive_cap(p, parent, cap_priv, attached_priv);
     if (cap == nullptr) {
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 插入能力到PCB
-    CapPtr ptr = insert_cap_at(p, cap, cap_ptr);
-    if (CAPPTR_INVALID(ptr)) {
+    CapIdx ret = insert_cap_at(p, cap, idx);
+    if (CAPIDX_INVALID(ret)) {
         kfree(cap);
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     // 将新能力加入到父能力的派生链表中
     cap->parent = parent;
     list_push_back(cap, CHILDREN_CAP_LIST(parent));
-    return ptr;
+    return idx;
 }
 
-CapPtr derive_cap(PCB *p, Capability *parent, qword cap_priv,
+CapIdx derive_cap(PCB *p, Capability *parent, qword cap_priv,
                   void *attached_priv) {
     return derive_cap_at(p, parent, cap_priv, attached_priv, lookup_slot(p));
 }

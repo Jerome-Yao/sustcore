@@ -21,67 +21,67 @@
 #include <syscall/uaccess.h>
 #include <task/proc.h>
 
-const char *cap_ptr_to_string(PCB *p, CapPtr ptr, int i) {
+const char *cap_idx_to_string(PCB *p, CapIdx idx, int i) {
     static char buffer_1[256];
     static char buffer_2[256];
     static char buffer_3[256];
     static char buffer_4[256];
 
-    Capability *cap = fetch_cap(p, ptr);
+    Capability *cap = fetch_cap(p, idx);
 
     switch (i) {
         case 0:
-            sprintf(buffer_1, "CapPtr[1st](cspace=%u, cindex=%u. type=%s)",
-                    ptr.cspace, ptr.cindex, cap_type_to_string(cap->type));
+            sprintf(buffer_1, "CapIdx[1st](cspace=%u, cindex=%u. type=%s)",
+                    idx.cspace, idx.cindex, cap_type_to_string(cap->type));
             return buffer_1;
         case 1:
-            sprintf(buffer_2, "CapPtr[2nd](cspace=%u, cindex=%u)", ptr.cspace,
-                    ptr.cindex, cap_type_to_string(cap->type));
+            sprintf(buffer_2, "CapIdx[2nd](cspace=%u, cindex=%u)", idx.cspace,
+                    idx.cindex, cap_type_to_string(cap->type));
             return buffer_2;
         case 2:
-            sprintf(buffer_3, "CapPtr[3rd](cspace=%u, cindex=%u)", ptr.cspace,
-                    ptr.cindex, cap_type_to_string(cap->type));
+            sprintf(buffer_3, "CapIdx[3rd](cspace=%u, cindex=%u)", idx.cspace,
+                    idx.cindex, cap_type_to_string(cap->type));
             return buffer_3;
         case 3:
-            sprintf(buffer_4, "CapPtr[4th](cspace=%u, cindex=%u)", ptr.cspace,
-                    ptr.cindex, cap_type_to_string(cap->type));
+            sprintf(buffer_4, "CapIdx[4th](cspace=%u, cindex=%u)", idx.cspace,
+                    idx.cindex, cap_type_to_string(cap->type));
             return buffer_4;
         default: return "Invalid index";
     }
 }
 
-void sys_exit(PCB *p, TCB *t, CapPtr ptr, umb_t exit_code) {
+void sys_exit(PCB *p, TCB *t, CapIdx idx, umb_t exit_code) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_exit(%s, %d)", p->pid, t->tid,
-              cap_ptr_to_string(p, ptr, 0), exit_code);
+              cap_idx_to_string(p, idx, 0), exit_code);
 
-    pcb_cap_exit(p, ptr);
+    pcb_cap_exit(p, idx);
     log_info("线程程(pid=%d, tid=%d)调用 exit 系统调用, 退出码: %lu", p->pid,
              t->tid, exit_code);
 }
 
-void sys_yield(PCB *p, TCB *t, CapPtr ptr) {
+void sys_yield(PCB *p, TCB *t, CapIdx idx) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_yield(%s)", p->pid, t->tid,
-              cap_ptr_to_string(p, ptr, 0));
+              cap_idx_to_string(p, idx, 0));
 
     log_info("sys_yield()已被废弃, 请使用 sys_yield_thread()\n");
 }
 
-pid_t sys_getpid(PCB *p, TCB *t, CapPtr ptr) {
+pid_t sys_getpid(PCB *p, TCB *t, CapIdx idx) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_getpid(%s)", p->pid, t->tid,
-              cap_ptr_to_string(p, ptr, 0));
-    return pcb_cap_getpid(p, ptr);
+              cap_idx_to_string(p, idx, 0));
+    return pcb_cap_getpid(p, idx);
 }
 
 // TODO: fork函数的实现需要考虑复制过程中能力的传递
 // 目前实现的版本特别简单, 但是有着诸多问题
-CapPtr sys_fork(PCB *p, TCB *t, CapPtr ptr) {
+CapIdx sys_fork(PCB *p, TCB *t, CapIdx idx) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_fork(%s)", p->pid, t->tid,
-              cap_ptr_to_string(p, ptr, 0));
+              cap_idx_to_string(p, idx, 0));
 
-    CapPtr child_cap;
-    PCB *child = pcb_cap_fork(p, ptr, &child_cap);
+    CapIdx child_cap;
+    PCB *child = pcb_cap_fork(p, idx, &child_cap);
     if (child == nullptr) {
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
     // 我们需要为子进程设置返回值
     // 对子进程, 设置副返回值为0
@@ -133,74 +133,74 @@ int sys_write_serial(PCB *p, TCB *t, const char *msg) {
     return ret;
 }
 
-CapPtr sys_create_thread(PCB *p, TCB *t, CapPtr ptr, void *entrypoint,
+CapIdx sys_create_thread(PCB *p, TCB *t, CapIdx idx, void *entrypoint,
                          int priority) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_create_thread(%s, %p, %d)", p->pid,
-              t->tid, cap_ptr_to_string(p, ptr, 0), entrypoint, priority);
+              t->tid, cap_idx_to_string(p, idx, 0), entrypoint, priority);
     // 创建新线程
-    CapPtr tcb_ptr = pcb_cap_create_thread(p, ptr, entrypoint, priority);
+    CapIdx tcb_idx = pcb_cap_create_thread(p, idx, entrypoint, priority);
     // 也将该能力传递给新线程
-    TCB *tcb       = tcb_cap_unpack(p, tcb_ptr);
-    arch_setup_argument(tcb, 0, tcb_ptr.val);
-    return tcb_ptr;
+    TCB *tcb       = tcb_cap_unpack(p, tcb_idx);
+    arch_setup_argument(tcb, 0, tcb_idx.val);
+    return tcb_idx;
 }
 
-bool sys_wait_notification(PCB *p, TCB *t, CapPtr pcb_ptr, CapPtr not_ptr,
+bool sys_wait_notification(PCB *p, TCB *t, CapIdx pcb_idx, CapIdx not_idx,
                            qword *wait_bitmap) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_wait_notification(%s, %s, %p)",
-              p->pid, t->tid, cap_ptr_to_string(p, pcb_ptr, 0),
-              cap_ptr_to_string(p, not_ptr, 1), wait_bitmap);
+              p->pid, t->tid, cap_idx_to_string(p, pcb_idx, 0),
+              cap_idx_to_string(p, not_idx, 1), wait_bitmap);
     log_info(
         "sys_wait_notification()已被废弃, 请使用 "
         "sys_wait_notification_thread()\n");
     return false;
 }
 
-bool sys_wait_notification_thread(PCB *p, TCB *t, CapPtr tcb_ptr,
-                                  CapPtr not_ptr, qword *wait_bitmap) {
+bool sys_wait_notification_thread(PCB *p, TCB *t, CapIdx tcb_idx,
+                                  CapIdx not_idx, qword *wait_bitmap) {
     log_debug(
         "线程(pid=%d, tid=%d) 调用 sys_wait_notification_thread(%s, %s, %p)",
-        p->pid, t->tid, cap_ptr_to_string(p, tcb_ptr, 0),
-        cap_ptr_to_string(p, not_ptr, 1), wait_bitmap);
+        p->pid, t->tid, cap_idx_to_string(p, tcb_idx, 0),
+        cap_idx_to_string(p, not_idx, 1), wait_bitmap);
     // 从进程的空间中复制wait_bitmap
     qword buffer[NOTIFICATION_BITMAP_QWORDS];
     ua_memcpy(buffer, wait_bitmap, sizeof(qword) * NOTIFICATION_BITMAP_QWORDS);
     // 设置等待通知
-    return tcb_cap_wait_notification(p, tcb_ptr, not_ptr, buffer);
+    return tcb_cap_wait_notification(p, tcb_idx, not_idx, buffer);
 }
 
-void sys_set_notification(PCB *p, TCB *t, CapPtr ptr, int notification_id) {
+void sys_set_notification(PCB *p, TCB *t, CapIdx idx, int notification_id) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_set_notification(%s, %d)", p->pid,
-              t->tid, cap_ptr_to_string(p, ptr, 0), notification_id);
+              t->tid, cap_idx_to_string(p, idx, 0), notification_id);
 
-    not_cap_set(p, ptr, notification_id);
+    not_cap_set(p, idx, notification_id);
 }
 
-void sys_reset_notification(PCB *p, TCB *t, CapPtr ptr, int notification_id) {
+void sys_reset_notification(PCB *p, TCB *t, CapIdx idx, int notification_id) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_reset_notification(%s, %d)",
-              p->pid, t->tid, cap_ptr_to_string(p, ptr, 0), notification_id);
+              p->pid, t->tid, cap_idx_to_string(p, idx, 0), notification_id);
 
-    not_cap_reset(p, ptr, notification_id);
+    not_cap_reset(p, idx, notification_id);
 }
 
-bool sys_check_notification(PCB *p, TCB *t, CapPtr ptr, int notification_id) {
+bool sys_check_notification(PCB *p, TCB *t, CapIdx idx, int notification_id) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_check_notification(%s, %d)",
-              p->pid, t->tid, cap_ptr_to_string(p, ptr, 0), notification_id);
+              p->pid, t->tid, cap_idx_to_string(p, idx, 0), notification_id);
 
-    return not_cap_check(p, ptr, notification_id);
+    return not_cap_check(p, idx, notification_id);
 }
 
-void sys_yield_thread(PCB *p, TCB *t, CapPtr ptr) {
+void sys_yield_thread(PCB *p, TCB *t, CapIdx idx) {
     log_debug("线程(pid=%d, tid=%d) 调用 sys_yield_thread(%s)",
-              cap_ptr_to_string(p, ptr, 0));
-    tcb_cap_yield(p, ptr);
+              cap_idx_to_string(p, idx, 0));
+    tcb_cap_yield(p, idx);
 }
 
 umb_t syscall_handler(int sysno, RegCtx *ctx, ArgumentGetter arg_getter) {
     log_debug("=====SYSCALL START=====");
     umb_t ret = 0;
     // 第0个参数一定存放Capability
-    CapPtr cap;
+    CapIdx cap;
     cap.val = arg_getter(ctx, 0);
 
     PCB *const p = cur_thread->pcb;
@@ -224,14 +224,14 @@ umb_t syscall_handler(int sysno, RegCtx *ctx, ArgumentGetter arg_getter) {
         case SYS_YIELD_THREAD: sys_yield_thread(p, t, cap); break;
         case SYS_WAIT_NOTIFICATION:
             ret = (sys_wait_notification(p, t, cap,
-                                         (CapPtr){.val = arg_getter(ctx, 1)},
+                                         (CapIdx){.val = arg_getter(ctx, 1)},
                                          (qword *)arg_getter(ctx, 2)))
                       ? 1
                       : 0;
             break;
         case SYS_WAIT_NOTIFICATION_THREAD:
             ret = (sys_wait_notification_thread(
-                      p, t, cap, (CapPtr){.val = arg_getter(ctx, 1)},
+                      p, t, cap, (CapIdx){.val = arg_getter(ctx, 1)},
                       (qword *)arg_getter(ctx, 2)))
                       ? 1
                       : 0;

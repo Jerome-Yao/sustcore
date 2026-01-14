@@ -25,15 +25,15 @@ void init_proc_cap_table(void);
  * @param cap 进程能力
  * @return int 进程ID
  */
-int get_pid(CapPtr cap);
+int get_pid(CapIdx cap);
 
 /**
  * @brief 获得指定pid的进程能力
  * 
  * @param pid 进程ID
- * @return CapPtr 进程能力, 未找到则val为0
+ * @return CapIdx 进程能力, 未找到则val为0
  */
-CapPtr get_proc_cap(int pid);
+CapIdx get_proc_cap(int pid);
 
 /**
  * @brief 插入进程能力到哈希表
@@ -41,4 +41,4 @@ CapPtr get_proc_cap(int pid);
  * @param pid 进程ID
  * @param cap 进程能力
  */
-void insert_proc_cap(int pid, CapPtr cap);
+void insert_proc_cap(int pid, CapIdx cap);

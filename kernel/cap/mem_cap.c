@@ -11,12 +11,13 @@
 
 #include <cap/mem_cap.h>
 #include <mem/alloc.h>
+#include <mem/pmm.h>
 
-CapPtr mem_cap_create(PCB *p, void *paddr, size_t size, bool shared, bool mmio, bool allocated)
+CapIdx mem_cap_create(PCB *p, void *paddr, size_t size, bool shared, bool mmio, bool allocated)
 {
     MemoryData *mem_data = (MemoryData *)kmalloc(sizeof(MemoryData));
     if (mem_data == nullptr) {
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
 
     mem_data->mem_paddr = paddr;
@@ -25,11 +26,26 @@ CapPtr mem_cap_create(PCB *p, void *paddr, size_t size, bool shared, bool mmio, 
     mem_data->mmio = mmio;
     mem_data->allocated = allocated;
 
-    CapPtr ptr = create_cap(p, CAP_TYPE_MEM, (void *)mem_data, CAP_PRIV_ALL, nullptr);
-    if (CAPPTR_INVALID(ptr)) {
+    CapIdx ptr = create_cap(p, CAP_TYPE_MEM, (void *)mem_data, CAP_PRIV_ALL, nullptr);
+    if (CAPIDX_INVALID(ptr)) {
         // 创建失败, 释放内存
         kfree(mem_data);
-        return INVALID_CAP_PTR;
+        return INVALID_CAP_IDX;
     }
     return ptr;
 }
+
+CapIdx mem_cap_alloc_and_create(PCB *p, size_t size, bool shared)
+{
+    void *paddr = alloc_pages(SIZE2PAGES(size));
+    if (paddr == nullptr) {
+        return INVALID_CAP_IDX;
+    }
+    CapIdx ptr = mem_cap_create(p, paddr, size, shared, false, true);
+    if (CAPIDX_INVALID(ptr)) {
+        free_pages(paddr, SIZE2PAGES(size));
+        return INVALID_CAP_IDX;
+    }
+    return ptr;
+}
+
