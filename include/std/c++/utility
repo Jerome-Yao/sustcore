@@ -13,7 +13,7 @@
 
 namespace std {
     template <class T>
-    void swap(T& a, T& b) {
+    constexpr void swap(T& a, T& b) {
         T temp = static_cast<T&&>(a);
         a      = static_cast<T&&>(b);
         b      = static_cast<T&&>(temp);
