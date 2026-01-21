@@ -13,7 +13,8 @@
 #include <basecpp/baseio.h>
 #include <kio.h>
 #include <mem/alloc.h>
-#include <sus/bits.h>
+#include <mem/pfa.h>
+#include <sus/types.h>
 
 #include <cstdarg>
 #include <cstddef>
@@ -64,8 +65,6 @@ void kernel_setup(void) {
     ArchSerial::serial_write_string("欢迎使用 Sustcore Riscv64 内核!\n");
     ArchInitialization::pre_init();
 
-    // FDTHelper::print_device_tree_detailed();
-
     MemRegion regions[128];
     int cnt = ArchMemoryLayout::detect_memory_layout(regions, 128);
     for (int i = 0; i < cnt; i++) {
@@ -73,5 +72,6 @@ void kernel_setup(void) {
                 (void*)((umb_t)(regions[i].ptr) + regions[i].size),
                 static_cast<int>(regions[i].status));
     }
+
     while (true);
 }

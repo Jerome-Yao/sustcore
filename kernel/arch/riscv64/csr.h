@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <sus/bits.h>
+#include <sus/types.h>
 
 typedef umb_t csr_t;
 typedef dword csr32_t;

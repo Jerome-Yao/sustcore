@@ -4,9 +4,9 @@
  * @brief SBI接口
  * @version alpha-1.0.0
  * @date 2025-11-17
- * 
+ *
  * @copyright Copyright (c) 2025
- * 
+ *
  */
 
 #pragma once
@@ -15,24 +15,24 @@
 extern "C" {
 #endif
 
-#include <sus/bits.h>
 #include <sbi/sbi_enum.h>
+#include <sus/types.h>
 
 /**
  * @brief SBI调用返回结构体
- * 
+ *
  */
 typedef struct {
-    smb_t error; // 错误码
+    smb_t error;  // 错误码
     union {
-        smb_t value; // 返回值(有符号)
-        umb_t uvalue; // 返回值(无符号)
+        smb_t value;   // 返回值(有符号)
+        umb_t uvalue;  // 返回值(无符号)
     };
 } SBIRet;
 
 /**
  * @brief SBI功能调用函数
- * 
+ *
  * @param eid   extension ID
  * @param fid   function ID
  * @param arg0  第1个参数
@@ -43,10 +43,8 @@ typedef struct {
  * @param arg5  第6个参数
  * @return SBIRet 返回值
  */
-SBIRet sbi_ecall(dword eid, dword fid, 
-                 umb_t arg0, umb_t arg1,
-                 umb_t arg2, umb_t arg3, 
-                 umb_t arg4, umb_t arg5);
+SBIRet sbi_ecall(dword eid, dword fid, umb_t arg0, umb_t arg1, umb_t arg2,
+                 umb_t arg3, umb_t arg4, umb_t arg5);
 
 //-----------------------
 // Legacy SBI Calls
@@ -54,9 +52,9 @@ SBIRet sbi_ecall(dword eid, dword fid,
 
 /**
  * @brief 设定定时器
- * 
+ *
  * (已弃用)
- * 
+ *
  * @param stime_value 在stime_value时间后触发定时器中断
  * @return SBIRet 返回值
  */
@@ -64,9 +62,9 @@ SBIRet sbi_legacy_set_timer(qword stime_value);
 
 /**
  * @brief 向控制台输出一个字符
- * 
+ *
  * (已弃用)
- * 
+ *
  * @param ch 字符
  * @return SBIRet 返回值
  */
@@ -74,23 +72,23 @@ SBIRet sbi_legacy_console_putchar(char ch);
 
 /**
  * @brief 从控制台获取一个字符
- * 
+ *
  * (已弃用)
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_legacy_console_getchar(void);
 
 /**
  * @brief 清空IPI
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_legacy_clear_ipi(void);
 
 /**
  * @brief 发送IPI
- * 
+ *
  * @param hart_mask_ptr hart掩码指针
  * @return SBIRet 返回值
  */
@@ -98,7 +96,7 @@ SBIRet sbi_legacy_send_ipi(const void *hart_mask_ptr);
 
 /**
  * @brief 远程指令缓存刷新
- * 
+ *
  * @param hart_mask_ptr hart掩码指针
  * @return SBIRet 返回值
  */
@@ -106,35 +104,33 @@ SBIRet sbi_legacy_remote_fence_i(const void *hart_mask_ptr);
 
 /**
  * @brief 远程虚拟地址刷新
- * 
+ *
  * @param hart_mask_ptr hart掩码指针
  * @param start_addr 起始地址
  * @param size 大小
  * @return SBIRet 返回值
  */
-SBIRet sbi_legacy_remote_sfence_vma(const void *hart_mask_ptr, 
-                             umb_t start_addr, 
-                             umb_t size);
+SBIRet sbi_legacy_remote_sfence_vma(const void *hart_mask_ptr, umb_t start_addr,
+                                    umb_t size);
 
 /**
  * @brief 远程虚拟地址刷新(带ASID)
- * 
+ *
  * @param hart_mask_ptr hart掩码指针
  * @param start_addr 起始地址
  * @param size 大小
  * @param asid 地址空间标识符
  * @return SBIRet 返回值
  */
-SBIRet sbi_legacy_remote_sfence_vma_asid(const void *hart_mask_ptr, 
-                                 umb_t start_addr, 
-                                 umb_t size,
-                                 umb_t asid);
+SBIRet sbi_legacy_remote_sfence_vma_asid(const void *hart_mask_ptr,
+                                         umb_t start_addr, umb_t size,
+                                         umb_t asid);
 
 /**
  * @brief 关闭系统
- * 
+ *
  * (已弃用)
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_legacy_shutdown(void);
@@ -145,28 +141,28 @@ SBIRet sbi_legacy_shutdown(void);
 
 /**
  * @brief 获取SBI规范版本
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_get_spec_version(void);
 
 /**
  * @brief 获取SBI实现ID
- * 
- * @return SBIRet 返回值    
+ *
+ * @return SBIRet 返回值
  */
 SBIRet sbi_get_impl_id(void);
 
 /**
  * @brief 获取SBI实现版本
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_get_impl_version(void);
 
 /**
  * @brief 探测SBI扩展
- * 
+ *
  * @param extension_id 扩展ID
  * @return SBIRet 返回值
  */
@@ -174,21 +170,21 @@ SBIRet sbi_probe_extension(dword extension_id);
 
 /**
  * @brief 获取Mvendorid
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_get_mvendorid(void);
 
 /**
  * @brief 获取Marchid
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_get_marchid(void);
 
 /**
  * @brief 获取Mimpid
- * 
+ *
  * @return SBIRet 返回值
  */
 SBIRet sbi_get_mimpid(void);
@@ -199,25 +195,25 @@ SBIRet sbi_get_mimpid(void);
 
 /**
  * @brief 向调试控制台写入数据
- * 
+ *
  * @param len 数据长度
  * @param buf 数据缓冲区
  * @return SBIRet 返回值
  */
-SBIRet sbi_dbcn_console_write(umb_t len, const void* buf);
+SBIRet sbi_dbcn_console_write(umb_t len, const void *buf);
 
 /**
  * @brief 向调试控制台读取数据
- * 
+ *
  * @param len 数据长度
  * @param buf 数据缓冲区
  * @return SBIRet 返回值
  */
-SBIRet sbi_dbcn_console_read(umb_t len, void* buf);
+SBIRet sbi_dbcn_console_read(umb_t len, void *buf);
 
 /**
  * @brief 向调试控制台写入一个字节
- * 
+ *
  * @param ch 字节
  * @return SBIRet 返回值
  */
@@ -339,7 +335,7 @@ SBIRet sbi_remote_hfence_gvma(umb_t hart_mask, umb_t hart_mask_base,
 
 /**
  * @brief 带 ASID 的远程 HFENCE.VVMA (FID #5)
- * 
+ *
  * 指示远程 harts 执行一个或多个 HFENCE.VVMA 指令，覆盖从 start_addr 到
  * start_addr + size 的客户机虚拟地址范围，针对给定的 ASID 和调用 hart 的当前
  * VMID（在 hgatp CSR 中）。此函数调用仅对实现了虚拟机监控器扩展的 harts 有效。
@@ -356,10 +352,11 @@ SBIRet sbi_remote_hfence_vvma_asid(umb_t hart_mask, umb_t hart_mask_base,
 
 /**
  * @brief 远程 HFENCE.VVMA (FID #6)
- * 
+ *
  * 指示远程 harts 执行一个或多个 HFENCE.VVMA 指令，覆盖从 start_addr 到
  * start_addr + size 的客户机虚拟地址范围，针对调用 hart 的当前 VMID（在
- * hgatp CSR 中）和所有 ASID。此函数调用仅对实现了虚拟机监控器扩展的 harts 有效。
+ * hgatp CSR 中）和所有 ASID。此函数调用仅对实现了虚拟机监控器扩展的 harts
+ * 有效。
  *
  * @param hart_mask hart掩码
  * @param hart_mask_base hart掩码基址
