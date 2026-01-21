@@ -10,6 +10,8 @@
  */
 
 #include <mem/pfa.h>
+#include <kio.h>
+#include <sus/types.h>
 
 void *LinearGrowPFA::baseaddr = nullptr;
 void *LinearGrowPFA::curaddr  = nullptr;
@@ -29,10 +31,10 @@ void LinearGrowPFA::pre_init(MemRegion *regions, size_t region_count) {
     }
 
     // 将 baseaddr 向上对齐, boundary 向下对齐
-    LinearGrowPFA::baseaddr = page_align_up(baseaddr);
+    LinearGrowPFA::baseaddr = (void *)page_align_up((umb_t)baseaddr);
     LinearGrowPFA::curaddr  = LinearGrowPFA::baseaddr;
     umb_t _boundary           = (umb_t)baseaddr + max_size;
-    LinearGrowPFA::boundary = page_align_down((void *)_boundary);
+    LinearGrowPFA::boundary = (void *)page_align_down(_boundary);
 }
 
 void LinearGrowPFA::post_init() {}

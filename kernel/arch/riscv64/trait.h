@@ -45,3 +45,5 @@ public:
 
 static_assert(ArchMemLayoutTrait<Riscv64MemoryLayout>);
 typedef Riscv64MemoryLayout ArchMemoryLayout;
+
+#include <arch/riscv64/mem/sv39.h>

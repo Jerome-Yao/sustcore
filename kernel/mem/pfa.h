@@ -15,7 +15,6 @@
 #include <sus/types.h>
 
 #include <cstddef>
-#include <cstdint>
 
 template <typename T>
 concept PageFrameAllocatorTrait = requires(
@@ -62,15 +61,11 @@ static_assert(PageFrameAllocatorTrait<LinearGrowPFA>,
 constexpr size_t PAGESIZE = 0x1000;  // 4KB
 
 // 向上对齐到页边界
-constexpr void *page_align_up(void *addr) {
-    umb_t addr_val = (umb_t)addr;
-    umb_t _aligned = (addr_val + 0xFFF) & ~0xFFF;
-    return (void *)_aligned;
+constexpr umb_t page_align_up(umb_t addr_val) {
+    return (addr_val + 0xFFF) & ~0xFFF;
 }
 
 // 向下对齐到页边界
-constexpr void *page_align_down(void *addr) {
-    umb_t addr_val = (umb_t)addr;
-    umb_t _aligned = addr_val & ~0xFFF;
-    return (void *)_aligned;
+constexpr umb_t page_align_down(umb_t addr_val) {
+    return addr_val & ~0xFFF;
 }
