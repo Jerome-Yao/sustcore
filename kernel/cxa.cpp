@@ -4,15 +4,12 @@
  * @brief C++ ABI
  * @version alpha-1.0.0
  * @date 2026-01-19
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
-#pragma once
-
 #include <mem/alloc.h>
-#include <mem/lga.h>
 
 // 全局new/delete操作符重载，使用线性增长分配器
 // 但绝大多数情况下, 你都应该使用slab分配器或其他更高级的分配器

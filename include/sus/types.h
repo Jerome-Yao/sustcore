@@ -1,7 +1,7 @@
 /**
- * @file bits.h
+ * @file types.h
  * @author theflysong (song_of_the_fly@163.com)
- * @brief 不同位长的bit
+ * @brief 各种类型
  * @version alpha-1.0.0
  * @date 2025-11-17
  *
@@ -11,8 +11,11 @@
 
 #pragma once
 
-#pragma once
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+#include <stddef.h>
 #include <stdint.h>
 
 /** 字节 */
@@ -69,3 +72,7 @@ typedef signed_machine_bits smb_t;
 #define BYTE_MAX  (0xFF)
 
 #define PACKED __attribute__((packed))
+
+#ifdef __cplusplus
+}
+#endif

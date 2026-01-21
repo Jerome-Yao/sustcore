@@ -1,1 +1,5 @@
-objects += mem/lga.o
+objects += mem/alloc.o
+deps += mem/alloc.d
+
+objects += mem/pfa.o
+deps += mem/pfa.d

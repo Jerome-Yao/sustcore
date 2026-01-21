@@ -12,7 +12,7 @@
 #pragma once
 
 #include <libfdt.h>
-#include <sus/bits.h>
+#include <sus/types.h>
 
 #include <cstddef>
 
