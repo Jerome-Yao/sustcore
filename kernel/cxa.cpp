@@ -9,26 +9,26 @@
  *
  */
 
-#include <mem/alloc.h>
+#include <configuration.h>
 
 // 全局new/delete操作符重载，使用线性增长分配器
 // 但绝大多数情况下, 你都应该使用slab分配器或其他更高级的分配器
 // 这要求你为你的类实现自定义的new/delete操作符
 
 void* operator new(size_t size) {
-    return LinearGrowAllocator::malloc(size);
+    return Allocator::malloc(size);
 }
 
 void operator delete(void* ptr) noexcept {
-    LinearGrowAllocator::free(ptr);
+    Allocator::free(ptr);
 }
 
 void* operator new[](size_t size) {
-    return LinearGrowAllocator::malloc(size);
+    return Allocator::malloc(size);
 }
 
 void operator delete[](void* ptr) noexcept {
-    LinearGrowAllocator::free(ptr);
+    Allocator::free(ptr);
 }
 
 // Placement new/delete
@@ -37,7 +37,7 @@ void* operator new(size_t size, void* ptr) noexcept {
 }
 
 void operator delete(void* ptr, void*) noexcept {
-    LinearGrowAllocator::free(ptr);
+    Allocator::free(ptr);
 }
 
 void* operator new[](size_t size, void* ptr) noexcept {
@@ -45,5 +45,5 @@ void* operator new[](size_t size, void* ptr) noexcept {
 }
 
 void operator delete[](void* ptr, void*) noexcept {
-    LinearGrowAllocator::free(ptr);
+    Allocator::free(ptr);
 }

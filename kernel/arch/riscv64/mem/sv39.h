@@ -17,6 +17,7 @@
 #include <mem/pfa.h>
 #include <sus/types.h>
 #include <kio.h>
+#include <cstring>
 
 enum class Riscv64SV39RWX : umb_t {
     // 基本权限
@@ -68,8 +69,8 @@ template <PageFrameAllocatorTrait PFA>
 class Riscv64SV39PageMan {
 public:
     // 前初始化与后初始化
-    static void pre_init(void);
-    static void post_init(void);
+    static void pre_init(void){}
+    static void post_init(void){}
 
     using RWX = Riscv64SV39RWX;
 

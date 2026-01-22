@@ -3,3 +3,6 @@ deps += mem/alloc.d
 
 objects += mem/pfa.o
 deps += mem/pfa.d
+
+objects += mem/kaddr.o
+deps += mem/kaddr.d

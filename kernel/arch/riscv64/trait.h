@@ -29,7 +29,6 @@ public:
 };
 
 static_assert(ArchInitializationTrait<Riscv64Initialization>);
-typedef Riscv64Initialization ArchInitialization;
 
 class Riscv64MemoryLayout {
 public:
@@ -44,6 +43,5 @@ public:
 };
 
 static_assert(ArchMemLayoutTrait<Riscv64MemoryLayout>);
-typedef Riscv64MemoryLayout ArchMemoryLayout;
 
 #include <arch/riscv64/mem/sv39.h>
