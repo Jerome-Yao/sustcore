@@ -18,6 +18,12 @@ extern "C" {
 
 #include <stddef.h>
 
+namespace std {
+    using ::ptrdiff_t;
+    using ::size_t;
+    using ::nullptr_t;
+}  // namespace std
+
 #ifdef __cplusplus
 }
 #undef restrict

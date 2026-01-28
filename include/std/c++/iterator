@@ -1,0 +1,44 @@
+/**
+ * @file iterator
+ * @author theflysong (song_of_the_fly@163.com)
+ * @brief 迭代器
+ * @version alpha-1.0.0
+ * @date 2026-01-28
+ *
+ * @copyright Copyright (c) 2026
+ *
+ */
+
+#pragma once
+
+#include <cstddef>
+#include <type_traits>
+
+namespace std {
+    struct input_iterator_tag {};
+    struct output_iterator_tag {};
+    struct forward_iterator_tag : input_iterator_tag {};
+    struct bidirectional_iterator_tag : forward_iterator_tag {};
+    struct random_access_iterator_tag : bidirectional_iterator_tag {};
+    struct contiguous_iterator_tag : random_access_iterator_tag {};
+
+    template <typename Iter>
+    struct iterator_traits;
+
+    template <typename _Iterator, typename = std::void_t<>>
+    struct __iterator_traits {};
+
+    template <typename Iter>
+    struct iterator_traits : public __iterator_traits<Iter> {};
+
+    template <typename _Tp>
+        requires std::is_object_v<_Tp>
+    struct iterator_traits<_Tp *> {
+        using iterator_concept  = contiguous_iterator_tag;
+        using iterator_category = random_access_iterator_tag;
+        using value_type        = std::remove_cv_t<_Tp>;
+        using difference_type   = ptrdiff_t;
+        using pointer           = _Tp *;
+        using reference         = _Tp &;
+    };
+}  // namespace std

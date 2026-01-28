@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include <concept>
+#include <concepts>
 #include <cstdarg>
 #include <cstdio>
 

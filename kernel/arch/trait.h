@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <concept>
+#include <concepts>
 #include <cstddef>
 #include <sus/types.h>
 
