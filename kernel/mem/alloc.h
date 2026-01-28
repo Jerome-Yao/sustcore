@@ -28,6 +28,20 @@ concept AllocatorTrait = requires(size_t size, void* ptr) {
         T::init()
     } -> std::same_as<void>;
 };
+
+template <typename T, typename ObjType>
+concept KOATrait = requires(T *koa, ObjType *obj) {
+    {
+        new T()
+    } -> std::same_as<T *>;
+    {
+        koa->alloc()
+    } -> std::same_as<ObjType*>;
+    {
+        koa->free(obj)
+    } -> std::same_as<void>;
+};
+
 class LinearGrowAllocator {
 private:
     static constexpr size_t SIZE = 0x10000;  // 64KB
@@ -65,3 +79,20 @@ class FixedSizeAllocator {};
 // 实现可变大小分配器
 template <PageFrameAllocatorTrait PFA>
 class MixedSizeAllocator {};
+
+template<typename T, AllocatorTrait Allocator>
+
+class SimpleKOA {
+public:
+    SimpleKOA() = default;
+    ~SimpleKOA() = default;
+    T* alloc() {
+        return (T *)Allocator::malloc(sizeof(T));
+    }
+    void free(T* obj) {
+        Allocator::free((void *)obj);
+    }
+};
+
+static_assert(KOATrait<SimpleKOA<int, LinearGrowAllocator>, int>,
+              "SimpleKOA 不满足 KOATrait");
