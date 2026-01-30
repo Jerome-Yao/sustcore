@@ -28,9 +28,9 @@ util::IntrusiveList<BuddyAllocator::FreeBlock>
 
 /**
  * @brief 按页数添加一段物理内存范围到Buddy分配器
- * 
- * @param paddr 
- * @param pages 
+ *
+ * @param paddr
+ * @param pages
  */
 static void add_memory_range(void *paddr, size_t pages) {
     umb_t addr    = (umb_t)paddr;
@@ -89,18 +89,14 @@ void BuddyAllocator::pre_init(MemRegion *regions, size_t region_count) {
 void BuddyAllocator::post_init() {
     BUDDY.DEBUG("enter post_init");
 
-    struct RawList {
-        FreeBlock sentinel;
-        size_t size;
-    };
-
     for (int i = 0; i <= BuddyAllocator::MAX_BUDDY_ORDER; i++) {
-        RawList *raw = reinterpret_cast<RawList *>(&free_area[i]);
+        auto &list = free_area[i];
 
-        FreeBlock *sentinel_kva = &raw->sentinel;
+        // 获取哨兵节点的KA地址
+        FreeBlock *sentinel_kva = &list.sentinel();
 
         // 处理空链表
-        if (raw->size == 0) {
+        if (list.size() == 0) {
             sentinel_kva->next = sentinel_kva;
             sentinel_kva->prev = sentinel_kva;
             continue;
@@ -108,8 +104,8 @@ void BuddyAllocator::post_init() {
 
         // 迁移非空链表
         // 更新哨兵的指针为 KA
-        FreeBlock *head = raw->sentinel.next;
-        FreeBlock *tail = raw->sentinel.prev;
+        FreeBlock *head = list.sentinel().next;
+        FreeBlock *tail = list.sentinel().prev;
 
         // 这里原有的 sentinel.next/prev 存储的是 PA
         // 我们将其转换为 KA
