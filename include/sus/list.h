@@ -253,6 +253,10 @@ namespace util {
             clear();
         }
 
+        NodeType &sentinel() {
+            return D_sentinel;
+        }
+
         // 禁止浅拷贝
         IntrusiveList(const IntrusiveList&)            = delete;
         IntrusiveList& operator=(const IntrusiveList&) = delete;
