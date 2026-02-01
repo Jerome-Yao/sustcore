@@ -13,7 +13,7 @@
 
 #include <arch/riscv64/csr.h>
 #include <arch/trait.h>
-#include <mem/kaddr.h>
+#include <mem/kaddr_defs.h>
 #include <mem/gfp.h>
 #include <sus/types.h>
 #include <kio.h>

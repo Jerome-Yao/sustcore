@@ -11,34 +11,7 @@
 
 #pragma once
 
-#include <concepts>
-
-template <typename T>
-concept GeneralMemoryManagerTrait = requires(int cnt, void *paddr) {
-    {
-        T::init()
-    } -> std::same_as<void>;
-    {
-        T::get_page()
-    } -> std::same_as<void *>;
-    {
-        T::get_page(cnt)
-    } -> std::same_as<void *>;
-    {
-        T::put_page(paddr)
-    } -> std::same_as<void>;
-    {
-        T::put_page(paddr, cnt)
-    } -> std::same_as<void>;
-    {
-        T::clone_page(paddr)
-    } -> std::same_as<void *>;
-    {
-        T::clone_page(paddr, cnt)
-    } -> std::same_as<void *>;
-};
-
-class TrivalGMM {
+class GMM {
 public:
     static void init(void);
     static void *get_page(int cnt = 1);

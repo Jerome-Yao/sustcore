@@ -34,28 +34,20 @@ public:
     inline static page *get_page(void *paddr) {
         return __get_page(phys2ppn((umb_t)paddr));
     }
-    inline static void ref_page(page *pg)
-    {
-        pg->refcnt ++;
-        if (pg->refcnt > 1) {
-            // Open COW Mechanism
-        }
+    static void __ref_page(page *pg);
+    inline static void ref_page(void *paddr) {
+        __ref_page(get_page(paddr));
     }
-    inline static bool unref_page(page *pg)
-    {
-        // assert(pg->refcnt > 0);
-        pg->refcnt --;
-        if (pg->refcnt == 0) {
-            return true;
-        }
-        if (pg->refcnt == 1) {
-            // Close COW Mechanism
-        }
-        return false;
+    static bool __unref_page(page *pg);
+    inline static bool unref_page(void *paddr) {
+        return __unref_page(get_page(paddr));
     }
-    inline static bool refering(page *pg)
+    inline static bool __refering(page *pg)
     {
         return pg->refcnt != 0;
+    }
+    inline static bool refering(void *paddr) {
+        return __refering(get_page(paddr));
     }
     static void reset_page(page *page);
 };

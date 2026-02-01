@@ -9,7 +9,6 @@
  *
  */
 
-#include <configuration.h>
 #include <mem/kaddr.h>
 #include <symbols.h>
 
@@ -40,7 +39,7 @@ namespace ker_paddr {
 
     Segment kphy_space;
 
-    void init_ker_paddr(void *upper_bound) {
+    void init(void *upper_bound) {
         ker_paddr::kernel = Segment(&skernel, &ekernel);
         ker_paddr::text   = Segment(&s_text, &e_text);
         ker_paddr::ivt    = Segment(&s_ivt, &e_ivt);
@@ -50,33 +49,23 @@ namespace ker_paddr {
         ker_paddr::misc   = Segment(&s_misc, &ekernel);
 
         ker_paddr::kphy_space =
-            Segment((void *)0, upper_bound, (void *)(0 + KPHY_VA_OFFSET), (void *)((umb_t)(upper_bound) + KPHY_VA_OFFSET));
+            Segment((void *)0, upper_bound, (void *)(0 + KPHY_VA_OFFSET),
+                    (void *)((umb_t)(upper_bound) + KPHY_VA_OFFSET));
+    }
+
+    void map_seg(PageMan &man, const Segment &seg, PageMan::RWX rwx, bool u,
+                 bool g) {
+        man.map_range<true>(seg.vstart, seg.start, seg.size(), rwx, u, g);
+    }
+
+    void mapping_kernel_areas(PageMan &man) {
+        // TODO: 专门维持一个内核页表, 其它页表可以直接复用该内核页表, 不需要二次构造
+        map_seg(man, text, PageMan::rwx(true, false, true), false, true);
+        map_seg(man, ivt, PageMan::rwx(true, false, true), false, true);
+        map_seg(man, rodata, PageMan::rwx(true, false, false), false, true);
+        map_seg(man, data, PageMan::rwx(true, true, false), false, true);
+        map_seg(man, bss, PageMan::rwx(true, true, false), false, true);
+        map_seg(man, misc, PageMan::rwx(true, false, false), false, true);
+        map_seg(man, kphy_space, PageMan::rwx(true, true, false), false, true);
     }
 }  // namespace ker_paddr
-
-void init_ker_paddr(void *phymem_upper_bound) {
-    ker_paddr::init_ker_paddr(phymem_upper_bound);
-}
-
-void map_seg(PageMan &man, const ker_paddr::Segment &seg, PageMan::RWX rwx,
-             bool u, bool g) {
-    man.map_range<true>(seg.vstart, seg.start, seg.size(), rwx, u, g);
-}
-
-void mapping_kernel_areas(PageMan &man) {
-    using namespace ker_paddr;
-
-    map_seg(man, ker_paddr::text, PageMan::rwx(true, false, true), false, true);
-    map_seg(man, ker_paddr::ivt, PageMan::rwx(true, false, true), false,
-            true);
-    map_seg(man, ker_paddr::rodata, PageMan::rwx(true, false, false),
-            false, true);
-    map_seg(man, ker_paddr::data, PageMan::rwx(true, true, false), false,
-            true);
-    map_seg(man, ker_paddr::bss, PageMan::rwx(true, true, false), false,
-            true);
-    map_seg(man, ker_paddr::misc, PageMan::rwx(true, false, false), false,
-            true);
-    map_seg(man, ker_paddr::kphy_space, PageMan::rwx(true, true, false),
-            false, true);
-}

@@ -31,3 +31,6 @@ using MemLayout = ArchMemoryLayout;
 using Interrupt = ArchInterrupt;
 using Context = ArchContext;
 using WPFault = ArchWPFault;
+
+template <typename T>
+using KOA = SimpleKOA<T, Allocator>;

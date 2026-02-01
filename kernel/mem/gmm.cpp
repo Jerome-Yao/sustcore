@@ -13,10 +13,10 @@
 #include <mem/pmm.h>
 #include <configuration.h>
 
-void TrivalGMM::init() {
+void GMM::init() {
 }
 
-void *TrivalGMM::get_page(int cnt) {
+void *GMM::get_page(int cnt) {
     void *paddr = GFP::alloc_frame(cnt);
     for (int i = 0 ; i < cnt ; i ++) {
         umb_t _paddr = (umb_t) paddr + i * PAGESIZE;
@@ -28,7 +28,7 @@ void *TrivalGMM::get_page(int cnt) {
     return paddr;
 }
 
-void TrivalGMM::put_page(void *paddr, int cnt) {
+void GMM::put_page(void *paddr, int cnt) {
     for (int i = 0 ; i < cnt ; i ++) {
         umb_t _paddr = (umb_t) paddr + i * PAGESIZE;
         PMM::page *page = PMM::get_page((void *)_paddr);
@@ -42,7 +42,7 @@ void TrivalGMM::put_page(void *paddr, int cnt) {
     }
 }
 
-void *TrivalGMM::clone_page(void *paddr, int cnt) {
+void *GMM::clone_page(void *paddr, int cnt) {
     // clone_page() 的一个简单实现
     // 获取这些页并将原内容复制进去
     void *new_addr = get_page(cnt);

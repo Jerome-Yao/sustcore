@@ -73,16 +73,13 @@ MemRegion regions[128];
 PageMan::PTE *kernel_root = nullptr;
 void *phymem_upper_bound;
 
-void init_ker_paddr(void *phymem_upper_bound);
-void mapping_kernel_areas(PageMan &man);
-
 void kernel_paging_setup() {
     // 创建内核页表管理器
     kernel_root = PageMan::make_root();
     PageMan kernelman(kernel_root);
 
-    init_ker_paddr(phymem_upper_bound);
-    mapping_kernel_areas(kernelman);
+    ker_paddr::init(phymem_upper_bound);
+    ker_paddr::mapping_kernel_areas(kernelman);
 
     // 对[0, phymem_upper_bound)进行恒等映射
     size_t sz = (size_t)phymem_upper_bound;

@@ -11,7 +11,7 @@
 #include <basecpp/logger.h>
 #include <kio.h>
 #include <mem/buddy.h>
-#include <mem/kaddr.h>
+#include <mem/kaddr_defs.h>
 
 #include <cstddef>
 
