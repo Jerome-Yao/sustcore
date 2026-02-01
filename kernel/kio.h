@@ -38,7 +38,6 @@ DECLARE_LOGGER(KernelIO, LogLevel::DEBUG, LOGGER);
 // 内存管理相关Logger
 DECLARE_LOGGER(KernelIO, LogLevel::DEBUG, MEMORY)
 DECLARE_LOGGER(KernelIO, LogLevel::DEBUG, PAGING);
-DECLARE_LOGGER(KernelIO, LogLevel::DEBUG, PMM);
 DECLARE_LOGGER(KernelIO, LogLevel::DEBUG, BUDDY)
 
 // 设备相关Logger

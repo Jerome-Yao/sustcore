@@ -9,3 +9,9 @@ deps += mem/kaddr.d
 
 objects += mem/buddy.o
 deps += mem/buddy.d
+
+objects += mem/gmm.o
+deps += mem/gmm.d
+
+objects += mem/pmm.o
+deps += mem/pmm.d
