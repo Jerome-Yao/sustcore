@@ -9,7 +9,7 @@
  *
  */
 #include <arch/trait.h>
-#include <basecpp/logger.h>
+#include <sus/logger.h>
 #include <kio.h>
 #include <mem/buddy.h>
 #include <mem/kaddr_defs.h>

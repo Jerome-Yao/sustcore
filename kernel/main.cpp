@@ -11,8 +11,8 @@
 
 #include <arch/riscv64/mem/sv39.h>
 #include <arch/trait.h>
-#include <basecpp/baseio.h>
-#include <basecpp/logger.h>
+#include <sus/baseio.h>
+#include <sus/logger.h>
 #include <configuration.h>
 #include <kio.h>
 #include <mem/alloc.h>

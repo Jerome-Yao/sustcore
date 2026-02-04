@@ -17,7 +17,7 @@
 #include <kio.h>
 #include <libfdt.h>
 #include <sbi/sbi.h>
-#include <basecpp/logger.h>
+#include <sus/logger.h>
 
 int hart_id;
 void *dtb_ptr;

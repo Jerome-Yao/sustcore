@@ -57,12 +57,21 @@ namespace util {
         static constexpr ListHead<NodeType> &U_head(NodeType *node) noexcept {
             return node->*Head;
         }
+        static constexpr const ListHead<NodeType> U_head(const NodeType *node) noexcept {
+            return node->*Head;
+        }
 
         static constexpr NodeType*& U_next(NodeType* node) noexcept {
             return U_head(node).next;
         }
+        static constexpr const NodeType* U_next(const NodeType* node) noexcept {
+            return U_head(node).next;
+        }
 
         static constexpr NodeType*& U_prev(NodeType* node) noexcept {
+            return U_head(node).prev;
+        }
+        static constexpr const NodeType* U_prev(const NodeType* node) noexcept {
             return U_head(node).prev;
         }
 
@@ -132,14 +141,23 @@ namespace util {
 
         const NodeType* D_current;
 
-        static constexpr const ListHead<NodeType> &U_head(NodeType *node) noexcept {
+        static constexpr ListHead<NodeType> &U_head(NodeType *node) noexcept {
+            return node->*Head;
+        }
+        static constexpr const ListHead<NodeType> U_head(const NodeType *node) noexcept {
             return node->*Head;
         }
 
+        static constexpr NodeType*& U_next(NodeType* node) noexcept {
+            return U_head(node).next;
+        }
         static constexpr const NodeType* U_next(const NodeType* node) noexcept {
             return U_head(node).next;
         }
 
+        static constexpr NodeType*& U_prev(NodeType* node) noexcept {
+            return U_head(node).prev;
+        }
         static constexpr const NodeType* U_prev(const NodeType* node) noexcept {
             return U_head(node).prev;
         }
@@ -218,12 +236,21 @@ namespace util {
         static constexpr ListHead<NodeType> &U_head(NodeType *node) noexcept {
             return node->*Head;
         }
+        static constexpr const ListHead<NodeType> U_head(const NodeType *node) noexcept {
+            return node->*Head;
+        }
 
         static constexpr NodeType*& U_next(NodeType* node) noexcept {
             return U_head(node).next;
         }
+        static constexpr const NodeType* U_next(const NodeType* node) noexcept {
+            return U_head(node).next;
+        }
 
         static constexpr NodeType*& U_prev(NodeType* node) noexcept {
+            return U_head(node).prev;
+        }
+        static constexpr const NodeType* U_prev(const NodeType* node) noexcept {
             return U_head(node).prev;
         }
 
@@ -258,11 +285,11 @@ namespace util {
             clear();
         }
 
-        NodeType &sentinel() {
+        constexpr NodeType &sentinel() {
             return D_sentinel;
         }
 
-        std::size_t size() {
+        constexpr std::size_t size() {
             return D_size;
         }
 
@@ -347,7 +374,7 @@ namespace util {
         }
 
         // insert & erase
-        constexpr iterator insert(iterator pos, NodeType& node) noexcept {
+        iterator insert(iterator pos, NodeType& node) noexcept {
             // 节点已在链表中，无法插入
             if (P_link(&node)) {
                 return end();
@@ -362,7 +389,7 @@ namespace util {
             return iterator(&node);
         }
 
-        constexpr iterator erase(iterator pos) noexcept {
+        iterator erase(iterator pos) noexcept {
             NodeType* node = pos.D_current;
             NodeType* next = U_next(node);
             NodeType* prev = U_prev(node);
@@ -373,7 +400,7 @@ namespace util {
             return iterator(next);
         }
 
-        constexpr void remove(NodeType& node) noexcept {
+        void remove(NodeType& node) noexcept {
             // 在链表中查询
             for (auto it = begin(); it != end(); ++it) {
                 if (&*it == &node) {
@@ -384,21 +411,21 @@ namespace util {
         }
 
         // pop/push_front/back
-        constexpr void push_front(NodeType& node) noexcept {
+        void push_front(NodeType& node) noexcept {
             insert(begin(), node);
         }
 
-        constexpr void push_back(NodeType& node) noexcept {
+        void push_back(NodeType& node) noexcept {
             insert(end(), node);
         }
 
-        constexpr void pop_front() noexcept {
+        void pop_front() noexcept {
             if (!empty()) {
                 erase(begin());
             }
         }
 
-        constexpr void pop_back() noexcept {
+        void pop_back() noexcept {
             if (!empty()) {
                 iterator it = end();
                 --it;
@@ -407,13 +434,13 @@ namespace util {
         }
 
         // clear
-        constexpr void clear() noexcept {
+        void clear() noexcept {
             while (!empty()) {
                 pop_front();
             }
         }
 
-        constexpr bool contains(const NodeType& node) const noexcept {
+        bool contains(const NodeType& node) const noexcept {
             for (auto it = begin(); it != end(); ++it) {
                 if (&*it == &node) {
                     return true;

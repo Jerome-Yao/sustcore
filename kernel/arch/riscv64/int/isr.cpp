@@ -12,7 +12,7 @@
 #include <arch/riscv64/configuration.h>
 #include <arch/riscv64/device/misc.h>
 #include <arch/riscv64/int/isr.h>
-#include <basecpp/logger.h>
+#include <sus/logger.h>
 #include <kio.h>
 #include <sbi/sbi.h>
 

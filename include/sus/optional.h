@@ -13,6 +13,7 @@
 
 #include <type_traits>
 #include <utility>
+#include <new>
 
 namespace util {
     template <typename _Fp, typename _Tp>
@@ -20,14 +21,15 @@ namespace util {
         { f(t) };
     };
 
-    template <typename _Tp, typename _Ep, _Ep _Success>
+    enum class HasValueType { HAS_VALUE = 0, NO_VALUE = 1 };
+    template <typename _Tp, typename _Ep = HasValueType, _Ep _Success = HasValueType::HAS_VALUE, _Ep _Failure = HasValueType::NO_VALUE>
         requires std::is_enum_v<_Ep>
     class Optional {
     private:
         alignas(_Tp) unsigned char D_storage[sizeof(_Tp)];
         _Ep D_err;
     public:
-        Optional() noexcept : D_err(_Success) {}
+        Optional() noexcept : D_err(_Failure) {}
         Optional(const _Tp& value) noexcept : D_err(_Success) {
             new (D_storage) _Tp(value);
         }
@@ -49,6 +51,14 @@ namespace util {
         }
 
         _Tp &or_else(_Tp &_default) {
+            if (present()) {
+                return value();
+            } else {
+                return _default;
+            }
+        }
+
+        _Tp or_else(_Tp _default) {
             if (present()) {
                 return value();
             } else {

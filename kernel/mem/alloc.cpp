@@ -10,8 +10,8 @@
  */
 
 #include <mem/alloc.h>
-#include <basecpp/logger.h>
-#include "kio.h"
+#include <sus/logger.h>
+#include <kio.h>
 
 char LinearGrowAllocator::LGA_HEAP[LinearGrowAllocator::SIZE];
 size_t LinearGrowAllocator::lga_offset = 0;

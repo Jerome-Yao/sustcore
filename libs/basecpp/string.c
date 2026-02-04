@@ -80,6 +80,14 @@ char *strcpy(void *restrict dst, const char *restrict src) {
     return dst;
 }
 
+char *strcpy_s(void *restrict dst, size_t dstsz, const char *restrict src) {
+    size_t len = (size_t)strlen(src);
+    size_t cplen = (len >= dstsz) ? (dstsz - 1) : len;
+    memcpy(dst, src, cplen);
+    *(char *)(dst + cplen) = '\0';
+    return dst;
+}
+
 // 查找字符
 char *strchr(const char *restrict str, char ch) {
     // 挨个查找

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <basecpp/baseio.h>
+#include <sus/baseio.h>
 
 int kputs(const char* str);
 int kputchar(char ch);
@@ -30,7 +30,7 @@ static_assert(basecpp::IOTrait<KernelIO>, "KernelIO does not satisfy IOTrait");
 
 
 // Loggers
-#include <basecpp/logger.h>
+#include <sus/logger.h>
 
 // 通用Logger
 DECLARE_LOGGER(KernelIO, LogLevel::DEBUG, LOGGER);

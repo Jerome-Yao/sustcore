@@ -10,9 +10,9 @@
  *
  */
 
-#include <basecpp/baseio.h>
-#include <basecpp/logger.h>
-#include <basecpp/tostring.h>
+#include <sus/baseio.h>
+#include <sus/logger.h>
+#include <sus/tostring.h>
 #include <cctype>
 #include <cstring>
 

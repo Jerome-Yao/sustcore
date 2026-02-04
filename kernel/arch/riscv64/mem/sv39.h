@@ -18,7 +18,7 @@
 #include <sus/types.h>
 #include <kio.h>
 #include <cstring>
-#include <basecpp/logger.h>
+#include <sus/logger.h>
 
 enum class Riscv64SV39RWX : umb_t {
     // 基本权限

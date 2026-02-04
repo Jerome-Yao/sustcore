@@ -75,6 +75,17 @@ int strnlen(const char *restrict str, int count);
 char *strcpy(void *restrict dst, const char *restrict src);
 
 /**
+ * @brief 复制字符串
+ *
+ * @param dst 目标字符串
+ * @param dstsz 目标缓冲区大小
+ * @param src 源字符串
+ * @return char* 目标字符串
+ */
+char *strcpy_s(void *restrict dst, size_t dstsz, const char *restrict src);
+
+
+/**
  * @brief 查找字符串中首次出现的字符
  *
  * @param str 字符串

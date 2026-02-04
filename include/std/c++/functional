@@ -12,6 +12,7 @@
 #pragma once
 
 #include <utility>
+#include <cstring>
 
 namespace std {
 
@@ -29,16 +30,18 @@ namespace std {
         }
     };
 
-    // template <>
-    // struct less<void> {
-    //     template <typename T, typename U>
-    //     constexpr auto operator()(T &&a, U &&b) const
-    //         noexcept(noexcept(forward<T>(a) < forward<U>(b)))
-    //             -> decltype(forward<T>(a) < forward<U>(b)) {
-    //         return forward<T>(a) < forward<U>(b);
-    //     }
+    template <typename T>
+    struct equal_to {
+        constexpr bool operator()(const T &a, const T &b) const noexcept {
+            return a == b;
+        }
+    };
 
-    //     using is_transparent = void;
-    // };
+    template<>
+    struct equal_to<const char *> {
+        constexpr bool operator()(const char *a, const char *b) const noexcept {
+            return strcmp(a, b) == 0;
+        }
+    };
 
 }  // namespace std
