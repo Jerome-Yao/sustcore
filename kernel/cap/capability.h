@@ -170,6 +170,14 @@ class CapSpace {
 protected:
     Capability<Payload> *_space;
 public:
+    CapSpace() {
+        _space = new Capability<Payload>[SPACE_SIZE];
+    }
+    ~CapSpace() {
+        if (_space != nullptr) {
+            delete[] _space;
+        }
+    }
     const Capability<Payload> *lookup(size_t slot) const {
         if (0 > slot || slot >= SPACE_SIZE)
             return nullptr;
@@ -188,6 +196,14 @@ class CapUniverse {
 protected:
     CapSpace<Payload, SPACE_SIZE> *_spaces;
 public:
+    CapUniverse() {
+        _spaces = new CapSpace<Payload, SPACE_SIZE>[SPACE_COUNT];
+    }
+    ~CapUniverse() {
+        if (_spaces != nullptr) {
+            delete[] _spaces;
+        }
+    }
     const CapSpace<Payload, SPACE_SIZE> *lookup_space(size_t space) const {
         if (0 > space || space >= SPACE_COUNT)
             return nullptr;
@@ -223,6 +239,10 @@ protected:
 
     std::tuple<Universe<Payloads>...> _universes;
 public:
+    __CapHolder() {
+    }
+    ~__CapHolder() {
+    }
     template <typename Payload>
     Universe<Payload> *universe(void) {
         return &std::get<Universe<Payload>>(_universes);

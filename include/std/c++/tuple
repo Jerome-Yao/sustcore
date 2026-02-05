@@ -21,6 +21,7 @@ namespace std {
 
     template <>
     class tuple<> {
+    public:
         tuple() = default;
         static constexpr std::size_t size() {
             return 0;

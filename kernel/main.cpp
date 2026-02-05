@@ -25,6 +25,7 @@
 #include <cstdarg>
 #include <cstddef>
 #include <cstring>
+#include "cap/capability.h"
 
 bool post_init_flag = false;
 
