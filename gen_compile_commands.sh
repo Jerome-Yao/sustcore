@@ -16,8 +16,15 @@ with path.open('r', encoding='utf-8') as f:
 
 remove_flags = {'-fno-toplevel-reorder', '-fno-tree-scev-cprop'}
 
+def transform_arg(a):
+    if a == '-I':
+        return '-isystem'
+    if a.startswith('-I'):
+        return '-isystem' + a[2:]
+    return a
+
 def clean_args(args):
-    return [a for a in args if a not in remove_flags]
+    return [transform_arg(a) for a in args if a not in remove_flags]
 
 def clean_command(cmd):
     try:
@@ -28,7 +35,7 @@ def clean_command(cmd):
             cmd = cmd.replace(f' {flag} ', ' ')
             cmd = cmd.replace(f' {flag}', '')
         return cmd
-    parts = [p for p in parts if p not in remove_flags]
+    parts = [transform_arg(p) for p in parts if p not in remove_flags]
     return ' '.join(shlex.quote(p) for p in parts)
 
 for entry in data:
