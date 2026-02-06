@@ -42,6 +42,11 @@ namespace util {
         T *get() const noexcept {
             return resource;
         }
+        T *move() const noexcept {
+            T *res = resource;
+            resource = nullptr;
+            return res;
+        }
 
         Raii(const Raii<T, Deleter>&) = delete;
         Raii<T, Deleter>& operator=(const Raii<T, Deleter>&) = delete;
