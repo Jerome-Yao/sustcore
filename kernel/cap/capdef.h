@@ -20,6 +20,8 @@ template <typename T>
 using CapOptional = util::Optional<T, CapErrCode, CapErrCode::SUCCESS,
                                    CapErrCode::UNKNOWN_ERROR>;
 
+constexpr size_t CSPACE_MAX_SLOTS = 1024;
+
 template <typename Payload>
 concept PayloadTrait = requires(Payload *p) {
     {
@@ -33,29 +35,27 @@ concept PayloadTrait = requires(Payload *p) {
     } -> std::same_as<int>;
     {
         Payload::IDENTIFIER
-    } -> std::same_as<const CapType &>;
+    } -> std::convertible_to<CapType>;
+    {
+        Payload::SPACE_SIZE
+    } -> std::convertible_to<size_t>;
+    {
+        Payload::SPACE_COUNT
+    } -> std::convertible_to<size_t>;
     typename Payload::CCALL;
-};
+} && (Payload::SPACE_SIZE <= CSPACE_MAX_SLOTS);
 
 template <PayloadTrait Payload>
 class Capability;
 
 // CSpaces
 class CSpaceBase;
-template <PayloadTrait Payload, size_t SPACE_SIZE, size_t SPACE_COUNT>
-class __CSpace;
-template <PayloadTrait Payload, size_t SPACE_SIZE, size_t SPACE_COUNT>
-class __CUniverse;
-template <size_t SPACE_SIZE, size_t SPACE_COUNT, typename... Payloads>
-class __CapHolder;
-
-// CSpace  Size
-constexpr size_t CAP_SPACE_SIZE  = 1024;
-constexpr size_t CAP_SPACE_COUNT = 1024;
-
-// CapHolder and Capability kinds
+template <PayloadTrait Payload>
+class _CSpace;
+template <PayloadTrait Payload>
+class _CUniverse;
 template <typename... Payloads>
-using _CapHolder = __CapHolder<CAP_SPACE_SIZE, CAP_SPACE_COUNT, Payloads...>;
+class _CapHolder;
 
 // 新的需要管理的内核对象应该追加到此处
 using CapHolder = _CapHolder<CSpaceBase /*, other kernel objects*/>;

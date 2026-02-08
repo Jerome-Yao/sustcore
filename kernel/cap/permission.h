@@ -91,7 +91,7 @@ struct PermissionBits {
             case Type::NONE:     return 0;
             case Type::BASIC:    return 0;
             case Type::CAPSPACE: {
-                size_t total_bits = perm::cspace::SLOT_BITS * CAP_SPACE_SIZE;
+                size_t total_bits = perm::cspace::SLOT_BITS * CSPACE_MAX_SLOTS;
                 return (total_bits + 63) / 64;  // 向上取整为b64的数量
             }
             default: return 0;
