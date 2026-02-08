@@ -313,9 +313,10 @@ public:
     ~_CUniverse() {
         for (size_t i = 0; i < SpaceCount; i++) {
             if (_spaces[i] != nullptr) {
+                _spaces[i]->release();
                 if (_spaces[i]->ref_count() > 0) {
                     CAPABILITY::WARN(
-                        "空间%u在销毁时引用计数不为零, 可能存在资源泄漏", i);
+                        "空间%u在销毁时仍存在外部引用(ref_count=%d), 可能存在资源泄漏", i, _spaces[i]->ref_count());
                 }
                 delete _spaces[i];
             }

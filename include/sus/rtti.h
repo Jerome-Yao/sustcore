@@ -56,7 +56,7 @@ public:
         requires DrvdClassTrait<T, BaseType, TypeIdEnum>
     static const T *cast(const BaseType *base) {
         if (base->template is<T>()) {
-            return static_cast<T *>(base);
+            return static_cast<const T *>(base);
         }
         return nullptr;
     }
@@ -74,7 +74,7 @@ public:
         requires DrvdClassTrait<T, BaseType, TypeIdEnum>
     const T *as() const {
         if (is<T>()) {
-            return static_cast<T *>(this);
+            return static_cast<const T *>(this);
         }
         return nullptr;
     }
