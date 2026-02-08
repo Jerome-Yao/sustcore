@@ -16,6 +16,7 @@
 #include <kio.h>
 #include <sus/list.h>
 #include <sus/optional.h>
+#include <sus/rtti.h>
 #include <sus/types.h>
 #include <sustcore/cap_type.h>
 
@@ -123,17 +124,8 @@ public:
 protected:
 };
 
-template <typename DrvdSpace>
-concept DrvdSpaceTrait = std::is_base_of_v<CSpaceBase, DrvdSpace> &&
-    requires()
-{
-    {
-        DrvdSpace::IDENTIFIER
-    } -> std::same_as<const CapType &>;
-};
-
 class CSpaceCalls;
-class CSpaceBase {
+class CSpaceBase : public RTTIBase<CSpaceBase, CapType> {
 protected:
     int _ref_count;
     virtual void on_zero_ref() = 0;
@@ -143,13 +135,13 @@ protected:
 public:
     static constexpr size_t SPACE_SIZE  = 64;
     static constexpr size_t SPACE_COUNT = 1;
-    using CCALL = CSpaceCalls;
+    using CCALL                         = CSpaceCalls;
     // constructors & destructors
     constexpr explicit CSpaceBase(CapHolder *holder, size_t index)
         : _ref_count(0), _holder(holder), _index(index){};
     virtual ~CSpaceBase() {}
 
-    static constexpr CapType IDENTIFIER = CapType::CAP_SPACE;
+    static constexpr CapType PAYLOAD_IDENTIFIER = CapType::CAP_SPACE;
 
     // reference counting
     void retain(void);
@@ -159,58 +151,12 @@ public:
         return _ref_count;
     }
 
-    // 因为 RTTI 被我们禁用
-    // 我们通过这种方法模拟 RTTI
-    virtual CapType type() = 0;
-
     constexpr size_t index(void) const noexcept {
         return _index;
     }
 
     constexpr CapHolder *holder(void) noexcept {
         return _holder;
-    }
-
-    template <typename T>
-        requires DrvdSpaceTrait<T>
-    bool is(void) {
-        return type() == T::IDENTIFIER;
-    }
-
-    template <typename T>
-        requires DrvdSpaceTrait<T>
-    static T *cast(CSpaceBase *base) {
-        if (base->is<T>()) {
-            return static_cast<T *>(base);
-        }
-        return nullptr;
-    }
-
-    template <typename T>
-        requires DrvdSpaceTrait<T>
-    static const T *cast(CSpaceBase *base) {
-        if (base->is<T>()) {
-            return static_cast<T *>(base);
-        }
-        return nullptr;
-    }
-
-    template <typename T>
-        requires DrvdSpaceTrait<T>
-    T *as() {
-        if (is<T>()) {
-            return static_cast<T *>(this);
-        }
-        return nullptr;
-    }
-
-    template <typename T>
-        requires DrvdSpaceTrait<T>
-    const T *as() const {
-        if (is<T>()) {
-            return static_cast<T *>(this);
-        }
-        return nullptr;
     }
 
     friend class CSpaceCalls;
@@ -223,7 +169,7 @@ public:
     static constexpr size_t SpaceSize  = Payload::SPACE_SIZE;
     static constexpr size_t SpaceCount = Payload::SPACE_COUNT;
     using Cap                          = Capability<Payload>;
-    using Universe = _CUniverse<Payload>;
+    using Universe                     = _CUniverse<Payload>;
 
 protected:
     Cap *_slots[SpaceSize];
@@ -240,14 +186,14 @@ protected:
      * @param cap 能力对象指针(不应为nullptr)
      */
     void __insert(size_t slot_idx, Cap *cap) {
-        assert(0 <= slot_idx && slot_idx < SpaceSize);
+        assert(slot_idx < SpaceSize);
         assert(_index + slot_idx != 0);  // 0号能力位被保留, 不允许访问
         _slots[slot_idx] = cap;
     }
 
     // 将能力对象从能力空间中移除
     void __remove(size_t slot_idx) {
-        assert(0 <= slot_idx && slot_idx < SpaceSize);
+        assert(slot_idx < SpaceSize);
         assert(_index + slot_idx != 0);  // 0号能力位被保留, 不允许访问
         _slots[slot_idx] = nullptr;
     }
@@ -272,9 +218,9 @@ protected:
 
 public:
     // identifiers
-    static constexpr CapType PAYLOAD_IDENTIFIER = Payload::IDENTIFIER;
-    virtual CapType type() override {
-        return PAYLOAD_IDENTIFIER;
+    static constexpr CapType IDENTIFIER = Payload::PAYLOAD_IDENTIFIER;
+    virtual CapType type_id() const override {
+        return IDENTIFIER;
     }
 
     // you shouldn't copy or move any CSpace
@@ -328,8 +274,8 @@ class _CUniverse {
 public:
     static constexpr size_t SpaceSize  = Payload::SPACE_SIZE;
     static constexpr size_t SpaceCount = Payload::SPACE_COUNT;
-    using Space = _CSpace<Payload>;
-    using Cap   = Space::Cap;
+    using Space                        = _CSpace<Payload>;
+    using Cap                          = Space::Cap;
 
 protected:
     /**
@@ -368,7 +314,8 @@ public:
         for (size_t i = 0; i < SpaceCount; i++) {
             if (_spaces[i] != nullptr) {
                 if (_spaces[i]->ref_count() > 0) {
-                    CAPABILITY::WARN("空间%u在销毁时引用计数不为零, 可能存在资源泄漏", i);
+                    CAPABILITY::WARN(
+                        "空间%u在销毁时引用计数不为零, 可能存在资源泄漏", i);
                 }
                 delete _spaces[i];
             }

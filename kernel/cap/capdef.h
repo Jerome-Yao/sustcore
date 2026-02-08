@@ -34,7 +34,7 @@ concept PayloadTrait = requires(Payload *p) {
         p->ref_count()
     } -> std::same_as<int>;
     {
-        Payload::IDENTIFIER
+        Payload::PAYLOAD_IDENTIFIER
     } -> std::convertible_to<CapType>;
     {
         Payload::SPACE_SIZE

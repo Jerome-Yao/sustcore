@@ -62,6 +62,8 @@ namespace perm {
             size_t bit_pos        = slot_offset(slot_idx);
             size_t bitmap_index   = bit_pos / 64;
             size_t bit_offset     = bit_pos % 64;
+            // TODO: 保证bit_offset + SLOT_BITS不超过64, 否则需要跨越两个b64进行写入
+            assert (bit_offset + SLOT_BITS <= 64);
             // 清除原有权限位
             b64 aligned_perm      = (permission & SLOT_MASK) << bit_offset;
             // clear the original bits
