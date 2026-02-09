@@ -51,9 +51,9 @@ class Capability;
 // CSpaces
 class CSpaceBase;
 template <PayloadTrait Payload>
-class _CSpace;
+class CSpace;
 template <PayloadTrait Payload>
-class _CUniverse;
+class CUniverse;
 template <typename... Payloads>
 class _CapHolder;
 

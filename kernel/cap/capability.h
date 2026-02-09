@@ -164,12 +164,12 @@ public:
 static_assert(PayloadTrait<CSpaceBase>);
 
 template <PayloadTrait Payload>
-class _CSpace : public CSpaceBase {
+class CSpace : public CSpaceBase {
 public:
     static constexpr size_t SpaceSize  = Payload::SPACE_SIZE;
     static constexpr size_t SpaceCount = Payload::SPACE_COUNT;
     using Cap                          = Capability<Payload>;
-    using Universe                     = _CUniverse<Payload>;
+    using Universe                     = CUniverse<Payload>;
 
 protected:
     Cap *_slots[SpaceSize];
@@ -208,11 +208,11 @@ protected:
     }
 
     // constructor & destructor, it should only be called by Universe
-    _CSpace(CapHolder *holder, Universe *universe, size_t index)
+    CSpace(CapHolder *holder, Universe *universe, size_t index)
         : CSpaceBase(holder, index), _universe(universe) {
         memset(_slots, 0, sizeof(_slots));
     }
-    ~_CSpace() {
+    ~CSpace() {
         __clear();
     }
 
@@ -224,10 +224,10 @@ public:
     }
 
     // you shouldn't copy or move any CSpace
-    _CSpace(const _CSpace &)            = delete;
-    _CSpace &operator=(const _CSpace &) = delete;
-    _CSpace(_CSpace &&)                 = delete;
-    _CSpace &operator=(_CSpace &&)      = delete;
+    CSpace(const CSpace &)            = delete;
+    CSpace &operator=(const CSpace &) = delete;
+    CSpace(CSpace &&)                 = delete;
+    CSpace &operator=(CSpace &&)      = delete;
 
     // wrap functions
     template <typename T>
@@ -265,16 +265,16 @@ public:
         return wrap((const Cap *)_slots[slot_idx]);
     }
 
-    friend class _CUniverse<Payload>;
+    friend class CUniverse<Payload>;
     friend class CSpaceCalls;
 };
 
 template <PayloadTrait Payload>
-class _CUniverse {
+class CUniverse {
 public:
     static constexpr size_t SpaceSize  = Payload::SPACE_SIZE;
     static constexpr size_t SpaceCount = Payload::SPACE_COUNT;
-    using Space                        = _CSpace<Payload>;
+    using Space                        = CSpace<Payload>;
     using Cap                          = Space::Cap;
 
 protected:
@@ -307,10 +307,10 @@ protected:
     }
 
 public:
-    _CUniverse() {
+    CUniverse() {
         memset(_spaces, 0, sizeof(_spaces));
     }
-    ~_CUniverse() {
+    ~CUniverse() {
         for (size_t i = 0; i < SpaceCount; i++) {
             if (_spaces[i] != nullptr) {
                 _spaces[i]->release();
@@ -328,10 +328,10 @@ public:
     }
 
     // you shouldn't copy or move any CUniverse
-    _CUniverse(const _CUniverse &)            = delete;
-    _CUniverse &operator=(const _CUniverse &) = delete;
-    _CUniverse(_CUniverse &&)                 = delete;
-    _CUniverse &operator=(_CUniverse &&)      = delete;
+    CUniverse(const CUniverse &)            = delete;
+    CUniverse &operator=(const CUniverse &) = delete;
+    CUniverse(CUniverse &&)                 = delete;
+    CUniverse &operator=(CUniverse &&)      = delete;
 
     template <typename T>
     static constexpr CapOptional<T *> wrap(T *pointer) {
@@ -391,14 +391,14 @@ public:
         return _spaces[space_idx];
     }
 
-    friend class _CSpace<Payload>;
+    friend class CSpace<Payload>;
 };
 
 template <typename... Payloads>
 class _CapHolder {
 public:
     template <PayloadTrait Payload>
-    using Universe = _CUniverse<Payload>;
+    using Universe = CUniverse<Payload>;
     template <PayloadTrait Payload>
     using Space = Universe<Payload>::Space;
 
@@ -536,8 +536,3 @@ public:
         return migrate_put<Payload>(token);
     }
 };
-
-template <PayloadTrait Payload>
-using CUniverse = CapHolder::Universe<Payload>;
-template <PayloadTrait Payload>
-using CSpace = CUniverse<Payload>::Space;
