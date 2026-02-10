@@ -15,7 +15,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstring>
+#include <initializer_list>
 #include <iterator>
+#include <utility>
 
 namespace util {
     // 辅助函数, 获取成员指针的类型信息
@@ -822,6 +824,17 @@ namespace util {
         constexpr ArrayListIterator(ArrayList<_Tp>& array_list,
                                     IndexType index) noexcept
             : D_list(array_list), D_index(index) {}
+
+        // copy semantics
+        constexpr ArrayListIterator(const ArrayListIterator<_Tp>& it) noexcept
+            : D_list(it.D_list), D_index(it.D_index) {}
+        constexpr ArrayListIterator& operator=(
+            const ArrayListIterator<_Tp>& other) noexcept {
+            D_list  = other.D_list;
+            D_index = other.D_index;
+            return *this;
+        }
+
         // 解引用
         constexpr reference operator*() noexcept {
             return D_list.at(D_index);
@@ -1063,16 +1076,69 @@ namespace util {
         }
 
         // insert & erase
+        // insert & erase
         iterator insert(iterator pos, const _Tp& value) noexcept {
             IndexType index = pos.D_index;
             if (D_size >= D_capacity) {
-                U_resize(D_capacity * 2);
+                size_t new_capacity = std::max(D_capacity, D_size + 1) * 2;
+                U_resize(new_capacity);
             }
             // 移动
             for (IndexType i = D_size; i > index; --i) {
                 D_data[i] = D_data[i - 1];
             }
             D_data[index] = value;
+            ++D_size;
+            return iterator(*this, index);
+        }
+
+        iterator insert(iterator pos, size_t cnt, const _Tp& value) noexcept {
+            IndexType index = pos.D_index;
+            if (D_size + cnt > D_capacity) {
+                size_t new_capacity = std::max(D_capacity, D_size + cnt) * 2;
+                U_resize(new_capacity);
+            }
+            // 移动
+            for (IndexType i = D_size + cnt - 1; i >= index + cnt; --i) {
+                D_data[i] = D_data[i - cnt];
+            }
+            for (IndexType i = index; i < index + cnt; ++i) {
+                D_data[i] = value;
+            }
+            D_size += cnt;
+            return iterator(*this, index);
+        }
+
+        template <typename InputIt>
+        iterator insert(iterator pos, InputIt first, InputIt last) noexcept {
+            iterator insert_pos = pos;
+            while (first != last) {
+                insert_pos = insert(insert_pos, *first);
+                ++insert_pos;
+                ++first;
+            }
+            return pos;
+        }
+
+        iterator insert(iterator pos,
+                        std::initializer_list<_Tp> ilist) noexcept {
+            return insert(pos, ilist.begin(), ilist.end());
+        }
+
+        // emplace
+        template <typename... Args>
+        iterator emplace(iterator pos, Args&&... args) noexcept {
+            IndexType index = pos.D_index;
+            if (D_size >= D_capacity) {
+                size_t new_capacity = std::max(D_capacity, D_size + 1) * 2;
+                U_resize(new_capacity);
+            }
+            // 移动
+            for (IndexType i = D_size; i > index; --i) {
+                D_data[i] = D_data[i - 1];
+            }
+            // 原地构造
+            D_data[index] = _Tp(std::forward<Args>(args)...);
             ++D_size;
             return iterator(*this, index);
         }
@@ -1101,6 +1167,17 @@ namespace util {
         void push_front(const _Tp& value) noexcept {
             insert(begin(), value);
         }
+
+        template<typename... Args>
+        void emplace_front(Args&&... args) noexcept {
+            emplace(begin(), std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void emplace_back(Args&&... args) noexcept {
+            emplace(end(), std::forward<Args>(args)...);
+        }
+
         void push_back(const _Tp& value) noexcept {
             insert(end(), value);
         }
