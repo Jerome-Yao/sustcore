@@ -10,10 +10,6 @@
 #include <type_traits>
 #include <kio.h>
 
-inline void *operator new(size_t, void *p) noexcept {
-    return p;
-}
-
 namespace slub {
 
     constexpr size_t PAGE_SIZE      = 4096;
