@@ -39,10 +39,10 @@ namespace slub {
 
     void init_chrono_overhead();
 
-    static inline uintptr_t align_down(uintptr_t addr, uintptr_t align) {
+    static constexpr uintptr_t align_down(uintptr_t addr, uintptr_t align) {
         return addr & ~(align - 1);
     }
-    static inline uintptr_t align_up(uintptr_t addr, uintptr_t align) {
+    static constexpr uintptr_t align_up(uintptr_t addr, uintptr_t align) {
         return (addr + align - 1) & ~(align - 1);
     }
 
@@ -81,6 +81,11 @@ namespace slub {
     protected:
         static constexpr size_t raw_obj_size_  = size_of_type<ObjType>::value;
         static constexpr size_t raw_obj_align_ = align_of_type<ObjType>::value;
+        static constexpr bool is_pow2(size_t n) {
+            return (n > 0) && ((n & (n - 1)) == 0);
+        }
+        static_assert(is_pow2(raw_obj_align_),
+                      "raw_obj_align_ must be power-of-two");
 
         static constexpr size_t ptr_size_  = sizeof(void *);
         static constexpr size_t ptr_align_ = alignof(void *);
@@ -101,8 +106,7 @@ namespace slub {
         constexpr static size_t pages_      = PAGES_PER_SLAB;
         constexpr static size_t slab_bytes_ = SLAB_BYTES;
 
-        static_assert((obj_align_ & (obj_align_ - 1)) == 0,
-                      "obj_align_ must be power-of-two");
+        static_assert(is_pow2(obj_align_), "obj_align_ must be power-of-two");
 
     public:
         SlubAllocator();
@@ -192,7 +196,9 @@ namespace slub {
         auto slab_start = base + sizeof(SlabHeader);
         slab_start      = align_up(slab_start, obj_align_);
 
-        constexpr size_t total = (slab_bytes_ + sizeof(SlabHeader)) / obj_size_;
+        constexpr size_t total =
+            (slab_bytes_ - align_up(sizeof(SlabHeader), obj_align_)) /
+            obj_size_;
         static_assert(total > 0, "每个 slab 至少应包含一个对象");
 
         slab->total = total;
@@ -212,7 +218,7 @@ namespace slub {
 
     template <typename ObjType>
     SlabHeader *SlubAllocator<ObjType>::new_slab() {
-        void *mem        = GFP::alloc_frame(pages_);
+        void *mem = GFP::alloc_frame(pages_);
         if (mem == nullptr) {
             SLUB::ERROR("无法分配新的 slab 内存");
             return nullptr;
