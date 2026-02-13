@@ -1,14 +1,14 @@
 #pragma once
 
 #include <configuration.h>
-#include <std/assert.h>
-#include <stdint.h>
+#include <kio.h>
 #include <sus/list.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <type_traits>
-#include <kio.h>
 
 namespace slub {
 
@@ -61,9 +61,9 @@ namespace slub {
               state(SlabState::EMPTY) {}
     };
 
-    static_assert(util::IntrusiveListNodeTrait<SlabHeader,
-                  &SlabHeader::list_head>,
-                  "SlabHeader fails to be a valid intrusive list node");
+    static_assert(
+        util::IntrusiveListNodeTrait<SlabHeader, &SlabHeader::list_head>,
+        "SlabHeader fails to be a valid intrusive list node");
 
     template <typename ObjType>
     struct size_of_type
@@ -188,17 +188,12 @@ namespace slub {
 
     template <typename ObjType>
     void SlubAllocator<ObjType>::init_slab_headers(SlabHeader *slab) {
-        auto base = reinterpret_cast<uintptr_t>(slab);
-        auto cur  = base + sizeof(SlabHeader);
-        cur       = align_up(cur, obj_align_);
-        auto end  = base + slab_bytes_;
+        auto base       = reinterpret_cast<uintptr_t>(slab);
+        auto slab_start = base + sizeof(SlabHeader);
+        slab_start      = align_up(slab_start, obj_align_);
 
-        size_t total = 0;
-        auto p       = cur;
-        while (p + obj_size_ <= end) {
-            total++;
-            p += obj_size_;
-        }
+        constexpr size_t total = (slab_bytes_ + sizeof(SlabHeader)) / obj_size_;
+        static_assert(total > 0, "每个 slab 至少应包含一个对象");
 
         slab->total = total;
         slab->inuse = 0;
@@ -207,7 +202,8 @@ namespace slub {
 
         // construct from end to start
         for (size_t i = total; i > 0; i--) {
-            void *obj = reinterpret_cast<void *>(cur + (i - 1) * obj_size_);
+            void *obj =
+                reinterpret_cast<void *>(slab_start + (i - 1) * obj_size_);
             *reinterpret_cast<void **>(obj) = head;
             head                            = obj;
         }
@@ -217,6 +213,10 @@ namespace slub {
     template <typename ObjType>
     SlabHeader *SlubAllocator<ObjType>::new_slab() {
         void *mem        = GFP::alloc_frame(pages_);
+        if (mem == nullptr) {
+            SLUB::ERROR("无法分配新的 slab 内存");
+            return nullptr;
+        }
         SlabHeader *slab = new (mem) SlabHeader{};
         init_slab_headers(slab);
         return slab;
@@ -269,7 +269,10 @@ namespace slub {
             to_partial(slab);
         } else {
             slab = new_slab();
-            assert(slab);
+            if (slab == nullptr) {
+                SLUB::ERROR("无法分配新的 slab");
+                return nullptr;
+            }
             slab->state = SlabHeader::SlabState::PARTIAL;
             partial.push_back(*slab);
         }
