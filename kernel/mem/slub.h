@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <new>
+#include <algorithm>
 #include <type_traits>
 #include <utility>
 
@@ -476,7 +477,8 @@ namespace slub {
         static void *large_malloc(size_t rsz) {
             MEMORY::DEBUG("转交到large_malloc途径分配");
             assert(is_pow2(rsz));
-            size_t pages = rsz / PAGESIZE;
+            constexpr size_t least_pages = 1;
+            const size_t pages = std::max(least_pages, rsz / PAGESIZE);
             assert(pages > 0);
             PhyAddr paddr = GFP::get_free_page(pages);
             if (!paddr.nonnull()) {

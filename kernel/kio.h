@@ -34,8 +34,11 @@ static_assert(basecpp::IOTrait<KernelIO>, "KernelIO does not satisfy IOTrait");
 #include <sus/logger.h>
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
-#define IF_ENABLE(level) LogLevel::DISABLE
-// #define IF_ENABLE(level) level
+#ifdef DISABLE_LOG
+// #define IF_ENABLE(level) LogLevel::DISABLE
+#else
+#define IF_ENABLE(level) level
+#endif
 // NOLINTEND(cppcoreguidelines-macro-usage)
 
 // 通用Logger

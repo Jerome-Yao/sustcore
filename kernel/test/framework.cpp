@@ -16,10 +16,20 @@
 #include <test/framework.h>
 #include <test/string_view.h>
 #include <test/cap.h>
+#include <test/buddy.h>
+#include <test/slub.h>
+#include <test/path.h>
+#include <test/tree.h>
+#include <test/fs.h>
 
 void collect_tests(TestFramework& framework) {
     test::string_view::collect_tests(framework);
     test::cap::collect_tests(framework);
+    test::buddy::collect_tests(framework);
+    test::slub::collect_tests(framework);
+    test::path::collect_tests(framework);
+    test::tree::collect_tests(framework);
+    test::fs::collect_tests(framework);
 }
 
 void TestFramework::run_all() const {

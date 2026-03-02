@@ -7,7 +7,6 @@ Checks: >
   modernize-*,
   performance-*,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-pro-type-union-access,
   -bugprone-reserved-identifier,

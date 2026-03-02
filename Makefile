@@ -24,8 +24,11 @@ include $(path-script)/run.mk
 path-bin := $(path-e)/build/bin
 path-objects := $(path-e)/build/objects
 build-mode ?= release
+kernel-flags ?=
 
-arg-basic := build-mode=$(build-mode) architecture=$(architecture) global-env=$(global-env) path-bin=$(path-bin) path-objects=$(path-objects) q=$(q)
+arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
+	global-env=$(global-env) path-bin=$(path-bin) path-objects=$(path-objects) \
+	kernel-flags=$(kernel-flags)
 
 -include $(path-script)/config.mk
 
@@ -52,6 +55,13 @@ build-mods: build-moddefault
 
 make-initrd:
 	$(call if_mkdir, $(path-initrd))
+	$(call if_mkdir, $(path-initrd)/src)
+	cp -r ./include/ $(path-initrd)/src/include/
+	cp -r ./kernel/ $(path-initrd)/src/kernel/
+	cp -r ./libs/ $(path-initrd)/src/libs/
+	cp -r ./module/ $(path-initrd)/src/module/
+	cp -r ./script/ $(path-initrd)/src/script/
+	cp -r ./tools/ $(path-initrd)/src/tools/
 	$(q)echo "initrd path created"
 
 build: make-initrd build-mods

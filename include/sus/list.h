@@ -18,6 +18,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
+#include <stdexcept>
 #include <utility>
 
 namespace util {
@@ -466,8 +467,8 @@ namespace util {
 
         // 不允许任意的插入
         iterator insert(iterator pos, NodeType& node) noexcept = delete;
-        void push_front(NodeType& node) noexcept = delete;
-        void push_back(NodeType& node) noexcept  = delete;
+        void push_front(NodeType& node) noexcept               = delete;
+        void push_back(NodeType& node) noexcept                = delete;
 
         // 根据Cmp比较函数插入
         iterator insert(NodeType& node) noexcept {
@@ -1102,23 +1103,35 @@ namespace util {
         }
 
         // 访问元素
-        constexpr _Tp& at(IndexType index) noexcept {
+        constexpr _Tp& operator[](IndexType index) noexcept {
             return D_data[index];
         }
-        constexpr const _Tp& at(IndexType index) const noexcept {
+        constexpr const _Tp& operator[](IndexType index) const noexcept {
             return D_data[index];
         }
-        constexpr _Tp& front() noexcept {
-            return D_data[0];
+        constexpr _Tp& at(IndexType index) {
+            if (index >= D_size) {
+                _THROW(std::out_of_range("ArrayList::at(): index out of range"));
+            }
+            return D_data[index];
         }
-        constexpr const _Tp& front() const noexcept {
-            return D_data[0];
+        constexpr const _Tp& at(IndexType index) const {
+            if (index >= D_size) {
+                _THROW(std::out_of_range("ArrayList::at(): index out of range"));
+            }
+            return D_data[index];
         }
-        constexpr _Tp& back() noexcept {
-            return D_data[D_size - 1];
+        constexpr _Tp& front() {
+            return at(0);
         }
-        constexpr const _Tp& back() const noexcept {
-            return D_data[D_size - 1];
+        constexpr const _Tp& front() const {
+            return at(0);
+        }
+        constexpr _Tp& back() {
+            return at(D_size - 1);
+        }
+        constexpr const _Tp& back() const {
+            return at(D_size - 1);
         }
 
         // insert & erase

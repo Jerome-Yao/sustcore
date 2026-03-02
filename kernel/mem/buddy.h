@@ -218,8 +218,14 @@ void BuddyAllocator::add_memory_range(const PhyAddr paddr, const size_t pages) {
 
 template <KernelStage Stage>
 PhyAddr BuddyAllocator::get_free_page(size_t frame_count) {
-    assert(frame_count > 0);
-    assert(frame_count <= (1ul << MAX_BUDDY_ORDER));
+    if (frame_count == 0) {
+        return PhyAddr::null;
+    }
+    if (frame_count > (1ul << MAX_BUDDY_ORDER)) {
+        BUDDY::ERROR("请求的页数 %u 超出最大支持的范围", frame_count);
+        return PhyAddr::null;
+    }
+
     const size_t order  = pages2order(frame_count);
     const PhyAddr paddr = fetch_frame_order<Stage>(order);
 
@@ -259,6 +265,9 @@ void BuddyAllocator::put_page(PhyAddr paddr, size_t frame_count) {
 
 template <KernelStage Stage>
 void BuddyAllocator::put_page_in_order(const PhyAddr paddr, int order) {
+    if (!paddr.nonnull())
+        return;
+
     assert (order >= 0);
     assert (order <= MAX_BUDDY_ORDER);
     umb_t block_size = 1UL << (order + 12);

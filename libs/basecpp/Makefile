@@ -29,8 +29,12 @@ defs-c :=
 
 flags-cpp := -std=gnu++26 -nostdlib -fno-builtin -ffreestanding -nostdinc \
 		   -Wall -fno-strict-aliasing -fomit-frame-pointer -fno-pic -fno-asynchronous-unwind-tables \
-		   -fno-stack-protector -Wno-int-to-pointer-cast -fno-rtti -fno-exceptions \
-		   -fno-toplevel-reorder -fno-tree-scev-cprop -mcmodel=medany
+		   -fno-stack-protector -Wno-int-to-pointer-cast \
+		   -fno-toplevel-reorder -fno-tree-scev-cprop
+
+flags-cpp-kernel := -mcmodel=medany -D__SUS_NO_RTTI__  -fno-rtti -D__SUS_NO_EXCEPTIONS__ -fno-exceptions
+flags-cpp-non-kernel := -mcmodel=medlow
+
 include-third_party-cpp := -I$(path-third_party)/include -I$(path-third_party)/include/libfdt \
 						   -I$(path-third_party)/include/std
 include-cpp := -I$(path-include) -I$(path-include)/std -I$(path-include)/std/c++ \
@@ -51,10 +55,11 @@ endif
 
 args-c := defs-c="$(defs-c)" include-c="$(include-c)" flags-c="$(flags-c) $(flags-c-non-kernel)"
 args-c-kernel := defs-c="$(defs-c)" include-c="$(include-c)" flags-c="$(flags-c) $(flags-c-kernel)"
-args-cpp := defs-cpp="$(defs-cpp)" include-cpp="$(include-cpp)" flags-cpp="$(flags-cpp)"
+args-cpp := defs-cpp="$(defs-cpp)" include-cpp="$(include-cpp)" flags-cpp="$(flags-cpp) $(flags-cpp-non-kernel)"
+args-cpp-kernel := defs-cpp="$(defs-cpp)" include-cpp="$(include-cpp)" flags-cpp="$(flags-cpp) $(flags-cpp-kernel)"
 
 args := $(args-c) $(args-cpp)
-args-kernel  := $(args-c-kernel) $(args-cpp)
+args-kernel  := $(args-c-kernel) $(args-cpp-kernel)
 
 dir := dir-obj="$(path-objects)/bcl/$(architecture)" dir-src="$(path-d)"
 dir-kernel := dir-obj="$(path-objects)/kernel/bcl/$(architecture)" dir-src="$(path-d)"
