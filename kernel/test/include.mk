@@ -16,6 +16,9 @@ deps += test/path.d
 objects += test/slub.o
 deps += test/slub.d
 
+objects += test/string.o
+deps += test/string.d
+
 objects += test/string_view.o
 deps += test/string_view.d
 

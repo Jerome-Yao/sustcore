@@ -474,11 +474,15 @@ namespace slub {
             delete record;
         }
 
+        static constexpr size_t get_pages(size_t rsz) {
+            constexpr size_t least_pages = 1;
+            return std::max(least_pages, rsz / PAGESIZE);
+        }
+
         static void *large_malloc(size_t rsz) {
             MEMORY::DEBUG("转交到large_malloc途径分配");
             assert(is_pow2(rsz));
-            constexpr size_t least_pages = 1;
-            const size_t pages = std::max(least_pages, rsz / PAGESIZE);
+            const size_t pages = get_pages(rsz);
             assert(pages > 0);
             PhyAddr paddr = GFP::get_free_page(pages);
             if (!paddr.nonnull()) {
@@ -508,7 +512,7 @@ namespace slub {
 
         static void _free(void *ptr, size_t rsz) {
             if (rsz >= KMAX) {
-                size_t pages   = rsz / PAGESIZE;
+                const size_t pages = get_pages(rsz);
                 KpaAddr kpaddr = (KpaAddr)ptr;
                 GFP::put_page(convert<PhyAddr>(kpaddr), pages);
             } else {

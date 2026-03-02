@@ -11,12 +11,14 @@
 
 #pragma once
 
+#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <cuchar>
 #include <cwchar>
 #include <ios>
+#include <memory>
 
 namespace std {
     template <class CharT>
@@ -39,44 +41,44 @@ namespace std {
     template <>
     class __impl_char_info<wchar_t> {
     public:
-        using char_type  = wchar_t;
-        using int_type   = std::wint_t;
-        using off_type   = std::streamoff;
-        using pos_type   = std::wstreampos;
-        using state_type = std::mbstate_t;
+        using char_type           = wchar_t;
+        using int_type            = std::wint_t;
+        using off_type            = std::streamoff;
+        using pos_type            = std::wstreampos;
+        using state_type          = std::mbstate_t;
         using comparison_category = std::strong_ordering;
     };
 
     template <>
     class __impl_char_info<char8_t> {
     public:
-        using char_type  = char8_t;
-        using int_type   = unsigned int;
-        using off_type   = std::streamoff;
-        using pos_type   = std::u8streampos;
-        using state_type = std::mbstate_t;
+        using char_type           = char8_t;
+        using int_type            = unsigned int;
+        using off_type            = std::streamoff;
+        using pos_type            = std::u8streampos;
+        using state_type          = std::mbstate_t;
         using comparison_category = std::strong_ordering;
     };
 
     template <>
     class __impl_char_info<char16_t> {
     public:
-        using char_type  = char16_t;
-        using int_type   = std::uint_least16_t;
-        using off_type   = std::streamoff;
-        using pos_type   = std::u16streampos;
-        using state_type = std::mbstate_t;
+        using char_type           = char16_t;
+        using int_type            = std::uint_least16_t;
+        using off_type            = std::streamoff;
+        using pos_type            = std::u16streampos;
+        using state_type          = std::mbstate_t;
         using comparison_category = std::strong_ordering;
     };
 
     template <>
     class __impl_char_info<char32_t> {
     public:
-        using char_type  = char32_t;
-        using int_type   = std::uint_least32_t;
-        using off_type   = std::streamoff;
-        using pos_type   = std::u32streampos;
-        using state_type = std::mbstate_t;
+        using char_type           = char32_t;
+        using int_type            = std::uint_least32_t;
+        using off_type            = std::streamoff;
+        using pos_type            = std::u32streampos;
+        using state_type          = std::mbstate_t;
         using comparison_category = std::strong_ordering;
     };
 
@@ -88,7 +90,8 @@ namespace std {
         using off_type   = __impl_char_info<CharT>::off_type;
         using pos_type   = __impl_char_info<CharT>::pos_type;
         using state_type = __impl_char_info<CharT>::state_type;
-        using comparison_category = __impl_char_info<CharT>::comparison_category;
+        using comparison_category =
+            __impl_char_info<CharT>::comparison_category;
 
         static bool eq(const char_type &c1, const char_type &c2) {
             return c1 == c2;
@@ -179,11 +182,340 @@ namespace std {
     class char_traits<char16_t> : public __impl_char_traits<char16_t> {};
     template <>
     class char_traits<char32_t> : public __impl_char_traits<char32_t> {};
+
+    template <class CharT, class Traits = char_traits<CharT>,
+              class Allocator = allocator<CharT>>
+    class basic_string {
+    public:
+        using traits_type     = Traits;
+        using value_type      = CharT;
+        using allocator_type  = Allocator;
+        using size_type       = typename Allocator::size_type;
+        using difference_type = typename Allocator::difference_type;
+        using reference       = value_type &;
+        using const_reference = const value_type &;
+        using pointer         = typename Allocator::pointer;
+        using const_pointer   = typename Allocator::const_pointer;
+        using iterator        = pointer;
+        using const_iterator  = const_pointer;
+
+        static constexpr size_type npos = size_type(-1);
+
+    private:
+        // SSO 至多存储这么多的字节(包括结尾的 '\0')
+        static constexpr size_type __SSOBYTES = 64;
+        // 计算 SSO 模式下能存储多少个字符
+        static constexpr size_type __SSOCAPACITY =
+            __SSOBYTES / sizeof(CharT) - 1;
+
+        struct __sso {
+            value_type D_buf[__SSOCAPACITY + 1];  // 包括结尾的 '\0'
+        };
+
+        struct __dyn {
+            pointer D_data;
+        };
+
+        // 当前容量
+        size_type D_capacity = 0;
+        // 当前大小
+        size_type D_size     = 0;
+
+        [[nodiscard]]
+        static constexpr bool P_sso(size_t D_capacity) noexcept {
+            return D_capacity <= __SSOCAPACITY;
+        }
+
+        union {
+            __sso D_sso;
+            __dyn D_dyn;
+        };
+
+        constexpr pointer U_buf() {
+            return P_sso(D_capacity) ? (pointer)D_sso.D_buf : D_dyn.D_data;
+        }
+
+        constexpr const pointer U_buf() const {
+            return P_sso(D_capacity) ? (pointer)D_sso.D_buf : D_dyn.D_data;
+        }
+
+        void U_assign(size_type idx, value_type c) {
+            Traits::assign(U_buf()[idx], c);
+        }
+
+        void U_copy(size_type idx, const value_type *str, size_type cnt) {
+            Traits::copy(U_buf() + idx, str, cnt);
+        }
+
+        void U_trail(size_type idx) {
+            U_assign(idx, empty_char);
+        }
+
+        // allocator
+        [[no_unique_address]] allocator_type D_alloc;
+
+        static constexpr value_type empty_char = value_type();
+
+        void U_init_sso() noexcept {
+            D_capacity = __SSOCAPACITY;
+            U_trail(0);
+        }
+
+        void U_allocate(size_type n) {
+            // still in sso mode
+            if (P_sso(n)) {
+                return;
+            }
+            D_capacity   = n;
+            D_dyn.D_data = D_alloc.allocate(D_capacity + 1);
+            U_trail(0);
+        }
+
+        void U_deallocate() {
+            if (!P_sso(D_capacity) && (D_dyn.D_data != nullptr)) {
+                D_alloc.deallocate(D_dyn.D_data, D_capacity + 1);
+            }
+        }
+
+    public:
+        // 构造与析构
+        basic_string() noexcept(noexcept(Allocator())) : D_alloc() {
+            U_init_sso();
+        }
+
+        explicit basic_string(const Allocator &alloc) noexcept
+            : D_alloc(alloc) {
+            U_init_sso();
+        }
+
+        basic_string(const CharT *str, size_type cnt,
+                     const Allocator &alloc = Allocator())
+            : D_size(cnt), D_alloc(alloc) {
+            if (P_sso(cnt)) {
+                U_init_sso();
+            } else {
+                U_allocate(cnt);
+            }
+
+            U_copy(0, str, cnt);
+            U_trail(D_size);
+        }
+
+        basic_string(const CharT *s, const Allocator &alloc = Allocator())
+            : basic_string(s, Traits::length(s), alloc) {}
+
+        basic_string(const basic_string &other)
+            : D_size(other.D_size), D_alloc(other.D_alloc) {
+            if (P_sso(other.D_capacity)) {
+                U_init_sso();
+            } else {
+                U_allocate(other.D_capacity);
+            }
+
+            U_copy(0, other.data(), other.D_size);
+            U_trail(D_size);
+        }
+
+        basic_string(basic_string &&other) noexcept
+            : D_capacity(other.D_capacity),
+              D_size(other.D_size),
+              D_alloc(std::move(other.D_alloc)) {
+            if (P_sso(other.D_capacity)) {
+                Traits::copy(D_sso.D_buf, other.D_sso.D_buf, (D_capacity + 1));;
+            } else {
+                D_dyn.D_data       = other.D_dyn.D_data;
+                other.D_dyn.D_data = nullptr;
+            }
+
+            other.U_init_sso();
+            other.D_size     = 0;
+        }
+
+        ~basic_string() {
+            U_deallocate();
+        }
+
+        basic_string &operator=(const basic_string &other) {
+            if (this != &other) {
+                size_type other_size = other.size();
+                if (other_size > capacity()) {
+                    U_deallocate();
+                    U_allocate(other_size);
+                }
+                Traits::copy(data(), other.data(), other_size + 1);
+
+                D_size = other_size;
+            }
+            return *this;
+        }
+
+        basic_string &operator=(basic_string &&other) noexcept {
+            if (this != &other) {
+                if (other.D_capacity > D_capacity) {
+                    U_deallocate();
+                    U_allocate(other.D_capacity);
+                }
+
+                D_alloc    = std::move(other.D_alloc);
+                D_size     = other.D_size;
+
+                if (P_sso(other.D_capacity)) {
+                    // 如果对方在 SSO 模式
+                    // 无论如何, 我们都只能去复制数据
+                    U_copy(0, other.data(), other.D_size);
+                    U_trail(D_size);
+                } else {
+                    // 如果对方不在 SSO 模式
+                    // 由于 D_capacity = max(D_capacity, other.D_capacity),
+                    // D_capacity >= other.D_capacity > __SSOCAPACITY, 所以我们不可能在 SSO 模式
+                    // 因此直接移动指针即可
+                    D_dyn.D_data       = other.D_dyn.D_data;
+                    other.D_dyn.D_data = nullptr;
+                }
+
+                other.U_init_sso();
+                other.D_size     = 0;
+            }
+            return *this;
+        }
+
+        // 迭代器
+        iterator begin() noexcept {
+            return data();
+        }
+        const_iterator begin() const noexcept {
+            return data();
+        }
+        iterator end() noexcept {
+            return data() + size();
+        }
+        const_iterator end() const noexcept {
+            return data() + size();
+        }
+
+        // 容量
+        [[nodiscard]] bool empty() const noexcept {
+            return size() == 0;
+        }
+        size_type size() const noexcept {
+            return D_size;
+        }
+        size_type length() const noexcept {
+            return size();
+        }
+        size_type capacity() const noexcept {
+            return D_capacity;
+        }
+
+        void reserve(size_type new_cap) {
+            if (new_cap > capacity()) {
+                pointer new_data       = D_alloc.allocate(new_cap + 1);
+                size_type current_size = size();
+                Traits::copy(new_data, data(), current_size + 1);
+                U_deallocate();
+                D_dyn.D_data = new_data;
+                D_size       = current_size;
+                D_capacity   = new_cap;
+            }
+        }
+
+    private:
+        size_type new_size(size_type expected_size) {
+            size_type cap = capacity();
+            return (expected_size > cap * 2) ? (expected_size * 2) : (cap * 2);
+        }
+
+    public:
+        void clear() noexcept {
+            D_size = 0;
+            U_trail(0);
+        }
+
+        // 访问
+        reference operator[](size_type pos) {
+            return data()[pos];
+        }
+        const_reference operator[](size_type pos) const {
+            return data()[pos];
+        }
+
+        pointer data() noexcept {
+            return U_buf();
+        }
+        const_pointer data() const noexcept {
+            return U_buf();
+        }
+        const_pointer c_str() const noexcept {
+            return data();
+        }
+
+        // 修改
+        basic_string &append(const CharT *s, size_type n) {
+            size_type current_size = size();
+            if (current_size + n > capacity()) {
+                reserve(new_size(current_size + n));
+            }
+            Traits::copy(data() + current_size, s, n);
+            D_size += n;
+            U_trail(D_size);
+            return *this;
+        }
+
+        basic_string &append(const CharT *s) {
+            return append(s, Traits::length(s));
+        }
+
+        basic_string &append(const basic_string &str) {
+            return append(str.data(), str.size());
+        }
+
+        void push_back(CharT ch) {
+            size_type current_size = size();
+            if (current_size + 1 > capacity()) {
+                reserve(new_size(current_size + 1));
+            }
+            pointer p = data();
+            Traits::assign(p[current_size], ch);
+            Traits::assign(p[current_size + 1], CharT());
+            D_size++;
+        }
+
+        basic_string &operator+=(const basic_string &str) {
+            return append(str);
+        }
+        basic_string &operator+=(const CharT *s) {
+            return append(s);
+        }
+        basic_string &operator+=(CharT ch) {
+            push_back(ch);
+            return *this;
+        }
+
+        // 比较
+        int compare(const basic_string &str) const noexcept {
+            size_type s1   = size();
+            size_type s2   = str.size();
+            size_type rlen = std::min(s1, s2);
+            int res        = Traits::compare(data(), str.data(), rlen);
+            if (res == 0) {
+                if (s1 < s2)
+                    return -1;
+                if (s1 > s2)
+                    return 1;
+            }
+            return res;
+        }
+
+        bool operator==(const basic_string &other) const {
+            size_type s1 = size();
+            return s1 == other.size() &&
+                   Traits::compare(data(), other.data(), s1) == 0;
+        }
+    };
+
+    using string    = basic_string<char>;
+    using wstring   = basic_string<wchar_t>;
+    using u8string  = basic_string<char8_t>;
+    using u16string = basic_string<char16_t>;
+    using u32string = basic_string<char32_t>;
 }  // namespace std
-
-// 暂时使用mstring代替string
-#include <sus/mstring.h>
-
-namespace std {
-    using string = util::string;
-}

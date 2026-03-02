@@ -13,23 +13,25 @@
 #include <sus/ansi.h>
 #include <sus/list.h>
 #include <sus/pair.h>
-#include <test/framework.h>
-#include <test/string_view.h>
-#include <test/cap.h>
 #include <test/buddy.h>
-#include <test/slub.h>
-#include <test/path.h>
-#include <test/tree.h>
+#include <test/cap.h>
+#include <test/framework.h>
 #include <test/fs.h>
+#include <test/path.h>
+#include <test/slub.h>
+#include <test/string.h>
+#include <test/string_view.h>
+#include <test/tree.h>
 
 void collect_tests(TestFramework& framework) {
-    test::string_view::collect_tests(framework);
-    test::cap::collect_tests(framework);
     test::buddy::collect_tests(framework);
-    test::slub::collect_tests(framework);
-    test::path::collect_tests(framework);
-    test::tree::collect_tests(framework);
+    test::cap::collect_tests(framework);
     test::fs::collect_tests(framework);
+    test::path::collect_tests(framework);
+    test::slub::collect_tests(framework);
+    test::string::collect_tests(framework);
+    test::string_view::collect_tests(framework);
+    test::tree::collect_tests(framework);
 }
 
 void TestFramework::run_all() const {
@@ -87,10 +89,11 @@ void TestFramework::run_all() const {
             ANSI_GM_RESET));
     } else {
         kprintfln(ANSI_GRAPHIC(ANSI_FG_RED) "%zu 个测试失败:" ANSI_GRAPHIC(
-                        ANSI_GM_RESET),
-                    failed_cases.size());
+                      ANSI_GM_RESET),
+                  failed_cases.size());
         for (const auto& [category, test_case, reasons] : failed_cases) {
-            kprintfln("  - %s:%s 失败! 原因是:", category->name(), test_case->name());
+            kprintfln("  - %s:%s 失败! 原因是:", category->name(),
+                      test_case->name());
             for (const auto& reason : reasons) {
                 kprintfln("    - %s", reason.c_str());
             }

@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cstddef>
+#include <exception>
 
 // Placement new/delete
 void* operator new(size_t size, void* ptr) noexcept;
@@ -24,4 +25,25 @@ namespace std {
     [[nodiscard]] constexpr T* launder(T* p) noexcept {
         return __builtin_launder(p);
     }
+
+    class bad_alloc : public exception {
+    public:
+        constexpr bad_alloc() noexcept = default;
+        constexpr bad_alloc(const bad_alloc&) noexcept = default;
+        constexpr bad_alloc& operator=(const bad_alloc&) noexcept = default;
+        constexpr bad_alloc(bad_alloc&&) noexcept = default;
+        constexpr bad_alloc& operator=(bad_alloc&&) noexcept = default;
+        virtual ~bad_alloc() noexcept = default;
+
+        [[nodiscard]]
+        const char *what() const noexcept override {
+            return "Failed at allocation";
+        }
+#ifdef __SUS_NO_RTTI__
+        [[nodiscard]]
+        const char* type() const override {
+            return "std::bad_alloc";
+        }
+#endif
+    };
 }  // namespace std
