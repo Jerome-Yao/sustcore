@@ -102,10 +102,7 @@ Capability::~Capability() {
     // 删除所有的子能力
     __working_queue.clear();
     for (auto &subcap : children) {
-        if (! __working_queue.push(subcap)) {
-            CAPABILITY::FATAL("工作队列已满!无法删除子能力!");
-            panic("能力删除时出现故障!");
-        }
+        __working_queue.push(subcap);
     }
 
     // 通过广度优先搜索删除其子能力
@@ -116,10 +113,7 @@ Capability::~Capability() {
 
         // 加入该能力的直接子能力
         for (auto &subcap : cur->children) {
-            if (! __working_queue.push(subcap)) {
-                CAPABILITY::FATAL("工作队列已满!无法删除子能力!");
-                panic("能力删除时出现故障!");
-            }
+            __working_queue.push(subcap);
             CAPABILITY::DEBUG("加入工作队列: (%d, %d)@Space %d", subcap->_idx.group,
                               subcap->_idx.slot, subcap->_space->sp_idx);
         }

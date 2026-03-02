@@ -39,15 +39,16 @@
 #include <sus/types.h>
 #include <symbols.h>
 #include <task/task.h>
+#include <test/framework.h>
 #include <vfs/ops.h>
 #include <vfs/vfs.h>
-#include <test/framework.h>
 
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 
 void buddy_test_complex(void);
 void slub_test_basic(void);
@@ -100,6 +101,30 @@ int kprintfln(const char *fmt, ...) {
     va_end(args);
     kputchar('\n');
     return len + 1;
+}
+
+#ifndef __SUS_NO_RTTI__
+#error \
+    "RTTI is not supported in the kernel. Please define __SUS_NO_RTTI__ to compile."
+#endif
+
+#ifndef __SUS_NO_EXCEPTIONS__
+#error \
+    "Exceptions are not supported in the kernel. Please define __SUS_NO_EXCEPTIONS__ to compile."
+#endif
+
+/**
+ * @brief This function will just print the exception
+ * and then halt the system. It will never return.
+ * @param s the exception to throw
+ */
+[[noreturn]]
+void __sus_cxa_throw(const std::exception &e) {
+    kprintfln(
+        ANSI_GRAPHIC(ANSI_FG_RED) "There is an exception: %s" ANSI_GRAPHIC(
+            ANSI_GM_RESET),
+        e.what());
+    while (true);
 }
 
 RamDiskDevice *make_initrd(void) {
@@ -216,6 +241,13 @@ extern "C" void post_init(void) {
     //     PCB *p = new PCB();
     //     kprintf("%p;%p\n", t, p);
     // }
+    using std::operator""sv;
+    auto s = "AAA"sv;
+    kputchar(s.at(0));
+    kputchar(s.at(1));
+    kputchar(s.at(2));
+    kputchar(s.at(3));
+    kputchar(s.at(4));
 
     LOGGER::INFO("Test complete. Entering idle loop.");
 

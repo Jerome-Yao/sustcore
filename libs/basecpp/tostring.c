@@ -51,6 +51,9 @@ char *uitoa(unsigned int val, char *buffer, int base) {
         buffer++;
     }
 
+    *buffer = '\0';
+    buffer ++;
+
     return ret;
 }
 
@@ -123,6 +126,9 @@ char *ulltoa(unsigned long long val, char *buffer, int base) {
         *buffer = _buffer[i];
         buffer++;
     }
+
+    *buffer = '\0';
+    buffer ++;
 
     return ret;
 }

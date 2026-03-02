@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <sus/tostring.h>
+
 #include <cstddef>
 #include <cstring>
 
@@ -36,7 +38,7 @@ namespace util {
         ~string();
 
         [[nodiscard]]
-        constexpr const char* c_str() const noexcept {
+        constexpr const char *c_str() const noexcept {
             return D_data;
         }
         [[nodiscard]]
@@ -129,4 +131,87 @@ namespace util {
             return D_buf[index];
         }
     };
+
+    inline string to_mstring(const char *str) {
+        return {str};
+    }
+    inline string to_mstring(const string &str) {
+        return str;
+    }
+
+    inline string to_mstring(int val) {
+        char _buf[50];
+        itoa(val, (char *)_buf, 10);
+        return {(char *)_buf};
+    }
+
+    inline string to_mstring(unsigned int val) {
+        char _buf[50];
+        uitoa(val, (char *)_buf, 10);
+        return {(char *)_buf};
+    }
+
+    inline string to_mstring(long long val) {
+        char _buf[50];
+        lltoa(val, (char *)_buf, 10);
+        return {(char *)_buf};
+    }
+
+    inline string to_mstring(unsigned long long val) {
+        char _buf[60];
+        ulltoa(val, (char *)_buf, 10);
+        return {(char *)_buf};
+    }
+
+    inline string to_mstring(short val) {
+        return to_mstring((int)val);
+    }
+
+    inline string to_mstring(unsigned short val) {
+        return to_mstring((unsigned int)val);
+    }
+
+    inline string to_mstring(long val) {
+        return to_mstring((long long)val);
+    }
+
+    inline string to_mstring(unsigned long val) {
+        return to_mstring((unsigned long long)val);
+    }
+
+    inline string to_mstring(char val) {
+        char _buf[2] = {val, '\0'};
+        return {(char *)_buf};
+    }
+
+    inline string to_mstring(unsigned char val) {
+        return to_mstring((int)val);
+    }
+
+    inline string to_mstring(bool val) {
+        return val ? "true" : "false";
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,
+    // cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+    // cppcoreguidelines-pro-bounds-constant-array-index)
+    inline string to_mstring(const void *ptr) {
+        char _buf[20];
+        ulltoa((unsigned long long)ptr, _buf, 16);
+        char _padbuf[20];
+        size_t len = strlen(_buf);
+        // padding to 16 characters
+        for (size_t i = 0; i < 16 - len; i++) {
+            _padbuf[i] = '0';
+        }
+        for (size_t i = 0; i < len; i++) {
+            _padbuf[16 - len + i] = _buf[i];
+        }
+        _padbuf[16] = '\0';
+        return {(char *)_padbuf};
+    }
+    // NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,
+    // cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+    // cppcoreguidelines-pro-bounds-constant-array-index)
+
 }  // namespace util

@@ -82,7 +82,6 @@ namespace test::string_view {
             ttest(sv.substr(8, 0).empty());
             ttest(sv.substr(0, 100) == "Sustcore"sv);  // count > size
             ttest(sv.substr(4) == "core"sv);
-            ttest(sv.substr(9).empty());
         }
     };
 

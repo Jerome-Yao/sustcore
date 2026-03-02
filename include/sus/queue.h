@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <stdexcept>
 
 namespace util {
     template <typename _Tp, size_t D_capacity>
@@ -111,11 +112,9 @@ namespace util {
 
         // emplace
         template <typename... Args>
-        bool emplace(Args&&... args) noexcept {
+        void emplace(Args&&... args) noexcept {
             if (full()) {
-                // in fact, we should throw an exception here
-                // however, we don't have exception handling mechanism in Sustcore
-                return false;
+                _THROW(std::overflow_error("StaticArrayQueue::emplace: queue is full"));
             }
 
             const IndexType last_idx = D_tail;
@@ -123,30 +122,25 @@ namespace util {
 
             // 原地构造
             D_data[last_idx] = _Tp(std::forward<Args>(args)...);
-            return true;
         }
 
         // pop/push_front/back
-        bool push(const _Tp& value) noexcept {
+        void push(const _Tp& value) noexcept {
             if (full()) {
-                // in fact, we should throw an exception here
-                // however, we don't have exception handling mechanism in Sustcore
-                return false;
+                _THROW(std::overflow_error("StaticArrayQueue::push: queue is full"));
             }
 
             const IndexType last_idx = D_tail;
             D_tail = U_next(D_tail);
 
             D_data[last_idx] = value;
-            return true;
         }
 
-        bool pop() noexcept {
+        void pop() noexcept {
             if (empty()) {
-                return false;
+                _THROW(std::underflow_error("StaticArrayQueue::pop: queue is empty"));
             }
             D_head = U_next(D_head);
-            return true;
         }
 
         _Tp & front() noexcept {

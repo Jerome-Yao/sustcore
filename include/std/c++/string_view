@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <functional>
 #include <iterator>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -93,9 +94,9 @@ namespace std {
             : M_data(&*first), M_size(std::distance(first, last)) {}
 
         constexpr basic_string_view(const basic_string_view &other) = default;
-        constexpr basic_string_view &operator=(
-            const basic_string_view &other) = default;
-        constexpr basic_string_view(basic_string_view &&) = default;
+        constexpr basic_string_view &operator=(const basic_string_view &other) =
+            default;
+        constexpr basic_string_view(basic_string_view &&)            = default;
         constexpr basic_string_view &operator=(basic_string_view &&) = default;
 
         ~basic_string_view() = default;
@@ -125,9 +126,7 @@ namespace std {
         [[nodiscard]]
         constexpr CharT at(size_t pos) const {
             if (pos >= M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just return a default value
-                return CharT();
+                _THROW(out_of_range("basic_string_view::at: pos out of range"));
             }
             return M_data[pos];
         }
@@ -168,11 +167,7 @@ namespace std {
         // modifiers
         constexpr void remove_prefix(size_t n) {
             if (n > M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just set the string_view to
-                // empty
-                M_data = nullptr;
-                M_size = 0;
+                _THROW(out_of_range("basic_string_view::remove_prefix: pos out of range"));
             } else {
                 M_data += n;
                 M_size -= n;
@@ -180,11 +175,7 @@ namespace std {
         }
         constexpr void remove_suffix(size_t n) {
             if (n > M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just set the string_view to
-                // empty
-                M_data = nullptr;
-                M_size = 0;
+                _THROW(out_of_range("basic_string_view::remove_suffix: pos out of range"));
             } else {
                 M_size -= n;
             }
@@ -197,9 +188,7 @@ namespace std {
         // operations
         size_type copy(CharT *dest, size_t count, size_t pos = 0) const {
             if (pos > M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just return 0
-                return 0;
+                _THROW(out_of_range("basic_string_view::copy: pos out of range"));
             }
             size_t rcount =
                 (count == npos || pos + count > M_size) ? M_size - pos : count;
@@ -210,10 +199,7 @@ namespace std {
         constexpr basic_string_view substr(size_t pos,
                                            size_t count = npos) const {
             if (pos > M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just return an empty
-                // string_view
-                return basic_string_view();
+                _THROW(out_of_range("basic_string_view::substr: pos out of range"));
             }
             size_t rcount =
                 (count == npos || pos + count > M_size) ? M_size - pos : count;
@@ -221,7 +207,8 @@ namespace std {
         }
         [[nodiscard]]
         constexpr int compare(basic_string_view other) const noexcept {
-            const size_t min_size = (M_size < other.M_size) ? M_size : other.M_size;
+            const size_t min_size =
+                (M_size < other.M_size) ? M_size : other.M_size;
             int cmp = traits_type::compare(M_data, other.M_data, min_size);
             if (cmp != 0) {
                 return cmp;
@@ -393,8 +380,6 @@ namespace std {
         constexpr size_t find_first_of(basic_string_view chars,
                                        size_t pos = 0) const noexcept {
             if (pos > M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just return npos
                 return npos;
             }
             for (size_t i = pos; i < M_size; i++) {
@@ -460,8 +445,6 @@ namespace std {
         constexpr size_t find_first_not_of(basic_string_view chars,
                                            size_t pos = 0) const noexcept {
             if (pos > M_size) {
-                // in fact, we should throw an exception here, but since we
-                // don't have exception support, just return npos
                 return npos;
             }
             for (size_t i = pos; i < M_size; i++) {
@@ -534,18 +517,17 @@ namespace std {
         constexpr comparison_category operator<=>(
             basic_string_view other) const noexcept {
             switch (compare(other)) {
-                case -1:
-                    return comparison_category::less;
-                case 0:
-                    return comparison_category::equivalent;
-                case 1:
-                    return comparison_category::greater;
+                case -1: return comparison_category::less;
+                case 0:  return comparison_category::equivalent;
+                case 1:  return comparison_category::greater;
             }
-            assert(compare(other) == -1 || compare(other) == 0 || compare(other) == 1);
+            assert(compare(other) == -1 || compare(other) == 0 ||
+                   compare(other) == 1);
             return comparison_category::equivalent;
         }
 
-        constexpr comparison_category operator<=>(const CharT *other) const noexcept {
+        constexpr comparison_category operator<=>(
+            const CharT *other) const noexcept {
             return *this <=> basic_string_view(other);
         }
     };

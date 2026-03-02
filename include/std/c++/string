@@ -180,3 +180,10 @@ namespace std {
     template <>
     class char_traits<char32_t> : public __impl_char_traits<char32_t> {};
 }  // namespace std
+
+// 暂时使用mstring代替string
+#include <sus/mstring.h>
+
+namespace std {
+    using string = util::string;
+}
