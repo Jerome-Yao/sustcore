@@ -248,7 +248,7 @@ namespace std {
     struct is_signed : public false_type {};
 
     template <class T>
-    struct is_unsigned : public bool_constant<! is_signed<T>::value> {};
+    struct is_unsigned : public bool_constant<!is_signed<T>::value> {};
 
     template <>
     struct is_signed<signed char> : public true_type {};
@@ -384,4 +384,77 @@ namespace std {
 
     template <typename _Fp, typename... _Args>
     using invoke_result_t = typename invoke_result<_Fp, _Args...>::type;
+
+    // 探测某个表达式是否有效(无效)
+    template <typename _Default, template <typename...> class _Operation,
+              typename... _Args>
+    struct __detected_or {
+        using type          = _Default;
+        using __is_detected = false_type;
+    };
+
+    // 探测某个表达式是否有效(有效)
+    template <typename _Default, template <typename...> class _Operation,
+              typename... _Args>
+        requires requires { typename _Operation<_Args...>; }
+    struct __detected_or<_Default, _Operation, _Args...> {
+        using type          = _Operation<_Args...>;
+        using __is_detected = true_type;
+    };
+
+    template <typename _Default, template <typename...> class _Operation,
+              typename... _Args>
+    using __detected_or_t =
+        typename __detected_or<_Default, _Operation, _Args...>::type;
+
+    template <typename T>
+    struct make_unsigned;
+
+    template <>
+    struct make_unsigned<signed char> {
+        using type = unsigned char;
+    };
+    template <>
+    struct make_unsigned<short> {
+        using type = unsigned short;
+    };
+    template <>
+    struct make_unsigned<int> {
+        using type = unsigned int;
+    };
+    template <>
+    struct make_unsigned<long> {
+        using type = unsigned long;
+    };
+    template <>
+    struct make_unsigned<long long> {
+        using type = unsigned long long;
+    };
+    template <>
+    struct make_unsigned<unsigned char> {
+        using type = unsigned char;
+    };
+    template <>
+    struct make_unsigned<unsigned short> {
+        using type = unsigned short;
+    };
+    template <>
+    struct make_unsigned<unsigned int> {
+        using type = unsigned int;
+    };
+    template <>
+    struct make_unsigned<unsigned long> {
+        using type = unsigned long;
+    };
+    template <>
+    struct make_unsigned<unsigned long long> {
+        using type = unsigned long long;
+    };
+    template <>
+    struct make_unsigned<char> {
+        using type = unsigned char;
+    };
+
+    template <typename T>
+    using make_unsigned_t = typename make_unsigned<T>::type;
 }  // namespace std

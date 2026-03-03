@@ -22,7 +22,6 @@
 #include <initializer_list>
 #include <ios>
 #include <iterator>
-#include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -205,10 +204,10 @@ namespace std {
         static constexpr size_type npos = size_type(-1);
 
     private:
+        using _sv_type = basic_string_view<CharT, Traits>;
         template <class StringViewLike>
         inline static constexpr bool __StringViewLike =
-            std::is_convertible_v<const StringViewLike &,
-                                  basic_string_view<CharT, Traits>> &&
+            std::is_convertible_v<const StringViewLike &, _sv_type> &&
             (!std::is_convertible_v<const StringViewLike &, const_pointer>);
 
         // SSO 至多存储这么多的字节(包括结尾的 '\0')
@@ -244,7 +243,7 @@ namespace std {
             return P_sso(D_capacity) ? (pointer)D_sso.D_buf : D_dyn.D_data;
         }
 
-        constexpr const pointer U_buf() const {
+        constexpr const_pointer U_buf() const {
             return P_sso(D_capacity) ? (pointer)D_sso.D_buf : D_dyn.D_data;
         }
 
@@ -288,7 +287,7 @@ namespace std {
             }
         }
 
-        void U_deallocate() {
+        constexpr void U_deallocate() {
             if (!P_sso(D_capacity) && (D_dyn.D_data != nullptr)) {
                 D_alloc.deallocate(D_dyn.D_data, D_capacity + 1);
             }
@@ -477,10 +476,21 @@ namespace std {
                                const Allocator &alloc = Allocator())
             : basic_string(ilist.begin(), ilist.end(), alloc) {}
 
-        ~basic_string() {
+        constexpr ~basic_string() {
             U_deallocate();
         }
 
+    private:
+        size_type U_new_size(size_type expected_size) {
+            return std::min(capacity() * 2, expected_size);
+        }
+        constexpr void U_prepare_capacity(size_type expected_capacity) {
+            if (expected_capacity > D_capacity) {
+                reserve(U_new_size(expected_capacity));
+            }
+        }
+
+    public:
         // operator =
         constexpr basic_string &operator=(const basic_string &other) {
             if (this != &other) {
@@ -496,7 +506,10 @@ namespace std {
             return *this;
         }
 
-        constexpr basic_string &operator=(basic_string &&other) noexcept {
+        constexpr basic_string &operator=(basic_string &&other) noexcept(
+            std::allocator_traits<
+                Allocator>::propagate_on_container_move_assignment::value ||
+            std::allocator_traits<Allocator>::is_always_equal::value) {
             if (this != &other) {
                 if (other.D_capacity > D_capacity) {
                     U_deallocate();
@@ -575,21 +588,20 @@ namespace std {
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
         constexpr basic_string &assign(const StringViewLike &svl) {
-            return assign(svl.data(), svl.size());
+            _sv_type sv = svl;
+            return assign(sv.data(), sv.size());
         }
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
         constexpr basic_string &assign(const StringViewLike &svl, size_type pos,
                                        size_type count = npos) {
-            std::basic_string_view<CharT, Traits> sv = svl;
-            return assign(sv.substr(pos, count));
+            return assign(_sv_type(svl).substr(pos, count));
         }
 
         constexpr basic_string &assign(const basic_string &str, size_type pos,
                                        size_type count = npos) {
-            return assign(
-                basic_string_view<CharT, Traits>(str).substr(pos, count));
+            return assign(_sv_type(str).substr(pos, count));
         }
 
         template <class InputIt>
@@ -656,8 +668,8 @@ namespace std {
             return data();
         }
 
-        constexpr operator basic_string_view<CharT, Traits>() const noexcept {
-            return basic_string_view<CharT, Traits>(data(), size());
+        constexpr operator _sv_type() const noexcept {
+            return _sv_type(data(), size());
         }
 
         // 迭代器
@@ -723,49 +735,361 @@ namespace std {
             U_trail(0);
         }
 
-        void push_back(value_type ch) {
-            size_type current_size = size();
-            if (current_size + 1 > capacity()) {
-                reserve(new_size(current_size + 1));
+        // insert
+    private:
+        bool U_prepare_insert(size_type index, size_type count) {
+            if (index > size()) {
+                _THROW(
+                    out_of_range("basic_string::insert: index out of range"));
             }
-            pointer p = data();
-            Traits::assign(p[current_size], ch);
-            Traits::assign(p[current_size + 1], empty_char);
-            D_size++;
+            if (count == 0) {
+                return false;
+            }
+            U_prepare_capacity(size() + count);
+            // 将 [index, size()] 的内容向后移动 count 个位置
+            Traits::move(data() + index + count, data() + index,
+                         size() - index + 1);
+            D_size += count;
+            return true;
         }
 
-        void pop_back() {
-            if (!empty()) {
-                D_size--;
-                U_trail(D_size);
+    public:
+        constexpr basic_string &insert(size_type index, size_type count,
+                                       CharT ch) {
+            if (!U_prepare_insert(index, count))
+                return *this;
+            // 将 [index, index + count) 的内容设置为 ch
+            for (size_type i = 0; i < count; ++i) {
+                U_assign(index + i, ch);
             }
+            return *this;
         }
 
-        basic_string &append(value_type c) {
+        constexpr basic_string &insert(size_type index, const_pointer s,
+                                       size_type count) {
+            if (!U_prepare_insert(index, count))
+                return *this;
+            // 将 [index, index + count) 的内容设置为 s 的前 count 个字符
+            U_copy(index, s, count);
+            return *this;
+        }
+
+        constexpr basic_string &insert(size_type index, const_pointer s) {
+            return insert(index, s, Traits::length(s));
+        }
+
+        constexpr basic_string &insert(size_type index,
+                                       const basic_string &str) {
+            return insert(index, str.data(), str.size());
+        }
+
+        constexpr basic_string &insert(size_type index, const basic_string &str,
+                                       size_type pos, size_type count = npos) {
+            return insert(index, _sv_type(str).substr(pos, count));
+        }
+
+        constexpr iterator insert(const_iterator pos, CharT ch) {
+            size_type index = pos - begin();
+            insert(index, 1, ch);
+            return begin() + index;
+        }
+
+        constexpr iterator insert(const_iterator pos, size_type count,
+                                  CharT ch) {
+            size_type index = pos - begin();
+            insert(index, count, ch);
+            return begin() + index;
+        }
+
+        template <class InputIt>
+        constexpr iterator insert(const_iterator pos, InputIt first,
+                                  InputIt last) {
+            size_type index = pos - begin();
+            basic_string temp(first, last, get_allocator());
+            insert(index, temp);
+            return begin() + index;
+        }
+
+        constexpr iterator insert(const_iterator pos,
+                                  std::initializer_list<CharT> ilist) {
+            return insert(pos, ilist.begin(), ilist.end());
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr basic_string &insert(size_type index,
+                                       const StringViewLike &svl) {
+            _sv_type sv = svl;
+            return insert(index, sv.data(), sv.size());
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr basic_string &insert(size_type index,
+                                       const StringViewLike &svl, size_type pos,
+                                       size_type count = npos) {
+            return insert(index, _sv_type(svl).substr(pos, count));
+        }
+
+        // insert_range
+        // to be implemented...
+
+        // erase
+        constexpr basic_string &erase(size_type index = 0,
+                                      size_type count = npos) {
+            if (index > size()) {
+                _THROW(out_of_range("basic_string::erase: index out of range"));
+            }
+            if (count == 0) {
+                return *this;
+            }
+            if (index + count > size()) {
+                count = size() - index;
+            }
+            // 将 [index + count, size()) 的内容向前移动 count 个位置
+            Traits::move(data() + index, data() + index + count,
+                         size() - index - count + 1);
+            D_size -= count;
+            return *this;
+        }
+
+        constexpr iterator erase(const_iterator pos) {
+            size_type index = pos - begin();
+            erase(index, 1);
+            return begin() + index;
+        }
+
+        constexpr iterator erase(const_iterator first, const_iterator last) {
+            size_type index = first - begin();
+            size_type count = last - first;
+            erase(index, count);
+            return begin() + index;
+        }
+
+        // push/pop
+        constexpr void push_back(value_type ch) {
+            insert(end(), ch);
+        }
+
+        constexpr void pop_back() {
+            erase(end() - 1);
+        }
+
+        // appends
+        constexpr basic_string &append(value_type c) {
             push_back(c);
             return *this;
         }
 
-        basic_string &append(const_pointer s, size_type n) {
+        constexpr basic_string &append(const_pointer s, size_type n) {
             size_type current_size = size();
-            if (current_size + n > capacity()) {
-                reserve(new_size(current_size + n));
-            }
+            U_prepare_capacity(current_size + n);
             Traits::copy(data() + current_size, s, n);
             D_size += n;
             U_trail(D_size);
             return *this;
         }
 
-        basic_string &append(const_pointer s) {
+        constexpr basic_string &append(const_pointer s) {
             return append(s, Traits::length(s));
         }
 
-        basic_string &append(const basic_string &str) {
+        constexpr basic_string &append(const basic_string &str) {
             return append(str.data(), str.size());
         }
 
-        void resize(size_type count) {
+        // append_range
+        // to be implemented...
+
+        // operator +=
+        constexpr basic_string &operator+=(const basic_string &str) {
+            return append(str);
+        }
+        constexpr basic_string &operator+=(value_type ch) {
+            push_back(ch);
+            return *this;
+        }
+        constexpr basic_string &operator+=(const_pointer s) {
+            return append(s);
+        }
+        constexpr basic_string &operator+=(std::initializer_list<CharT> ilist) {
+            return append(ilist);
+        }
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr basic_string &operator+=(const StringViewLike &svl) {
+            return append(svl);
+        }
+
+    private:
+        template <class InputIt>
+        constexpr basic_string &__replace(size_type pos, size_type count,
+                                          InputIt first, InputIt last) {
+            if (pos > size()) {
+                _THROW(out_of_range("basic_string::replace: pos out of range"));
+            }
+            const size_type s_count      = std::distance(first, last);
+            const size_type erase_count  = std::min(count, size() - pos);
+            const size_type insert_count = std::min(s_count, erase_count);
+            const size_type new_size     = size() - erase_count + insert_count;
+            U_prepare_capacity(new_size);
+            // 我们有:
+            // insert_count <= s_count, erase_count <= count, size() - pos
+            // [pos, pos + insert_count) 替换为 s 的前 insert_count 个字符
+            // 而[pos + erase_count, size()] 的内容向前移动 [pos + insert_count,
+            // ...]
+
+            if (erase_count > insert_count) {
+                // 移动的
+                const size_type move_count = size() - pos - erase_count + 1;
+                Traits::move(data() + pos + insert_count,
+                             data() + pos + erase_count, move_count);
+            }
+
+            for (size_type i = 0; i < insert_count; ++i) {
+                U_assign(pos + i, *(first + i));
+            }
+            return *this;
+        }
+
+    public:
+        // replace
+        constexpr basic_string &replace(size_type pos, size_type count,
+                                        const basic_string &str) {
+            if (pos > size()) {
+                _THROW(out_of_range("basic_string::replace: pos out of range"));
+            }
+            const size_type rcount = std::min(count, size() - pos);
+            return replace(pos, rcount, str.data(), str.size());
+        }
+
+        constexpr basic_string &replace(const_iterator first,
+                                        const_iterator last,
+                                        const basic_string &str) {
+            if (first >= last) {
+                _THROW(out_of_range("basic_string::replace: invalid range"));
+            }
+            if (first < begin() || last > end()) {
+                _THROW(
+                    out_of_range("basic_string::replace: range out of bounds"));
+            }
+            return replace(first - begin(), last - first, str);
+        }
+
+        constexpr basic_string &replace(size_type pos, size_type count,
+                                        const basic_string &str,
+                                        size_type str_pos,
+                                        size_type str_count = npos) {
+            return replace(pos, count,
+                           _sv_type(str).substr(str_pos, str_count));
+        }
+
+        constexpr basic_string &replace(size_type pos, size_type count,
+                                        const_pointer s, size_type s_count) {
+            return __replace(pos, count, s, s + s_count);
+        }
+
+        constexpr basic_string &replace(const_iterator first,
+                                        const_iterator last, const_pointer s,
+                                        size_type s_count) {
+            if (first >= last) {
+                _THROW(out_of_range("basic_string::replace: invalid range"));
+            }
+            if (first < begin() || last > end()) {
+                _THROW(
+                    out_of_range("basic_string::replace: range out of bounds"));
+            }
+            return replace(first - begin(), last - first, s, s_count);
+        }
+
+        constexpr basic_string &replace(size_type pos, size_type count,
+                                        const_pointer s) {
+            return replace(pos, count, s, Traits::length(s));
+        }
+
+        constexpr basic_string &replace(const_iterator first,
+                                        const_iterator last, const_pointer s) {
+            return replace(first, last, s, Traits::length(s));
+        }
+
+        constexpr basic_string &replace(size_type pos, size_type count,
+                                        size_type count2, CharT ch) {
+            using cfunc_iter = __constant_function_iterator<value_type>;
+            cfunc_iter begin(0, ch), end(count2, ch);
+            return __replace(pos, count, begin, end);
+        }
+
+        constexpr basic_string &replace(const_iterator first,
+                                        const_iterator last, size_type count2,
+                                        CharT ch) {
+            if (first >= last) {
+                _THROW(out_of_range("basic_string::replace: invalid range"));
+            }
+            if (first < begin() || last > end()) {
+                _THROW(
+                    out_of_range("basic_string::replace: range out of bounds"));
+            }
+            return replace(first - begin(), last - first, count2, ch);
+        }
+
+        template <class InputIt>
+        constexpr basic_string &replace(const_iterator first,
+                                        const_iterator last, InputIt first2,
+                                        InputIt last2) {
+            if (first >= last) {
+                _THROW(out_of_range("basic_string::replace: invalid range"));
+            }
+            if (first < begin() || last > end()) {
+                _THROW(
+                    out_of_range("basic_string::replace: range out of bounds"));
+            }
+            return __replace(first - begin(), last - first, first2, last2);
+        }
+
+        constexpr basic_string &replace(const_iterator first,
+                                        const_iterator last,
+                                        std::initializer_list<CharT> ilist) {
+            return replace(first, last, ilist.begin(), ilist.end());
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        basic_string &replace(size_type pos, size_type count,
+                              const StringViewLike &svl) {
+            _sv_type sv = svl;
+            return replace(pos, count, sv.data(), sv.size());
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        basic_string &replace(const_iterator first, const_iterator last,
+                              const StringViewLike &svl) {
+            _sv_type sv = svl;
+            return replace(first, last, sv.data(), sv.size());
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        basic_string &replace(size_type pos, size_type count,
+                              const StringViewLike &svl, size_type pos2,
+                              size_type count2 = npos) {
+            return replace(pos, count, _sv_type(svl).substr(pos2, count2));
+        }
+
+        // replace_with_range
+        // to be implemented...
+
+        // copy & resize
+        size_type copy(pointer dest, size_type count, size_type pos = 0) const {
+            if (pos > size()) {
+                _THROW(out_of_range("basic_string::copy: pos out of range"));
+            }
+            size_type rcount = std::min(count, size() - pos);
+            Traits::copy(dest, data() + pos, rcount);
+            return rcount;
+        }
+
+        constexpr void resize(size_type count) {
             resize(count, empty_char);
         }
 
@@ -781,34 +1105,54 @@ namespace std {
             D_size = count;
         }
 
-    private:
-        size_type new_size(size_type expected_size) {
-            size_type cap = capacity();
-            return (expected_size > cap * 2) ? (expected_size * 2) : (cap * 2);
-        }
-
-    public:
-        // operations
-        basic_string substr(size_type pos = 0, size_type count = npos) const {
-            if (pos > size()) {
-                _THROW(std::out_of_range("basic_string::substr"));
+        template <class Operation>
+        constexpr void resize_and_overwrite(size_type count, Operation op) {
+            if (count > capacity()) {
+                reserve(new_size(count));
             }
-            size_type rcount = std::min(count, size() - pos);
-            return basic_string(data() + pos, rcount, D_alloc);
+
+            D_size = std::move(op)(data(), count);
         }
 
-        basic_string &operator+=(const basic_string &str) {
-            return append(str);
-        }
-        basic_string &operator+=(const_pointer s) {
-            return append(s);
-        }
-        basic_string &operator+=(value_type ch) {
-            push_back(ch);
-            return *this;
+        constexpr void swap(basic_string &other) noexcept(
+            std::allocator_traits<
+                Allocator>::propagate_on_container_swap::value ||
+            std::allocator_traits<Allocator>::is_always_equal::value) {
+            if (this == &other) {
+                return;
+            }
+            if (D_alloc != other.D_alloc) {
+                // 如果 allocator 不同, 则直接交换内容
+                basic_string temp = std::move(*this);
+                *this             = std::move(other);
+                other             = std::move(temp);
+            } else {
+                // 否则, 直接交换成员变量
+                std::swap(D_capacity, other.D_capacity);
+                std::swap(D_size, other.D_size);
+                std::swap(D_sso, other.D_sso);
+            }
         }
 
-        // 比较
+        // 搜索
+        size_type find(const basic_string &str,
+                       size_type pos = 0) const noexcept {
+            if (pos > size()) {
+                return npos;
+            }
+            if (str.empty()) {
+                return pos;
+            }
+            for (size_type i = pos; i <= size() - str.size(); ++i) {
+                if (Traits::compare(data() + i, str.data(), str.size()) == 0) {
+                    return i;
+                }
+            }
+            return npos;
+        }
+
+        // 操作
+        // compare
         int compare(const basic_string &str) const noexcept {
             size_type s1   = size();
             size_type s2   = str.size();
@@ -823,10 +1167,230 @@ namespace std {
             return res;
         }
 
-        bool operator==(const basic_string &other) const {
-            size_type s1 = size();
-            return s1 == other.size() &&
-                   Traits::compare(data(), other.data(), s1) == 0;
+        // starts_with & ends_with & contains
+        constexpr bool starts_with(_sv_type sv) const noexcept {
+            return _sv_type(data(), size()).starts_with(sv);
+        }
+
+        constexpr bool starts_with(value_type ch) const noexcept {
+            return _sv_type(data(), size()).starts_with(ch);
+        }
+
+        constexpr bool starts_with(const_pointer s) const {
+            return _sv_type(data(), size()).starts_with(s);
+        }
+
+        constexpr bool ends_with(const value_type ch) const noexcept {
+            return _sv_type(data(), size()).ends_with(ch);
+        }
+
+        constexpr bool ends_with(_sv_type sv) const noexcept {
+            return _sv_type(data(), size()).ends_with(sv);
+        }
+
+        constexpr bool ends_with(const_pointer s) const {
+            return _sv_type(data(), size()).ends_with(s);
+        }
+
+        constexpr bool contains(_sv_type sv) const noexcept {
+            return _sv_type(data(), size()).contains(sv);
+        }
+
+        constexpr bool contains(value_type ch) const noexcept {
+            return _sv_type(data(), size()).contains(ch);
+        }
+
+        constexpr bool contains(const_pointer s) const {
+            return _sv_type(data(), size()).contains(s);
+        }
+
+        // substr
+        constexpr basic_string substr(size_type pos   = 0,
+                                      size_type count = npos) const & {
+            return basic_string(*this, pos, count);
+        }
+
+        constexpr basic_string substr(size_type pos   = 0,
+                                      size_type count = npos) && {
+            return basic_string(std::move(*this), pos, count);
+        }
+    };
+
+    // operator == & <=>
+    template <class CharT, class Traits, class Alloc>
+    constexpr bool operator==(const basic_string<CharT, Traits, Alloc> &lhs,
+                              const basic_string<CharT, Traits, Alloc> &rhs) {
+        return lhs.compare(rhs) == 0;
+    }
+
+    template <typename RhsType, class CharT, class Traits, class Alloc>
+    constexpr bool operator==(const basic_string<CharT, Traits, Alloc> &lhs,
+                              const CharT *rhs) {
+        return lhs.compare(rhs) == 0;
+    }
+
+    template <class CharT, class Traits, class Alloc>
+    constexpr bool operator==(const CharT *lhs,
+                              const basic_string<CharT, Traits, Alloc> &rhs) {
+        return rhs.compare(lhs) == 0;
+    }
+
+    template <class CharT, class Traits, class Alloc>
+    constexpr Traits::comparison_category operator<=>(
+        const basic_string<CharT, Traits, Alloc> &lhs,
+        const basic_string<CharT, Traits, Alloc> &rhs) {
+        return static_cast<Traits::comparison_category>(lhs.compare(rhs) <=> 0);
+    }
+
+    template <class CharT, class Traits, class Alloc>
+    constexpr Traits::comparison_category operator<=>(
+        const basic_string<CharT, Traits, Alloc> &lhs, const CharT *rhs) {
+        return static_cast<Traits::comparison_category>(lhs.compare(rhs) <=> 0);
+    }
+
+    template <class CharT, class Traits, class Alloc>
+    constexpr Traits::comparison_category operator<=>(
+        const CharT *lhs, const basic_string<CharT, Traits, Alloc> &rhs) {
+        return static_cast<Traits::comparison_category>(0 <=> rhs.compare(lhs));
+    }
+
+    // operator +
+    template <class T, class CharT, class Traits, class Alloc>
+    inline constexpr bool __validopr_binop_v =
+        std::is_convertible_v<
+            T, std::type_identity_t<std::basic_string_view<CharT, Traits>>> ||
+        std::is_convertible_v<T, const CharT *> ||
+        std::is_convertible_v<T, CharT>;
+
+    template <class CharT, class Traits, class Alloc>
+    constexpr basic_string<CharT, Traits, Alloc> operator+(
+        const basic_string<CharT, Traits, Alloc> &lhs,
+        const basic_string<CharT, Traits, Alloc> &rhs) {
+        return basic_string<CharT, Traits, Alloc>(lhs).append(rhs);
+    }
+    template <class CharT, class Traits, class Alloc, class RhsType>
+        requires __validopr_binop_v<RhsType, CharT, Traits, Alloc>
+    constexpr basic_string<CharT, Traits, Alloc> operator+(
+        const basic_string<CharT, Traits, Alloc> &lhs, RhsType rhs) {
+        return basic_string<CharT, Traits, Alloc>(lhs).append(rhs);
+    }
+    template <class CharT, class Traits, class Alloc, class LhsType>
+        requires __validopr_binop_v<LhsType, CharT, Traits, Alloc>
+    constexpr basic_string<CharT, Traits, Alloc> operator+(
+        LhsType lhs, const basic_string<CharT, Traits, Alloc> &rhs) {
+        return basic_string<CharT, Traits, Alloc>(lhs).append(rhs);
+    }
+    template <class CharT, class Traits, class Alloc>
+    std::basic_string<CharT, Traits, Alloc> operator+(
+        std::basic_string<CharT, Traits, Alloc> &&lhs,
+        std::basic_string<CharT, Traits, Alloc> &&rhs) {
+        return std::basic_string<CharT, Traits, Alloc>(std::move(lhs))
+            .append(std::move(rhs));
+    }
+    template <class CharT, class Traits, class Alloc>
+    std::basic_string<CharT, Traits, Alloc> operator+(
+        std::basic_string<CharT, Traits, Alloc> &&lhs,
+        const std::basic_string<CharT, Traits, Alloc> &rhs) {
+        return std::basic_string<CharT, Traits, Alloc>(std::move(lhs))
+            .append(rhs);
+    }
+    template <class CharT, class Traits, class Alloc, class RhsType>
+        requires __validopr_binop_v<RhsType, CharT, Traits, Alloc>
+    std::basic_string<CharT, Traits, Alloc> operator+(
+        std::basic_string<CharT, Traits, Alloc> &&lhs, RhsType rhs) {
+        return std::basic_string<CharT, Traits, Alloc>(std::move(lhs))
+            .append(rhs);
+    }
+    template <class CharT, class Traits, class Alloc>
+    std::basic_string<CharT, Traits, Alloc> operator+(
+        const std::basic_string<CharT, Traits, Alloc> &lhs,
+        std::basic_string<CharT, Traits, Alloc> &&rhs) {
+        return std::basic_string<CharT, Traits, Alloc>(lhs).append(
+            std::move(rhs));
+    }
+    template <class CharT, class Traits, class Alloc, class LhsType>
+        requires __validopr_binop_v<LhsType, CharT, Traits, Alloc>
+    std::basic_string<CharT, Traits, Alloc> operator+(
+        LhsType lhs, std::basic_string<CharT, Traits, Alloc> &&rhs) {
+        return std::basic_string<CharT, Traits, Alloc>(lhs).append(
+            std::move(rhs));
+    }
+
+    template <class CharT, class Traits, class Alloc>
+    void swap(basic_string<CharT, Traits, Alloc> &lhs,
+              basic_string<CharT, Traits, Alloc>
+                  &rhs) noexcept(noexcept(lhs.swap(rhs))) {
+        lhs.swap(rhs);
+    }
+
+    inline namespace literals {
+        inline namespace string_literals {
+            __attribute((__abi_tag__("cxx11"))) constexpr string operator""s(
+                const char *__str, size_t __len) {
+                return string{__str, __len};
+            }
+            __attribute((__abi_tag__("cxx11"))) constexpr u8string operator""s(
+                const char8_t *__str, size_t __len) {
+                return u8string{__str, __len};
+            }
+            __attribute((__abi_tag__("cxx11"))) constexpr u16string operator""s(
+                const char16_t *__str, size_t __len) {
+                return u16string{__str, __len};
+            }
+            __attribute((__abi_tag__("cxx11"))) constexpr u32string operator""s(
+                const char32_t *__str, size_t __len) {
+                return u32string{__str, __len};
+            }
+            __attribute((__abi_tag__("cxx11"))) constexpr wstring operator""s(
+                const wchar_t *__str, size_t __len) {
+                return wstring{__str, __len};
+            }
+        }  // namespace string_literals
+    }  // namespace literals
+
+    template <class Allocator>
+    struct hash<std::basic_string<char, std::char_traits<char>, Allocator>> {
+        size_t operator()(
+            const std::basic_string<char, std::char_traits<char>, Allocator>
+                &str) const noexcept {
+            return std::hash<std::string_view>()(str);
+        }
+    };
+
+    template <class Allocator>
+    struct hash<std::basic_string<char8_t, std::char_traits<char>, Allocator>> {
+        size_t operator()(
+            const std::basic_string<char8_t, std::char_traits<char>, Allocator>
+                &str) const noexcept {
+            return std::hash<std::u8string_view>()(str);
+        }
+    };
+
+    template <class Allocator>
+    struct hash<std::basic_string<char16_t, std::char_traits<char>, Allocator>> {
+        size_t operator()(
+            const std::basic_string<char16_t, std::char_traits<char>, Allocator>
+                &str) const noexcept {
+            return std::hash<std::u16string_view>()(str);
+        }
+    };
+
+    template <class Allocator>
+    struct hash<std::basic_string<char32_t, std::char_traits<char>, Allocator>> {
+        size_t operator()(
+            const std::basic_string<char32_t, std::char_traits<char>, Allocator>
+                &str) const noexcept {
+            return std::hash<std::u32string_view>()(str);
+        }
+    };
+
+    template <class Allocator>
+    struct hash<
+        std::basic_string<wchar_t, std::char_traits<wchar_t>, Allocator>> {
+        size_t operator()(
+            const std::basic_string<wchar_t, std::char_traits<wchar_t>,
+                                    Allocator> &str) const noexcept {
+            return std::hash<std::wstring_view>()(str);
         }
     };
 }  // namespace std

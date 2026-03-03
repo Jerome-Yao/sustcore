@@ -12,7 +12,7 @@
 #pragma once
 
 #include <sus/list.h>
-
+#include <string>
 #include <cstddef>
 #include <iterator>
 #include <string_view>

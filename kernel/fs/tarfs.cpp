@@ -13,7 +13,6 @@
 #include <fs/tarfs.h>
 #include <mem/alloc.h>
 #include <sus/defer.h>
-#include <sus/mstring.h>
 #include <sus/path.h>
 
 #include <cstddef>

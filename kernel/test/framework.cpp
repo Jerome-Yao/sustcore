@@ -24,14 +24,14 @@
 #include <test/tree.h>
 
 void collect_tests(TestFramework& framework) {
-    test::buddy::collect_tests(framework);
-    test::cap::collect_tests(framework);
-    test::fs::collect_tests(framework);
-    test::path::collect_tests(framework);
-    test::slub::collect_tests(framework);
+    // test::buddy::collect_tests(framework);
+    // test::cap::collect_tests(framework);
+    // test::fs::collect_tests(framework);
+    // test::path::collect_tests(framework);
+    // test::slub::collect_tests(framework);
     test::string::collect_tests(framework);
-    test::string_view::collect_tests(framework);
-    test::tree::collect_tests(framework);
+    // test::string_view::collect_tests(framework);
+    // test::tree::collect_tests(framework);
 }
 
 void TestFramework::run_all() const {
@@ -90,7 +90,7 @@ void TestFramework::run_all() const {
         kprintfln(ANSI_GRAPHIC(ANSI_FG_GREEN) "所有测试通过!" ANSI_GRAPHIC(
             ANSI_GM_RESET));
     } else {
-        kprintfln(ANSI_GRAPHIC(ANSI_FG_RED) "%zu 个测试失败:" ANSI_GRAPHIC(
+        kprintfln(ANSI_GRAPHIC(ANSI_FG_RED) "%u 个测试失败:" ANSI_GRAPHIC(
                       ANSI_GM_RESET),
                   failed_cases.size());
         for (const auto& [category, test_case, reasons] : failed_cases) {

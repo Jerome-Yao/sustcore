@@ -12,7 +12,6 @@
 #pragma once
 
 #include <bits/exception.h>
-#include <sus/mstring.h>
 #include <type_traits>
 
 /**

@@ -9,7 +9,6 @@
  *
  */
 
-#include <sus/mstring.h>
 #include <sus/raii.h>
 #include <vfs/ops.h>
 #include <vfs/vfs.h>

@@ -9,8 +9,8 @@ include $(path-script)/helper.mk
 target := $(path-bin)/libs/$(architecture)/libbasecpp.a
 target-kernel := $(path-bin)/libs/$(architecture)/libkerbasecpp.a
 
-objects := baseio.o tostring.o string.o ctype.o stdlib.o mstring.o path.o cow_string.o
-deps := baseio.d tostring.d string.d ctype.d stdlib.d mstring.d path.d cow_string.d
+objects := baseio.o tostring.o string.o ctype.o stdlib.o path.o cow_string.o
+deps := baseio.d tostring.d string.d ctype.d stdlib.d path.d cow_string.d
 
 flags-c-kernel := -mcmodel=medany
 flags-c-non-kernel := -mcmodel=medlow

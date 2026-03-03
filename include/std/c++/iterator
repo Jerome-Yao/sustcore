@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <type_traits>
+#include <compare>
 
 namespace std {
     struct input_iterator_tag {};
@@ -67,4 +68,57 @@ namespace std {
         return std::__distance(__first, __last,
                                typename iterator_traits<_InputIterator>::iterator_category{});
     }
+
+    // 这是一个辅助用处的迭代器
+    // 其对应于一个常函数f(i) = c
+    template <typename T>
+    class __constant_function_iterator {
+    public:
+        using iterator_concept  = input_iterator_tag;
+        using iterator_category = input_iterator_tag;
+        using value_type        = T;
+        using difference_type   = ptrdiff_t;
+        using pointer           = const T *;
+        using reference         = const T &;
+        using comparison_category = strong_ordering;
+    private:
+        T _value;
+        size_t _begin;
+        size_t _end;
+        size_t _current;
+    public:
+        constexpr __constant_function_iterator() = default;
+        constexpr __constant_function_iterator(const T &value, size_t cur)
+            : _value(value), _begin(cur) {}
+        constexpr reference operator*() const {
+            return _value;
+        }
+        constexpr pointer operator->() const {
+            return &_value;
+        }
+        constexpr __constant_function_iterator &operator++() {
+            ++_current;
+            return *this;
+        }
+        constexpr __constant_function_iterator operator++(int) {
+            __constant_function_iterator temp = *this;
+            ++*this;
+            return temp;
+        }
+        constexpr __constant_function_iterator &operator--() {
+            --_current;
+            return *this;
+        }
+        constexpr __constant_function_iterator operator--(int) {
+            __constant_function_iterator temp = *this;
+            --*this;
+            return temp;
+        }
+        constexpr bool operator==(const __constant_function_iterator &other) const {
+            return _current == other._current;
+        }
+        constexpr strong_ordering operator<=>(const __constant_function_iterator &other) const {
+            return _current <=> other._current;
+        }
+    };
 }  // namespace std

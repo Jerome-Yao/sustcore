@@ -102,7 +102,7 @@ namespace test::string {
             bool match = true;
             for (int i = 0; i < 5; ++i) if (s[i] != "Start"[i]) match = false;
             for (int i = 5; i < 105; ++i) if (s[i] != 'a') match = false;
-            ttest(match);
+            test(match, "字符串内容不正确");
 
             action("测试 reserve 提前扩容");
             std::string s2;

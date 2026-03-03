@@ -73,7 +73,7 @@ namespace test::path {
 
             expect("遍历路径中的每个组件");
             for (auto it = p.begin(); it != p.end(); ++it) {
-                util::string s((*it).data(), (*it).size());
+                std::string s((*it).data(), (*it).size());
                 if (i < 4) {
                     ttest(s == expected[i]);
                 }
