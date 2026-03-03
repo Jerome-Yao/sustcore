@@ -14,7 +14,7 @@
 #include <kio.h>
 #include <sus/list.h>
 #include <sus/macros.h>
-#include <sus/mstring.h>
+#include <string>
 
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class TestCase {

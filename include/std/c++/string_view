@@ -52,7 +52,7 @@ namespace std {
         using __get_cmpcat_t = typename __get_cmpcat<T>::type;
     };  // namespace __helper
 
-    template <class CharT, class traits = std::char_traits<CharT>>
+    template <class CharT, class traits>
     class basic_string_view {
     public:
         using traits_type         = traits;
@@ -531,13 +531,6 @@ namespace std {
             return *this <=> basic_string_view(other);
         }
     };
-
-    // 类型别名
-    using string_view    = basic_string_view<char>;
-    using wstring_view   = basic_string_view<wchar_t>;
-    using u8string_view  = basic_string_view<char8_t>;
-    using u16string_view = basic_string_view<char16_t>;
-    using u32string_view = basic_string_view<char32_t>;
 
     inline namespace literals {
         inline namespace string_view_literals {

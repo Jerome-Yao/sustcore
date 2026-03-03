@@ -14,9 +14,9 @@
 #include <device/block.h>
 #include <sus/owner.h>
 #include <sus/map.h>
-#include <sus/mstring.h>
 #include <vfs/ops.h>
 #include <vfs/vfs.h>
+#include <string>
 
 enum class MountFlags { NONE = 0 };
 

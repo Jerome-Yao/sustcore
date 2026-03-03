@@ -11,19 +11,23 @@
 
 #pragma once
 
+#include <fwd/stringfwd.h>
+
 #include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <cuchar>
 #include <cwchar>
+#include <initializer_list>
 #include <ios>
+#include <iterator>
 #include <memory>
+#include <stdexcept>
+#include <string_view>
+#include <type_traits>
 
 namespace std {
-    template <class CharT>
-    class char_traits;
-
     template <class CharT>
     class __impl_char_info;
 
@@ -183,8 +187,7 @@ namespace std {
     template <>
     class char_traits<char32_t> : public __impl_char_traits<char32_t> {};
 
-    template <class CharT, class Traits = char_traits<CharT>,
-              class Allocator = allocator<CharT>>
+    template <class CharT, class Traits, class Allocator>
     class basic_string {
     public:
         using traits_type     = Traits;
@@ -202,6 +205,12 @@ namespace std {
         static constexpr size_type npos = size_type(-1);
 
     private:
+        template <class StringViewLike>
+        inline static constexpr bool __StringViewLike =
+            std::is_convertible_v<const StringViewLike &,
+                                  basic_string_view<CharT, Traits>> &&
+            (!std::is_convertible_v<const StringViewLike &, const_pointer>);
+
         // SSO 至多存储这么多的字节(包括结尾的 '\0')
         static constexpr size_type __SSOBYTES = 64;
         // 计算 SSO 模式下能存储多少个字符
@@ -247,7 +256,7 @@ namespace std {
             Traits::copy(U_buf() + idx, str, cnt);
         }
 
-        void U_trail(size_type idx) {
+        constexpr void U_trail(size_type idx) {
             U_assign(idx, empty_char);
         }
 
@@ -271,6 +280,14 @@ namespace std {
             U_trail(0);
         }
 
+        void __U_init(void) {
+            if (P_sso(D_size)) {
+                U_init_sso();
+            } else {
+                U_allocate(D_size);
+            }
+        }
+
         void U_deallocate() {
             if (!P_sso(D_capacity) && (D_dyn.D_data != nullptr)) {
                 D_alloc.deallocate(D_dyn.D_data, D_capacity + 1);
@@ -278,33 +295,84 @@ namespace std {
         }
 
     public:
-        // 构造与析构
-        basic_string() noexcept(noexcept(Allocator())) : D_alloc() {
+        // Constructors and Destructor
+        basic_string() noexcept(noexcept(Allocator()))
+            : basic_string(Allocator()) {
             U_init_sso();
         }
 
-        explicit basic_string(const Allocator &alloc) noexcept
+        constexpr explicit basic_string(const Allocator &alloc) noexcept
             : D_alloc(alloc) {
             U_init_sso();
         }
 
-        basic_string(const CharT *str, size_type cnt,
-                     const Allocator &alloc = Allocator())
+        constexpr basic_string(size_type cnt, value_type ch,
+                               const Allocator &alloc = Allocator())
             : D_size(cnt), D_alloc(alloc) {
-            if (P_sso(cnt)) {
-                U_init_sso();
-            } else {
-                U_allocate(cnt);
+            __U_init();
+            for (size_type i = 0; i < cnt; ++i) {
+                U_assign(i, ch);
             }
+            U_trail(D_size);
+        }
 
+        template <class InputIt>
+        constexpr basic_string(InputIt first, InputIt last,
+                               const Allocator &alloc = Allocator())
+            : D_size(std::distance(first, last)), D_alloc(alloc) {
+            __U_init();
+            size_type idx = 0;
+            for (InputIt it = first; it != last; ++it, ++idx) {
+                U_assign(idx, *it);
+            }
+            U_trail(D_size);
+        }
+
+        // range constructor
+        // template < --* container-compatible-range<InputIt, CharT> *--
+        //     InputIt>
+        // basic_string(InputIt first, InputIt last,
+        //     const Allocator &alloc = Allocator())
+        //     : ...
+        // {
+        //     ...
+        // }
+
+        constexpr basic_string(const_pointer str, size_type cnt,
+                               const Allocator &alloc = Allocator())
+            : D_size(cnt), D_alloc(alloc) {
+            __U_init();
             U_copy(0, str, cnt);
             U_trail(D_size);
         }
 
-        basic_string(const CharT *s, const Allocator &alloc = Allocator())
+        constexpr basic_string(const_pointer s,
+                               const Allocator &alloc = Allocator())
             : basic_string(s, Traits::length(s), alloc) {}
 
-        basic_string(const basic_string &other)
+        basic_string(std::nullptr_t) = delete;
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr explicit basic_string(const StringViewLike &sv,
+                                        const Allocator &alloc = Allocator())
+            : D_size(sv.size()), D_alloc(alloc) {
+            __U_init();
+            U_copy(0, sv.data(), D_size);
+            U_trail(D_size);
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        basic_string(const StringViewLike &sv, size_type pos, size_type cnt,
+                     const Allocator &alloc = Allocator())
+            : D_size(std::min(cnt, sv.size() - pos)), D_alloc(alloc) {
+            __U_init();
+            U_copy(0, sv.data() + pos, D_size);
+            U_trail(D_size);
+        }
+
+        constexpr basic_string(const basic_string &other)
             : D_size(other.D_size), D_alloc(other.D_alloc) {
             if (P_sso(other.D_capacity)) {
                 U_init_sso();
@@ -316,26 +384,105 @@ namespace std {
             U_trail(D_size);
         }
 
-        basic_string(basic_string &&other) noexcept
+        constexpr basic_string(basic_string &&other) noexcept
             : D_capacity(other.D_capacity),
               D_size(other.D_size),
               D_alloc(std::move(other.D_alloc)) {
             if (P_sso(other.D_capacity)) {
-                Traits::copy(D_sso.D_buf, other.D_sso.D_buf, (D_capacity + 1));;
+                Traits::copy(D_sso.D_buf, other.D_sso.D_buf, (D_capacity + 1));
+                ;
             } else {
                 D_dyn.D_data       = other.D_dyn.D_data;
                 other.D_dyn.D_data = nullptr;
             }
 
             other.U_init_sso();
-            other.D_size     = 0;
+            other.D_size = 0;
         }
+
+        constexpr basic_string(const basic_string &other,
+                               const Allocator &alloc)
+            : D_size(other.D_size), D_alloc(alloc) {
+            if (P_sso(other.D_capacity)) {
+                U_init_sso();
+            } else {
+                U_allocate(other.D_capacity);
+            }
+
+            U_copy(0, other.data(), other.D_size);
+            U_trail(D_size);
+        }
+
+        constexpr basic_string(basic_string &&other,
+                               const Allocator &alloc) noexcept
+            : D_capacity(other.D_capacity),
+              D_size(other.D_size),
+              D_alloc(alloc) {
+            if (P_sso(other.D_capacity)) {
+                Traits::copy(D_sso.D_buf, other.D_sso.D_buf, (D_capacity + 1));
+                ;
+            } else {
+                D_dyn.D_data       = other.D_dyn.D_data;
+                other.D_dyn.D_data = nullptr;
+            }
+
+            other.U_init_sso();
+            other.D_size = 0;
+        }
+
+        constexpr basic_string(const basic_string &other, size_type pos,
+                               const Allocator &alloc = Allocator())
+            : D_size((pos < other.D_size) ? (other.D_size - pos) : 0),
+              D_alloc(alloc) {
+            if (P_sso(other.D_capacity)) {
+                U_init_sso();
+            } else {
+                U_allocate(other.D_capacity);
+            }
+
+            if (pos < other.D_size) {
+                U_copy(0, other.data() + pos, D_size);
+            }
+            U_trail(D_size);
+        }
+
+        constexpr basic_string(const basic_string &other, size_type pos,
+                               size_type cnt,
+                               const Allocator &alloc = Allocator())
+            : D_size((pos < other.D_size) ? std::min(cnt, other.D_size - pos)
+                                          : 0),
+              D_alloc(alloc) {
+            if (P_sso(other.D_capacity)) {
+                U_init_sso();
+            } else {
+                U_allocate(other.D_capacity);
+            }
+
+            if (pos < other.D_size) {
+                U_copy(0, other.data() + pos, D_size);
+            }
+            U_trail(D_size);
+        }
+
+        constexpr basic_string(basic_string &&other, size_type pos,
+                               const Allocator &alloc = Allocator())
+            : basic_string(other, pos, alloc) {}
+
+        constexpr basic_string(basic_string &&other, size_type pos,
+                               size_type cnt,
+                               const Allocator &alloc = Allocator())
+            : basic_string(other, pos, cnt, alloc) {}
+
+        constexpr basic_string(std::initializer_list<CharT> ilist,
+                               const Allocator &alloc = Allocator())
+            : basic_string(ilist.begin(), ilist.end(), alloc) {}
 
         ~basic_string() {
             U_deallocate();
         }
 
-        basic_string &operator=(const basic_string &other) {
+        // operator =
+        constexpr basic_string &operator=(const basic_string &other) {
             if (this != &other) {
                 size_type other_size = other.size();
                 if (other_size > capacity()) {
@@ -349,15 +496,15 @@ namespace std {
             return *this;
         }
 
-        basic_string &operator=(basic_string &&other) noexcept {
+        constexpr basic_string &operator=(basic_string &&other) noexcept {
             if (this != &other) {
                 if (other.D_capacity > D_capacity) {
                     U_deallocate();
                     U_allocate(other.D_capacity);
                 }
 
-                D_alloc    = std::move(other.D_alloc);
-                D_size     = other.D_size;
+                D_alloc = std::move(other.D_alloc);
+                D_size  = other.D_size;
 
                 if (P_sso(other.D_capacity)) {
                     // 如果对方在 SSO 模式
@@ -367,47 +514,190 @@ namespace std {
                 } else {
                     // 如果对方不在 SSO 模式
                     // 由于 D_capacity = max(D_capacity, other.D_capacity),
-                    // D_capacity >= other.D_capacity > __SSOCAPACITY, 所以我们不可能在 SSO 模式
-                    // 因此直接移动指针即可
+                    // D_capacity >= other.D_capacity > __SSOCAPACITY,
+                    // 所以我们不可能在 SSO 模式 因此直接移动指针即可
                     D_dyn.D_data       = other.D_dyn.D_data;
                     other.D_dyn.D_data = nullptr;
                 }
 
                 other.U_init_sso();
-                other.D_size     = 0;
+                other.D_size = 0;
             }
             return *this;
         }
 
+        constexpr basic_string &operator=(const_pointer s) {
+            return operator=(basic_string(s));
+        }
+
+        constexpr basic_string &operator=(value_type ch) {
+            return operator=(basic_string(1, ch));
+        }
+
+        constexpr basic_string &operator=(std::initializer_list<CharT> ilist) {
+            return operator=(basic_string(ilist));
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr basic_string &operator=(const StringViewLike &sv) {
+            return operator=(basic_string(sv));
+        }
+
+        basic_string &operator=(std::nullptr_t) = delete;
+
+        // assign
+        constexpr basic_string &assign(const basic_string &str) {
+            return operator=(str);
+        }
+
+        constexpr basic_string &assign(basic_string &&str) noexcept {
+            return operator=(std::move(str));
+        }
+
+        constexpr basic_string &assign(size_type count, value_type ch) {
+            clear();
+            resize(count, ch);
+            return *this;
+        }
+
+        constexpr basic_string &assign(const_pointer s, size_type count) {
+            resize(count);
+            U_copy(0, s, count);
+            U_trail(D_size);
+            return *this;
+        }
+
+        constexpr basic_string &assign(const_pointer s) {
+            return assign(s, Traits::length(s));
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr basic_string &assign(const StringViewLike &svl) {
+            return assign(svl.data(), svl.size());
+        }
+
+        template <class StringViewLike>
+            requires __StringViewLike<StringViewLike>
+        constexpr basic_string &assign(const StringViewLike &svl, size_type pos,
+                                       size_type count = npos) {
+            std::basic_string_view<CharT, Traits> sv = svl;
+            return assign(sv.substr(pos, count));
+        }
+
+        constexpr basic_string &assign(const basic_string &str, size_type pos,
+                                       size_type count = npos) {
+            return assign(
+                basic_string_view<CharT, Traits>(str).substr(pos, count));
+        }
+
+        template <class InputIt>
+        constexpr basic_string &assign(InputIt first, InputIt last) {
+            return assign(basic_string(first, last, get_allocator()));
+        }
+
+        constexpr basic_string &assign(std::initializer_list<CharT> ilist) {
+            return assign(ilist.begin(), ilist.end());
+        }
+
+        // assign_range
+        // to be implemented...
+
+        constexpr allocator_type get_allocator() const noexcept {
+            return D_alloc;
+        }
+
+        // 访问
+        constexpr reference at(size_type pos) {
+            if (pos >= size()) {
+                _THROW(out_of_range("basic_string::at: pos out of range"));
+            }
+            return data()[pos];
+        }
+
+        constexpr const_reference at(size_type pos) const {
+            if (pos >= size()) {
+                _THROW(out_of_range("basic_string::at: pos out of range"));
+            }
+            return data()[pos];
+        }
+
+        constexpr reference operator[](size_type pos) {
+            return data()[pos];
+        }
+        constexpr const_reference operator[](size_type pos) const {
+            return data()[pos];
+        }
+
+        CharT &front() {
+            return operator[](0);
+        }
+
+        const CharT &front() const {
+            return operator[](0);
+        }
+
+        CharT &back() {
+            return operator[](size() - 1);
+        }
+
+        const CharT &back() const {
+            return operator[](size() - 1);
+        }
+
+        constexpr pointer data() noexcept {
+            return U_buf();
+        }
+        constexpr const_pointer data() const noexcept {
+            return U_buf();
+        }
+        constexpr const_pointer c_str() const noexcept {
+            return data();
+        }
+
+        constexpr operator basic_string_view<CharT, Traits>() const noexcept {
+            return basic_string_view<CharT, Traits>(data(), size());
+        }
+
         // 迭代器
-        iterator begin() noexcept {
+        constexpr iterator begin() noexcept {
             return data();
         }
-        const_iterator begin() const noexcept {
+        constexpr const_iterator begin() const noexcept {
             return data();
         }
-        iterator end() noexcept {
+        constexpr const_iterator cbegin() const noexcept {
+            return data();
+        }
+        constexpr iterator end() noexcept {
             return data() + size();
         }
-        const_iterator end() const noexcept {
+        constexpr const_iterator end() const noexcept {
             return data() + size();
         }
+        constexpr const_iterator cend() const noexcept {
+            return data() + size();
+        }
+
+        // reverse iterators
+        // to be implemented...
 
         // 容量
-        [[nodiscard]] bool empty() const noexcept {
+        [[nodiscard]]
+        constexpr bool empty() const noexcept {
             return size() == 0;
         }
-        size_type size() const noexcept {
+        constexpr size_type size() const noexcept {
             return D_size;
         }
-        size_type length() const noexcept {
+        constexpr size_type length() const noexcept {
             return size();
         }
-        size_type capacity() const noexcept {
-            return D_capacity;
-        }
-
-        void reserve(size_type new_cap) {
+        // constexpr size_type max_size() const noexcept {
+        //     ...
+        // }
+        constexpr void reserve(size_type new_cap) {
             if (new_cap > capacity()) {
                 pointer new_data       = D_alloc.allocate(new_cap + 1);
                 size_type current_size = size();
@@ -419,38 +709,44 @@ namespace std {
             }
         }
 
-    private:
-        size_type new_size(size_type expected_size) {
-            size_type cap = capacity();
-            return (expected_size > cap * 2) ? (expected_size * 2) : (cap * 2);
+        constexpr size_type capacity() const noexcept {
+            return D_capacity;
         }
 
-    public:
-        void clear() noexcept {
+        constexpr void shrink_to_fit() {
+            // do nothing...
+        }
+
+        // modifiers
+        constexpr void clear() noexcept {
             D_size = 0;
             U_trail(0);
         }
 
-        // 访问
-        reference operator[](size_type pos) {
-            return data()[pos];
-        }
-        const_reference operator[](size_type pos) const {
-            return data()[pos];
-        }
-
-        pointer data() noexcept {
-            return U_buf();
-        }
-        const_pointer data() const noexcept {
-            return U_buf();
-        }
-        const_pointer c_str() const noexcept {
-            return data();
+        void push_back(value_type ch) {
+            size_type current_size = size();
+            if (current_size + 1 > capacity()) {
+                reserve(new_size(current_size + 1));
+            }
+            pointer p = data();
+            Traits::assign(p[current_size], ch);
+            Traits::assign(p[current_size + 1], empty_char);
+            D_size++;
         }
 
-        // 修改
-        basic_string &append(const CharT *s, size_type n) {
+        void pop_back() {
+            if (!empty()) {
+                D_size--;
+                U_trail(D_size);
+            }
+        }
+
+        basic_string &append(value_type c) {
+            push_back(c);
+            return *this;
+        }
+
+        basic_string &append(const_pointer s, size_type n) {
             size_type current_size = size();
             if (current_size + n > capacity()) {
                 reserve(new_size(current_size + n));
@@ -461,7 +757,7 @@ namespace std {
             return *this;
         }
 
-        basic_string &append(const CharT *s) {
+        basic_string &append(const_pointer s) {
             return append(s, Traits::length(s));
         }
 
@@ -469,24 +765,45 @@ namespace std {
             return append(str.data(), str.size());
         }
 
-        void push_back(CharT ch) {
-            size_type current_size = size();
-            if (current_size + 1 > capacity()) {
-                reserve(new_size(current_size + 1));
+        void resize(size_type count) {
+            resize(count, empty_char);
+        }
+
+        void resize(size_type count, value_type ch) {
+            if (count > capacity()) {
+                reserve(new_size(count));
             }
-            pointer p = data();
-            Traits::assign(p[current_size], ch);
-            Traits::assign(p[current_size + 1], CharT());
-            D_size++;
+            if (count > size()) {
+                for (size_type i = size(); i < count; ++i) {
+                    U_assign(i, ch);
+                }
+            }
+            D_size = count;
+        }
+
+    private:
+        size_type new_size(size_type expected_size) {
+            size_type cap = capacity();
+            return (expected_size > cap * 2) ? (expected_size * 2) : (cap * 2);
+        }
+
+    public:
+        // operations
+        basic_string substr(size_type pos = 0, size_type count = npos) const {
+            if (pos > size()) {
+                _THROW(std::out_of_range("basic_string::substr"));
+            }
+            size_type rcount = std::min(count, size() - pos);
+            return basic_string(data() + pos, rcount, D_alloc);
         }
 
         basic_string &operator+=(const basic_string &str) {
             return append(str);
         }
-        basic_string &operator+=(const CharT *s) {
+        basic_string &operator+=(const_pointer s) {
             return append(s);
         }
-        basic_string &operator+=(CharT ch) {
+        basic_string &operator+=(value_type ch) {
             push_back(ch);
             return *this;
         }
@@ -512,10 +829,4 @@ namespace std {
                    Traits::compare(data(), other.data(), s1) == 0;
         }
     };
-
-    using string    = basic_string<char>;
-    using wstring   = basic_string<wchar_t>;
-    using u8string  = basic_string<char8_t>;
-    using u16string = basic_string<char16_t>;
-    using u32string = basic_string<char32_t>;
 }  // namespace std

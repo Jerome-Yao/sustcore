@@ -12,17 +12,17 @@
 #pragma once
 
 #include <exception>
-#include <string>
+#include <bits/cow_string.h>
 
 namespace std {
     class logic_error : public exception {
-        string _msg;
+        __cow_string _msg;
     public:
         // NOLINTNEXTLINE(modernize-pass-by-value)
         explicit logic_error(const string &what_arg)
             : exception(), _msg(what_arg) {}
         explicit logic_error(const char *what_arg)
-            : exception(), _msg(what_arg) {}
+            : exception(), _msg(what_arg, strlen(what_arg)) {}
         // NOLINTNEXTLINE(modernize-pass-by-value)
         logic_error(const logic_error &other)            = default;
         logic_error &operator=(const logic_error &other) = default;
@@ -42,13 +42,13 @@ namespace std {
     };
 
     class runtime_error : public exception {
-        string _msg;
+        __cow_string _msg;
     public:
         // NOLINTNEXTLINE(modernize-pass-by-value)
         explicit runtime_error(const string &what_arg)
             : exception(), _msg(what_arg) {}
         explicit runtime_error(const char *what_arg)
-            : exception(), _msg(what_arg) {}
+            : exception(), _msg(what_arg, strlen(what_arg)) {}
         // NOLINTNEXTLINE(modernize-pass-by-value)
         runtime_error(const runtime_error &other)            = default;
         runtime_error &operator=(const runtime_error &other) = default;
