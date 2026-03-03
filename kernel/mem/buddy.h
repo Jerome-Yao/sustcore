@@ -78,6 +78,19 @@ public:
     template <KernelStage Stage = KernelStage::POST_INIT>
     static void put_page_in_order(PhyAddr paddr, int order);
 
+    template <KernelStage Stage = KernelStage::POST_INIT>
+    static void __print_memory_layout() {
+        BUDDY::DEBUG("Buddy Allocator Memory Layout (Stage: %d):\n", static_cast<int>(Stage));
+        for (int i = 0; i <= MAX_BUDDY_ORDER; i++) {
+            BlockList &list = free_area[i].get();
+            BUDDY::DEBUG("Order %d: %d blocks:", i, list.size());
+            for (auto iter = list.begin(); iter != list.end(); ++iter) {
+                PhyAddr paddr = block2pa<Stage>(&*iter);
+                BUDDY::DEBUG("    Free block at [%p, %p)\n", i, paddr.addr(),
+                             (paddr + (1ul << (i + 12))).addr());
+            }
+        }
+    }
 private:
     using BlockList = util::OrderedIntrusiveList<FreeBlock, &FreeBlock::list_head, FreeBlockCmp>;
     static util::Defer<BlockList> free_area[MAX_BUDDY_ORDER + 1];

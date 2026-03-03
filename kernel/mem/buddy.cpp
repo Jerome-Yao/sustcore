@@ -52,16 +52,22 @@ void BuddyAllocator::post_init(MemRegion *regions, size_t region_count) {
     BUDDY::DEBUG("进入 BuddyAllocator::post_init, 迁移空闲块链表到KPA空间");
 
     // 先进行一次遍历, 打印迁移前的链表状态
-    for (int i = 0; i <= BuddyAllocator::MAX_BUDDY_ORDER; i++) {
-        BuddyAllocator::BlockList &list = BuddyAllocator::free_area[i].get();
-        size_t count                    = 0;
+    BUDDY::DEBUG("Buddy Allocator Memory Layout:\n");
+    for (int i = 0; i <= MAX_BUDDY_ORDER; i++) {
+        BlockList &list = free_area[i].get();
+        auto *sentinel_pa = convert<PhyAddr>((KvaAddr)&list.sentinel()).addr();
+        BUDDY::DEBUG("Order %d: %d blocks:", i, list.size());
         for (auto iter = list.begin(); iter != list.end(); ++iter) {
-            count++;
-            if (PA2KVA((addr_t)iter.operator->()) == (addr_t)&list.sentinel()) {
+            auto *nxt = iter.operator->();
+
+            if (nxt == sentinel_pa) {
                 break;
             }
+
+            PhyAddr paddr = block2pa<KernelStage::PRE_INIT>(&*iter);
+            BUDDY::DEBUG("    Free block at [%p, %p)\n", i, paddr.addr(),
+                         (paddr + (1ul << (i + 12))).addr());
         }
-        BUDDY::DEBUG("迁移前 Order %d: %u 个空闲块", i, count);
     }
 
     for (int i = 0; i <= BuddyAllocator::MAX_BUDDY_ORDER; i++) {
@@ -101,5 +107,7 @@ void BuddyAllocator::post_init(MemRegion *regions, size_t region_count) {
             // 直到到达哨兵节点
         } while (iter != &list.sentinel());
     }
+
+    __print_memory_layout<KernelStage::POST_INIT>();
     BUDDY::INFO("BuddyAllocator initialized and migrated to KVA.");
 }
