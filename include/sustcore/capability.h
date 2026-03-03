@@ -13,6 +13,7 @@
 
 #include <sus/optional.h>
 #include <sus/types.h>
+#include <sustcore/errcode.h>
 
 // 载荷类型
 enum class PayloadType : b64 {
@@ -22,6 +23,7 @@ enum class PayloadType : b64 {
     NOINLINE_MASK   = 0x1000,
     CSPACE_ACCESSOR = BITMAP_PERM | 0x001,
     TEST_OBJECT     = INLINE_PERM | 0x002,
+    VFILE           = INLINE_PERM | 0x003,
 };
 
 inline bool operator&(PayloadType a, PayloadType b) {
@@ -114,33 +116,6 @@ static_assert(sizeof(CapIdx) == sizeof(b64), "CapIdx must be 64 bits in size");
 
 inline static CapIdx CapIdxNull = CapIdx(SpaceType::NULLABLE, 0, 0);
 
-enum class CapErrCode {
-    SUCCESS                  = 0,
-    INVALID_CAPABILITY       = -1,
-    INVALID_INDEX            = -2,
-    INSUFFICIENT_PERMISSIONS = -3,
-    TYPE_NOT_MATCHED         = -4,
-    PAYLOAD_ERROR            = -5,
-    CREATION_FAILED          = -6,
-    SLOT_BUSY                = -7,
-    UNKNOWN_ERROR            = -255,
-};
-
-constexpr const char *to_string(CapErrCode err) {
-    switch (err) {
-        case CapErrCode::SUCCESS:            return "SUCCESS";
-        case CapErrCode::INVALID_CAPABILITY: return "INVALID_CAPABILITY";
-        case CapErrCode::INVALID_INDEX:      return "INVALID_INDEX";
-        case CapErrCode::INSUFFICIENT_PERMISSIONS:
-            return "INSUFFICIENT_PERMISSIONS";
-        case CapErrCode::TYPE_NOT_MATCHED: return "TYPE_NOT_MATCHED";
-        case CapErrCode::PAYLOAD_ERROR:    return "PAYLOAD_ERROR";
-        case CapErrCode::CREATION_FAILED:  return "CREATION_FAILED";
-        case CapErrCode::SLOT_BUSY:        return "SLOT_BUSY";
-        default:                           return "UNKNOWN_ERROR";
-    }
-}
-
 template <typename T>
-using CapOptional = util::Optional<T, CapErrCode, CapErrCode::SUCCESS,
-                                   CapErrCode::UNKNOWN_ERROR>;
+using CapOptional = ErrOptional<T>;
+using CapErrCode = ErrCode;

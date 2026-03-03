@@ -14,38 +14,14 @@
 #include <device/block.h>
 #include <sus/optional.h>
 #include <sus/types.h>
+#include <sustcore/errcode.h>
 
 #include <concepts>
 #include <cstddef>
 
-enum class FSErrCode {
-    SUCCESS         = 0,
-    INVALID_PARAM   = -1,
-    NO_SPACE        = -2,
-    IO_ERROR        = -3,
-    NOT_SUPPORTED   = -4,
-    BUSY            = -5,
-    ENTRY_NOT_FOUND = -6,
-    UNKNOWN_ERROR   = -255
-};
-
-constexpr const char *to_string(FSErrCode code) {
-    switch (code) {
-        case FSErrCode::SUCCESS:         return "SUCCESS";
-        case FSErrCode::INVALID_PARAM:   return "INVALID_PARAM";
-        case FSErrCode::NO_SPACE:        return "NO_SPACE";
-        case FSErrCode::IO_ERROR:        return "IO_ERROR";
-        case FSErrCode::NOT_SUPPORTED:   return "NOT_SUPPORTED";
-        case FSErrCode::BUSY:            return "BUSY";
-        case FSErrCode::ENTRY_NOT_FOUND: return "ENTRY_NOT_FOUND";
-        case FSErrCode::UNKNOWN_ERROR:   return "UNKNOWN_ERROR";
-        default:                         return "UNKNOWN_ERROR";
-    }
-}
-
 template <typename T>
-using FSOptional =
-    util::Optional<T, FSErrCode, FSErrCode::SUCCESS, FSErrCode::UNKNOWN_ERROR>;
+using FSOptional = ErrOptional<T>;
+using FSErrCode  = ErrCode;
 
 enum class SeekWhence { SET = 0, CUR = 1, END = 2 };
 

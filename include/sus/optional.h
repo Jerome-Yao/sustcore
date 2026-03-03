@@ -24,10 +24,10 @@ namespace util {
     };
 
     // _Tp应当为一个POD类型
-    enum class HasValueType { HAS_VALUE = 0, NO_VALUE = 1 };
+    enum class HasValueType { SUCCESS = 0, FAILURE = 1 };
     template <typename _Tp, typename _Ep = HasValueType,
-              _Ep _Success = HasValueType::HAS_VALUE,
-              _Ep _Failure = HasValueType::NO_VALUE>
+              _Ep _Success = _Ep::SUCCESS,
+              _Ep _Failure = _Ep::FAILURE>
         requires std::is_enum_v<_Ep>
     class Optional {
     private:
@@ -36,8 +36,9 @@ namespace util {
 
     public:
         using value_type = _Tp;
-        template <typename _Up>
-        using optional_type = Optional<_Up, _Ep, _Success, _Failure>;
+        template <typename _Up, typename _Ep2 = _Ep>
+            requires std::is_enum_v<_Ep2>
+        using optional_type = Optional<_Up, _Ep2>;
 
         Optional() noexcept : D_err(_Failure) {}
         Optional(const _Tp &value) noexcept : D_err(_Success) {
@@ -106,6 +107,31 @@ namespace util {
                         std::is_same_v<std::invoke_result_t<_Fp, _Tp>,
                                        optional_type<_Up>>,
                     "Return type of map function must be U or Optional<U>");
+            }
+        }
+
+        template <typename _Ep2, typename _Fp>
+            requires IfPresentFunc<_Fp, _Ep>
+        optional_type<_Tp, _Ep2> emap(_Fp f) {
+            if constexpr (std::is_same_v<std::invoke_result_t<_Fp, _Ep>, _Ep2>) {
+                if (!present()) {
+                    return optional_type<_Tp, _Ep2>(f(error()));
+                }
+                return optional_type<_Tp, _Ep2>(value());
+            } else if constexpr (std::is_same_v<
+                                     std::invoke_result_t<_Fp, _Ep>,
+                                     optional_type<_Tp, _Ep2>>) {
+                if (!present()) {
+                    return f(error());
+                }
+                return optional_type<_Tp, _Ep2>(value());
+            }
+            else {
+                static_assert(
+                    std::is_same_v<std::invoke_result_t<_Fp, _Ep>, _Ep2> ||
+                        std::is_same_v<std::invoke_result_t<_Fp, _Ep>,
+                                       optional_type<_Ep2>>,
+                    "Return type of emap function must be E2 or Optional<_Tp, E2>");
             }
         }
 
