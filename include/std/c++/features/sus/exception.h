@@ -12,6 +12,8 @@
 #pragma once
 
 #include <bits/exception.h>
+#include <features/sus/errors.h>
+
 #include <type_traits>
 
 /**
