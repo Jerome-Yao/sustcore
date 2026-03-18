@@ -19,7 +19,7 @@
 #define SUPPRESS_SELF_MOVE _Pragma("clang diagnostic ignored \"-Wself-move\"")
 #define SUPPRESS_SELF_ASSIGN \
     _Pragma("clang diagnostic ignored \"-Wself-assign-overloaded\"")
-#elif defined(__GNUC__) || defined(__GNUG__) p
+#elif defined(__GNUC__) || defined(__GNUG__)
 #define SUPPRESS_WARNING_BEGIN _Pragma("GCC diagnostic push")
 #define SUPPRESS_WARNING_END   _Pragma("GCC diagnostic pop")
 #define SUPPRESS_USER_DEFINED_LITERAL_SUFFIX \
