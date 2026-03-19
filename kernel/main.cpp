@@ -51,6 +51,8 @@
 #include <exception>
 #include <string_view>
 
+#include <unordered_map>
+
 int kputs(const char *str) {
     size_t len        = strlen(str);
     PhyAddr str_paddr = convert_pointer(str);
@@ -217,6 +219,14 @@ extern "C" void post_init(void) {
         lowvm, uppm - lowpm, PageMan::RWX::NONE, true, false);
 
     TCBManager::init();
+
+    std::unordered_map<int, int> hashmap{};
+    auto p = hashmap.insert(std::make_pair(1, 2));
+    LOGGER::INFO("insert: %d", p.second);
+    for (auto it = hashmap.begin(); it!=hashmap.end(); it++) {
+        LOGGER::INFO("k: %d, v: %d", it->first, it->second);
+    }
+
 
     TestFramework framework;
     collect_tests(framework);
