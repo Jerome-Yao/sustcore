@@ -250,4 +250,55 @@ namespace util {
         return const_iterator{this, len, len};
     }
 
+    bool Path::starts_with(const Path &prefix) const {
+        const size_t prefix_len = prefix.path_.length();
+        const size_t self_len   = path_.length();
+
+        if (prefix_len == 0) {
+            return true;
+        }
+        if (self_len < prefix_len) {
+            return false;
+        }
+        if (path_.substr(0, prefix_len) != prefix.path_) {
+            return false;
+        }
+        if (self_len == prefix_len) {
+            return true;
+        }
+
+        // 只有匹配到路径段边界时才认为是前缀。
+        return prefix.path_[prefix_len - 1] == '/' || path_[prefix_len] == '/';
+    }
+
+    bool Path::ends_with(const Path &suffix) const {
+        const size_t suffix_len = suffix.path_.length();
+        const size_t self_len   = path_.length();
+
+        if (suffix_len == 0) {
+            return true;
+        }
+        if (self_len < suffix_len) {
+            return false;
+        }
+
+        const size_t start = self_len - suffix_len;
+        if (path_.substr(start, suffix_len) != suffix.path_) {
+            return false;
+        }
+        if (start == 0) {
+            return true;
+        }
+
+        // 只有对齐到路径段边界时才认为是后缀。
+        if (path_[start - 1] != '/') {
+            return false;
+        }
+
+        // 以 '/' 开头的后缀代表绝对路径，必须从开头对齐。
+        if (suffix.path_[0] == '/') {
+            return false;
+        }
+        return true;
+    }
 }  // namespace util

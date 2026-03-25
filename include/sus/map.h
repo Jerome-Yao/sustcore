@@ -19,16 +19,11 @@
 #include <functional>
 
 namespace util {
-    enum class MapError {
-        KEY_NOT_FOUND,
-        KEY_ALREADY_EXISTS,
-    };
-
     template <typename Map, typename _K, typename _V>
     concept MapType = requires(Map m, _K k, _V v) {
         {
             m.get(k)
-        } -> std::same_as<std::expected<_V, MapError>>;
+        } -> std::same_as<std::expected<_V, bool>>;
         {
             m.put(k, v)
         } -> std::same_as<void>;
@@ -212,21 +207,21 @@ namespace util {
                 delete &e;
             }
         }
-        std::expected<_V, MapError> get(const _K &key) {
+        std::expected<_V, bool> get(const _K &key) {
             for (auto &e : entries) {
                 if (Equality()(e.pair.first, key)) {
                     return e.pair.second;
                 }
             }
-            return {std::unexpect, MapError::KEY_NOT_FOUND};
+            return {std::unexpect, false};
         }
-        std::expected<Pair<_K, _V>, MapError> get_entry(const _K &key) {
+        std::expected<Pair<_K, _V>, bool> get_entry(const _K &key) {
             for (auto &e : entries) {
                 if (Equality()(e.pair.first, key)) {
                     return e.pair;
                 }
             }
-            return {std::unexpect, MapError::KEY_NOT_FOUND};
+            return {std::unexpect, false};
         }
         void put(const _K &key, const _V &value) {
             for (auto &e : entries) {

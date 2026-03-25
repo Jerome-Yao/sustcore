@@ -14,15 +14,16 @@
 #include <expected>
 
 enum class ErrCode : int {
-    // successs
     GENERIC_ERROR            = 0x00'0000,
     UNKNOWN_ERROR            = 0xFF'FFFF,
+    // generic errors
     SUCCESS                  = GENERIC_ERROR | 0x0000,
     FAILURE                  = GENERIC_ERROR | 0xFFFF,
     INVALID_PARAM            = GENERIC_ERROR | 0x0001,
     INVALID_INDEX            = GENERIC_ERROR | 0x0002,
     NOT_SUPPORTED            = GENERIC_ERROR | 0x0003,
     BUSY                     = GENERIC_ERROR | 0x0004,
+    OUT_OF_MEMORY            = GENERIC_ERROR | 0x0005,
     // capability errors
     CAP_ERROR                = 0x01'0000,
     INVALID_CAPABILITY       = CAP_ERROR | 0x0001,
@@ -67,3 +68,6 @@ constexpr const char *to_string(ErrCode err) {
 template <typename T>
 using Result = std::expected<T, ErrCode>;
 using std::unexpect;
+
+#define unexpect_return(x) return std::unexpected(x)
+#define void_return() return std::expected<void, ErrCode>{};

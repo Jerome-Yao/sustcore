@@ -11,9 +11,10 @@
 
 #pragma once
 
-#include <expected>
 #include <sus/types.h>
 #include <sustcore/errcode.h>
+
+#include <expected>
 
 // 载荷类型
 enum class PayloadType : b64 {
@@ -21,9 +22,11 @@ enum class PayloadType : b64 {
     INLINE_PERM     = 0x0000,
     BITMAP_PERM     = 0x1000,
     NOINLINE_MASK   = 0x1000,
+    // objects
     CSPACE_ACCESSOR = BITMAP_PERM | 0x001,
     INTOBJ          = INLINE_PERM | 0x002,
-    SINTOBJ         = INLINE_PERM | 0x003
+    SINTOBJ         = INLINE_PERM | 0x003,
+    VFILE           = INLINE_PERM | 0x004
 };
 
 inline bool operator&(PayloadType a, PayloadType b) {
@@ -35,6 +38,8 @@ constexpr const char *to_string(PayloadType type) {
         case PayloadType::NONE:            return "NONE";
         case PayloadType::CSPACE_ACCESSOR: return "CSPACE_ACCESSOR";
         case PayloadType::INTOBJ:          return "INTOBJ";
+        case PayloadType::SINTOBJ:         return "SINTOBJ";
+        case PayloadType::VFILE:           return "VFILE";
         default:                           return "UNKNOWN";
     }
 }

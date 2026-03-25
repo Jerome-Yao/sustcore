@@ -25,11 +25,11 @@ namespace util {
 
     public:
         // 构造函数
-        Path() : path_("") {}
+        constexpr Path() : path_("") {}
         // 希望没有 bug
         template <typename T>
-        Path(T &&path) : path_(std::forward<T>(path)) {}
-        Path(const std::string_view &path) : path_(path.data(), path.size()) {}
+        constexpr Path(T &&path) : path_(std::forward<T>(path)) {}
+        constexpr Path(const std::string_view &path) : path_(path.data(), path.size()) {}
 
         // 直接拼接。注意，这个不会加斜杠
         Path &concat(const Path &other);
@@ -100,5 +100,20 @@ namespace util {
 
         friend Path operator/(const Path &lhs, const Path &rhs);
         friend Path operator/(Path &&lhs, const Path &rhs);
+
+        static constexpr Path from(const std::string_view &path) {
+            return Path(path);
+        }
+
+        static constexpr Path normalize(const std::string_view &path) {
+            return Path(path).normalize();
+        }
+
+        bool starts_with(const Path &prefix) const;
+        bool ends_with(const Path &suffix) const;
+        
+        constexpr size_t length() const {
+            return path_.length();
+        }
     };
 }  // namespace util

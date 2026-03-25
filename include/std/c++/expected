@@ -432,8 +432,7 @@ namespace std {
         template <typename F>
         constexpr auto and_then(F &&func) & {
             using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_value))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_value))>;
             static_assert(
                 is_same_v<typename __ret_t::error_type, E>,
                 "expected<T, E>::and_then: return type error_type mismatch");
@@ -447,8 +446,7 @@ namespace std {
         template <typename F>
         constexpr auto and_then(F &&func) const & {
             using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_value))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_value))>;
             static_assert(
                 is_same_v<typename __ret_t::error_type, E>,
                 "expected<T, E>::and_then: return type error_type mismatch");
@@ -461,9 +459,8 @@ namespace std {
 
         template <typename F>
         constexpr auto and_then(F &&func) && {
-            using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_value)))>;
+            using __ret_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_value)))>;
             static_assert(
                 is_same_v<typename __ret_t::error_type, E>,
                 "expected<T, E>::and_then: return type error_type mismatch");
@@ -476,9 +473,8 @@ namespace std {
 
         template <typename F>
         constexpr auto and_then(F &&func) const && {
-            using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_value)))>;
+            using __ret_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_value)))>;
             static_assert(
                 is_same_v<typename __ret_t::error_type, E>,
                 "expected<T, E>::and_then: return type error_type mismatch");
@@ -492,56 +488,85 @@ namespace std {
         template <typename F>
         constexpr auto transform(F &&func) & {
             using __u_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_value))>;
-            if (D_has_value) {
-                return expected<__u_t, E>(
-                    std::forward<F>(func)(D_storage.D_value));
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_value))>;
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)(D_storage.D_value);
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect, D_storage.D_error);
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(
+                        std::forward<F>(func)(D_storage.D_value));
+                }
+                return expected<__u_t, E>(unexpect, D_storage.D_error);
             }
-            return expected<__u_t, E>(unexpect, D_storage.D_error);
         }
 
         template <typename F>
         constexpr auto transform(F &&func) const & {
             using __u_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_value))>;
-            if (D_has_value) {
-                return expected<__u_t, E>(
-                    std::forward<F>(func)(D_storage.D_value));
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_value))>;
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)(D_storage.D_value);
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect, D_storage.D_error);
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(
+                        std::forward<F>(func)(D_storage.D_value));
+                }
+                return expected<__u_t, E>(unexpect, D_storage.D_error);
             }
-            return expected<__u_t, E>(unexpect, D_storage.D_error);
         }
 
         template <typename F>
         constexpr auto transform(F &&func) && {
-            using __u_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_value)))>;
-            if (D_has_value) {
-                return expected<__u_t, E>(
-                    std::forward<F>(func)(std::move(D_storage.D_value)));
+            using __u_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_value)))>;
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)(std::move(D_storage.D_value));
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect,
+                                         std::move(D_storage.D_error));
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(
+                        std::forward<F>(func)(std::move(D_storage.D_value)));
+                }
+                return expected<__u_t, E>(unexpect,
+                                          std::move(D_storage.D_error));
             }
-            return expected<__u_t, E>(unexpect, std::move(D_storage.D_error));
         }
 
         template <typename F>
         constexpr auto transform(F &&func) const && {
-            using __u_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_value)))>;
-            if (D_has_value) {
-                return expected<__u_t, E>(
-                    std::forward<F>(func)(std::move(D_storage.D_value)));
+            using __u_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_value)))>;
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)(std::move(D_storage.D_value));
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect, D_storage.D_error);
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(
+                        std::forward<F>(func)(std::move(D_storage.D_value)));
+                }
+                return expected<__u_t, E>(unexpect, D_storage.D_error);
             }
-            return expected<__u_t, E>(unexpect, D_storage.D_error);
         }
 
         template <typename F>
         constexpr auto or_else(F &&func) & {
             using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, T>,
                 "expected<T, E>::or_else: return type value_type mismatch");
@@ -558,8 +583,7 @@ namespace std {
         template <typename F>
         constexpr auto or_else(F &&func) const & {
             using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, T>,
                 "expected<T, E>::or_else: return type value_type mismatch");
@@ -575,9 +599,8 @@ namespace std {
 
         template <typename F>
         constexpr auto or_else(F &&func) && {
-            using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __ret_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, T>,
                 "expected<T, E>::or_else: return type value_type mismatch");
@@ -593,9 +616,8 @@ namespace std {
 
         template <typename F>
         constexpr auto or_else(F &&func) const && {
-            using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __ret_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, T>,
                 "expected<T, E>::or_else: return type value_type mismatch");
@@ -612,8 +634,7 @@ namespace std {
         template <typename F>
         constexpr auto transform_error(F &&func) & {
             using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             if (D_has_value) {
                 return expected<T, __g_t>(D_storage.D_value);
             }
@@ -624,8 +645,7 @@ namespace std {
         template <typename F>
         constexpr auto transform_error(F &&func) const & {
             using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             if (D_has_value) {
                 return expected<T, __g_t>(D_storage.D_value);
             }
@@ -635,9 +655,8 @@ namespace std {
 
         template <typename F>
         constexpr auto transform_error(F &&func) && {
-            using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __g_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             if (D_has_value) {
                 return expected<T, __g_t>(std::move(D_storage.D_value));
             }
@@ -647,9 +666,8 @@ namespace std {
 
         template <typename F>
         constexpr auto transform_error(F &&func) const && {
-            using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __g_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             if (D_has_value) {
                 return expected<T, __g_t>(std::move(D_storage.D_value));
             }
@@ -904,47 +922,80 @@ namespace std {
         constexpr auto transform(F &&func) & {
             using __u_t = remove_cv_t<
                 remove_reference_t<decltype(std::forward<F>(func)())>>;
-            if (D_has_value) {
-                return expected<__u_t, E>(std::forward<F>(func)());
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)();
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect, D_storage.D_error);
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(std::forward<F>(func)());
+                }
+                return expected<__u_t, E>(unexpect, D_storage.D_error);
             }
-            return expected<__u_t, E>(unexpect, D_storage.D_error);
         }
 
         template <typename F>
         constexpr auto transform(F &&func) const & {
             using __u_t = remove_cv_t<
                 remove_reference_t<decltype(std::forward<F>(func)())>>;
-            if (D_has_value) {
-                return expected<__u_t, E>(std::forward<F>(func)());
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)();
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect, D_storage.D_error);
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(std::forward<F>(func)());
+                }
+                return expected<__u_t, E>(unexpect, D_storage.D_error);
             }
-            return expected<__u_t, E>(unexpect, D_storage.D_error);
         }
 
         template <typename F>
         constexpr auto transform(F &&func) && {
             using __u_t = remove_cv_t<
                 remove_reference_t<decltype(std::forward<F>(func)())>>;
-            if (D_has_value) {
-                return expected<__u_t, E>(std::forward<F>(func)());
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)();
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect,
+                                         std::move(D_storage.D_error));
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(std::forward<F>(func)());
+                }
+                return expected<__u_t, E>(unexpect,
+                                          std::move(D_storage.D_error));
             }
-            return expected<__u_t, E>(unexpect, std::move(D_storage.D_error));
         }
 
         template <typename F>
         constexpr auto transform(F &&func) const && {
             using __u_t = remove_cv_t<
                 remove_reference_t<decltype(std::forward<F>(func)())>>;
-            if (D_has_value) {
-                return expected<__u_t, E>(std::forward<F>(func)());
+            if constexpr (is_void_v<__u_t>) {
+                if (D_has_value) {
+                    std::forward<F>(func)();
+                    return expected<void, E>();
+                }
+                return expected<void, E>(unexpect, D_storage.D_error);
+            } else {
+                if (D_has_value) {
+                    return expected<__u_t, E>(std::forward<F>(func)());
+                }
+                return expected<__u_t, E>(unexpect, D_storage.D_error);
             }
-            return expected<__u_t, E>(unexpect, D_storage.D_error);
         }
 
         template <typename F>
         constexpr auto or_else(F &&func) & {
             using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, void>,
                 "expected<void, E>::or_else: return type value_type mismatch");
@@ -961,8 +1012,7 @@ namespace std {
         template <typename F>
         constexpr auto or_else(F &&func) const & {
             using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, void>,
                 "expected<void, E>::or_else: return type value_type mismatch");
@@ -978,9 +1028,8 @@ namespace std {
 
         template <typename F>
         constexpr auto or_else(F &&func) && {
-            using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __ret_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, void>,
                 "expected<void, E>::or_else: return type value_type mismatch");
@@ -996,9 +1045,8 @@ namespace std {
 
         template <typename F>
         constexpr auto or_else(F &&func) const && {
-            using __ret_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __ret_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             static_assert(
                 is_same_v<typename __ret_t::value_type, void>,
                 "expected<void, E>::or_else: return type value_type mismatch");
@@ -1015,8 +1063,7 @@ namespace std {
         template <typename F>
         constexpr auto transform_error(F &&func) & {
             using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             if (D_has_value) {
                 return expected<void, __g_t>();
             }
@@ -1027,8 +1074,7 @@ namespace std {
         template <typename F>
         constexpr auto transform_error(F &&func) const & {
             using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    D_storage.D_error))>;
+                decay_t<decltype(std::forward<F>(func)(D_storage.D_error))>;
             if (D_has_value) {
                 return expected<void, __g_t>();
             }
@@ -1038,9 +1084,8 @@ namespace std {
 
         template <typename F>
         constexpr auto transform_error(F &&func) && {
-            using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __g_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             if (D_has_value) {
                 return expected<void, __g_t>();
             }
@@ -1050,9 +1095,8 @@ namespace std {
 
         template <typename F>
         constexpr auto transform_error(F &&func) const && {
-            using __g_t =
-                decay_t<decltype(std::forward<F>(func)(
-                    std::move(D_storage.D_error)))>;
+            using __g_t = decay_t<decltype(std::forward<F>(func)(
+                std::move(D_storage.D_error)))>;
             if (D_has_value) {
                 return expected<void, __g_t>();
             }
