@@ -16,35 +16,70 @@
 
 namespace util {
     template <typename T>
-    class RefCount {
+    class refc {
     protected:
-        size_t _ref_count;
-        inline T *_this(void) {
+        size_t __refcnt;
+        constexpr T *_this(void) {
             return static_cast<T *>(this);
         }
     public:
-        RefCount() : _ref_count(0) {}
+        constexpr refc() : __refcnt(0) {}
 
         constexpr size_t ref_count(void) const {
-            return _ref_count;
+            return __refcnt;
         }
 
         constexpr bool alive(void) const {
-            return _ref_count > 0;
+            return __refcnt > 0;
         }
 
-        inline void retain(void) {
-            _ref_count++;
+        constexpr void keep(void) {
+            __refcnt++;
         }
 
-        inline void release(void) {
+        constexpr void release(void) {
             if (!alive()) {
                 return;
             }
-            _ref_count--;
+            __refcnt--;
             if (!alive()) {
                 _this()->on_death();
             }
+        }
+    };
+
+    template <typename T>
+    class refc_ptr {
+    private:
+        T *_ptr;
+    public:
+        constexpr refc_ptr(T *ptr) : _ptr(ptr) {
+            if (_ptr)
+                _ptr->keep();
+        }
+        constexpr refc_ptr(const refc_ptr<T> &other) : _ptr(other._ptr) {
+            if (_ptr)
+                _ptr->keep();
+        }
+        constexpr refc_ptr(refc_ptr<T> &&other) : _ptr(other._ptr) {
+            if (_ptr)
+                _ptr->keep();
+        }
+        constexpr ~refc_ptr() {
+            if (_ptr)
+                _ptr->release();
+        }
+        constexpr T *get() const {
+            return _ptr;
+        }
+        constexpr T *operator->() const {
+            return _ptr;
+        }
+        constexpr T &operator*() const {
+            return *_ptr;
+        }
+        constexpr operator T*() const {
+            return _ptr;
         }
     };
 }  // namespace util

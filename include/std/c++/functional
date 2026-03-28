@@ -16,35 +16,35 @@
 
 namespace std {
 
-    template <typename T>
-    class reference_wrapper {
+    template <typename F, typename... Args>
+    constexpr auto invoke(F&& f, Args&&... args)
+        -> invoke_result_t<F, Args...> {
+        return detail::invoke_impl(std::forward<F>(f),
+                                   std::forward<Args>(args)...);
+    }
+
+    template <typename MemPtr>
+    class __mem_fn {
       public:
-        using type = T;
+        using result_type = MemPtr;
 
-        constexpr reference_wrapper(T& ref) noexcept : __ptr(&ref) {}
-        constexpr reference_wrapper(T&&) = delete;
-
-        constexpr reference_wrapper(const reference_wrapper&) noexcept = default;
-        constexpr reference_wrapper& operator=(const reference_wrapper&)
-            noexcept = default;
-
-        constexpr operator T&() const noexcept {
-            return *__ptr;
-        }
-
-        constexpr T& get() const noexcept {
-            return *__ptr;
-        }
+        constexpr explicit __mem_fn(MemPtr ptr) noexcept : __pm(ptr) {}
 
         template <typename... Args>
         constexpr auto operator()(Args&&... args) const
-            -> invoke_result_t<T&, Args...> {
-            return (*__ptr)(std::forward<Args>(args)...);
+            -> invoke_result_t<MemPtr&, Args...> {
+            return std::invoke(__pm, std::forward<Args>(args)...);
         }
 
       private:
-        T* __ptr;
+        MemPtr __pm;
     };
+
+    template <typename MemPtr>
+    constexpr auto mem_fn(MemPtr pm)
+        -> enable_if_t<is_member_pointer_v<MemPtr>, __mem_fn<MemPtr>> {
+        return __mem_fn<MemPtr>(pm);
+    }
 
     template <typename T>
     constexpr reference_wrapper<T> ref(T& t) noexcept {
@@ -145,4 +145,6 @@ namespace std {
     struct hash<unsigned short> : public __trival_hash<unsigned short> {};
     template <>
     struct hash<bool> : public __trival_hash<bool> {};
+
+    
 }  // namespace std

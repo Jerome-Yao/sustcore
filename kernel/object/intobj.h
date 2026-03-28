@@ -35,16 +35,16 @@ public:
     constexpr IntObj(int v) : value(v) {}
     ~IntObj() = default;
 protected:
-    int _read(void) const {
+    int _read() const {
         return value;
     }
     void _write(int v) {
         value = v;
     }
-    void _increase(void) {
+    void _increase() {
         value++;
     }
-    void _decrease(void) {
+    void _decrease() {
         value--;
     }
 };
@@ -66,21 +66,21 @@ public:
     constexpr SIntObj(int v) : value(v) {}
     virtual ~SIntObj() = default;
 
-    virtual void on_zeroref(void) {
+    virtual void on_death() {
         discarded = true;
     }
 
 protected:
-    int _read(void) const {
+    int _read() const {
         return value;
     }
     void _write(int v) {
         value = v;
     }
-    void _increase(void) {
+    void _increase() {
         value++;
     }
-    void _decrease(void) {
+    void _decrease() {
         value--;
     }
 };
@@ -133,7 +133,7 @@ protected:
     IntObj *_obj;
 
     template <b64 perm>
-    bool imply(void) const {
+    bool imply() const {
         return _cap->perm().basic_imply(perm);
     }
 
@@ -145,10 +145,10 @@ public:
     void *operator new(size_t size) = delete;
     void operator delete(void *ptr) = delete;
 
-    Result<int> read(void) const;
+    Result<int> read() const;
     Result<void> write(int v);
-    Result<void> increase(void);
-    Result<void> decrease(void);
+    Result<void> increase();
+    Result<void> decrease();
 };
 
 class SIntOp {
@@ -157,7 +157,7 @@ protected:
     SIntAcc *_acc;
     SIntObj *_obj;
     template <b64 perm>
-    bool imply(void) const {
+    bool imply() const {
         return _cap->perm().basic_imply(perm);
     }
 
@@ -169,8 +169,8 @@ public:
     void *operator new(size_t size) = delete;
     void operator delete(void *ptr) = delete;
 
-    Result<int> read(void) const;
+    Result<int> read() const;
     Result<void> write(int v);
-    Result<void> increase(void);
-    Result<void> decrease(void);
+    Result<void> increase();
+    Result<void> decrease();
 };

@@ -18,33 +18,15 @@
 
 // 共享对象基类
 template <typename PayloadType>
-class SharedObject {
+class SharedObject : public util::refc<SharedObject<PayloadType>> {
 public:
-    constexpr PayloadType *as(void) {
+    constexpr PayloadType *as() {
         return static_cast<PayloadType>(this);
     }
-
-private:
-    int refcount;
-
 protected:
-    constexpr SharedObject() : refcount(0) {}
-    virtual void on_zeroref(void) = 0;
-
-public:
-    constexpr void keep(void) {
-        refcount++;
-    }
-    constexpr void release(void) {
-        if (refcount > 0) {
-            refcount--;
-        } else {
-            // throw an error here
-        }
-        if (refcount == 0) {
-            on_zeroref();
-        }
-    }
+    constexpr SharedObject() {}
+    virtual void on_death() = 0;
+    friend class util::refc<SharedObject<PayloadType>>;
 };
 
 /**
@@ -63,7 +45,7 @@ class SharedObjectAccessor : public Payload {
 public:
     using Payload = SharedObj;
     static constexpr PayloadType IDENTIFIER = PayloadType::SINTOBJ;
-    virtual PayloadType type_id(void) const override {
+    virtual PayloadType type_id() const override {
         return SharedObj::IDENTIFIER;
     }
 

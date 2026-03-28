@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <nt/errors.h>
 #include <expected>
 
 enum class ErrCode : int {
@@ -66,8 +67,17 @@ constexpr const char *to_string(ErrCode err) {
 }
 
 template <typename T>
-using Result = std::expected<T, ErrCode>;
+using Result = std::result<T, ErrCode>;
 using std::unexpect;
 
 #define unexpect_return(x) return std::unexpected(x)
+#define propagate_return(x) unexpect_return(x.error())
+#define propagate(x) do { if (!(x).has_value()) { propagate_return(x); } } while(0)
 #define void_return() return std::expected<void, ErrCode>{};
+
+template <typename T>
+constexpr auto always(T &&value) {
+    return [value = std::forward<T>(value)](auto&&...) -> decltype(auto) {
+        return value;
+    };
+}

@@ -27,3 +27,6 @@ deps += test/string_view.d
 
 objects += test/tree.o
 deps += test/tree.d
+
+objects += test/functional.o
+deps += test/functional.d

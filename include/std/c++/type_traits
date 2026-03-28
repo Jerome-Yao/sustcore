@@ -282,6 +282,12 @@ namespace std {
     template <typename _Tp>
     inline constexpr bool is_member_pointer_v = is_member_pointer<_Tp>::value;
     template <typename _Tp>
+    inline constexpr bool is_member_function_pointer_v =
+        is_member_function_pointer<_Tp>::value;
+    template <typename _Tp>
+    inline constexpr bool is_member_object_pointer_v =
+        is_member_object_pointer<_Tp>::value;
+    template <typename _Tp>
     inline constexpr bool is_object_v = is_object<_Tp>::value;
     template <typename _Tp>
     inline constexpr bool is_pod_v = is_pod<_Tp>::value;
@@ -353,27 +359,104 @@ namespace std {
         return static_cast<T&&>(t);
     }
 
+    // reference_wrapper
+    template <typename T>
+    class reference_wrapper {
+    private:
+        T* __ptr;
+
+    public:
+        using type = T;
+
+        constexpr explicit reference_wrapper(T& ref) noexcept : __ptr(&ref) {}
+        constexpr reference_wrapper(T&&) = delete;
+
+        constexpr reference_wrapper(const reference_wrapper&) noexcept =
+            default;
+        constexpr reference_wrapper& operator=(
+            const reference_wrapper&) noexcept = default;
+
+        constexpr operator T&() const noexcept {
+            return *__ptr;
+        }
+
+        constexpr T& get() const noexcept {
+            return *__ptr;
+        }
+
+        template <typename... Args>
+        constexpr auto operator()(Args&&... args) const
+            -> decltype((*__ptr)(__forward<Args>(args)...)) {
+            return (*__ptr)(__forward<Args>(args)...);
+        }
+    };
+
     namespace detail {
-        // invoke
+        // pointer-to-member function, reference_wrapper as object
+        template <typename F, typename T, typename... Args,
+                  typename = enable_if_t<
+                      is_member_function_pointer_v<decay_t<F>>>>
+        constexpr auto invoke_impl(F&& f, reference_wrapper<T> t,
+                                   Args&&... args)
+            -> decltype((t.get().*__forward<F>(f))(
+                __forward<Args>(args)...)) {
+            return (t.get().*__forward<F>(f))(__forward<Args>(args)...);
+        }
+
+        // pointer-to-member function, object instance (not pointer)
+        template <typename F, typename T1, typename... Args,
+                  typename = enable_if_t<
+                      is_member_function_pointer_v<decay_t<F>>>>
+        constexpr auto invoke_impl(F&& f, T1&& t1, Args&&... args)
+            -> decltype((__forward<T1>(t1).*__forward<F>(f))(
+                __forward<Args>(args)...)) {
+            return (__forward<T1>(t1).*__forward<F>(f))(
+                __forward<Args>(args)...);
+        }
+
+        // pointer-to-member function, pointer to object
+        template <typename F, typename T1, typename... Args,
+                  typename = enable_if_t<
+                      is_member_function_pointer_v<decay_t<F>>>>
+        constexpr auto invoke_impl(F&& f, T1* t1, Args&&... args)
+            -> decltype((t1->*__forward<F>(f))(
+                __forward<Args>(args)...)) {
+            return (t1->*__forward<F>(f))(__forward<Args>(args)...);
+        }
+
+        // pointer-to-data member, reference_wrapper as object
+        template <typename F, typename T,
+                  typename = enable_if_t<
+                      is_member_object_pointer_v<decay_t<F>>>>
+        constexpr auto invoke_impl(F&& f, reference_wrapper<T> t)
+            -> decltype(t.get().*__forward<F>(f)) {
+            return t.get().*__forward<F>(f);
+        }
+
+        // pointer-to-data member, object instance (not pointer)
+        template <typename F, typename T1,
+                  typename = enable_if_t<
+                      is_member_object_pointer_v<decay_t<F>>>>
+        constexpr auto invoke_impl(F&& f, T1&& t1)
+            -> decltype(__forward<T1>(t1).*__forward<F>(f)) {
+            return __forward<T1>(t1).*__forward<F>(f);
+        }
+
+        // pointer-to-data member, pointer to object
+        template <typename F, typename T1,
+                  typename = enable_if_t<
+                      is_member_object_pointer_v<decay_t<F>>>>
+        constexpr auto invoke_impl(F&& f, T1* t1)
+            -> decltype(t1->*__forward<F>(f)) {
+            return t1->*__forward<F>(f);
+        }
+
+        // general callable (non-member-pointer)
         template <typename F, typename... Args>
-        auto invoke_impl(F&& f, Args&&... args)
-            -> decltype(__forward<F>(f)(__forward<Args>(args)...));
-
-        // invoke member function pointer
-        template <typename R, typename C, typename... FArgs, typename T,
-                  typename... Args>
-        auto invoke_impl(R (C::*f)(FArgs...), T&& t, Args&&... args)
-            -> decltype((__forward<T>(t).*f)(__forward<Args>(args)...));
-
-        // invoke const member function pointer
-        template <typename R, typename C, typename... FArgs, typename T,
-                  typename... Args>
-        auto invoke_impl(R (C::*f)(FArgs...) const, T&& t, Args&&... args)
-            -> decltype((__forward<T>(t).*f)(__forward<Args>(args)...));
-
-        // invoke member object pointer
-        template <typename R, typename C, typename T>
-        auto invoke_impl(R(C::*f), T&& t) -> decltype(__forward<T>(t).*f);
+        constexpr auto invoke_impl(F&& f, Args&&... args)
+            -> decltype(__forward<F>(f)(__forward<Args>(args)...)) {
+            return __forward<F>(f)(__forward<Args>(args)...);
+        }
     }  // namespace detail
 
     // invoke_result

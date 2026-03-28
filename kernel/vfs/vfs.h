@@ -34,7 +34,7 @@ public:
     constexpr VFile(IFsDriver *ifs, ISuperblock *isb, IFile *ifile)
         : _ifs(ifs), _isb(isb), _ifile(ifile), _closable(false) {}
     constexpr virtual ~VFile() {}
-    virtual void on_zeroref(void) override {
+    virtual void on_death(void) override {
         _closable = true;
     }
     constexpr bool closable(void) const {
