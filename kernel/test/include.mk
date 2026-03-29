@@ -30,3 +30,9 @@ deps += test/tree.d
 
 objects += test/functional.o
 deps += test/functional.d
+
+objects += test/schd/fcfs.o
+deps += test/schd/fcfs.d
+
+objects += test/schd/rr.o
+deps += test/schd/rr.d

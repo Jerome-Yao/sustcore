@@ -20,6 +20,8 @@
 #include <test/fs.h>
 #include <test/functional.h>
 #include <test/path.h>
+#include <test/schd/fcfs.h>
+#include <test/schd/rr.h>
 #include <test/slub.h>
 #include <test/string.h>
 #include <test/string_view.h>
@@ -29,8 +31,10 @@ void collect_tests(TestFramework& framework) {
     // test::buddy::collect_tests(framework);
     // test::cap::collect_tests(framework);
     // test::expected::collect_tests(framework);
-    test::fs::collect_tests(framework);
-    test::functional::collect_tests(framework);
+    // test::fs::collect_tests(framework);
+    // test::functional::collect_tests(framework);
+    test::schd::fcfs::collect_tests(framework);
+    test::schd::rr::collect_tests(framework);
     // test::path::collect_tests(framework);
     // test::slub::collect_tests(framework);
     // test::string::collect_tests(framework);

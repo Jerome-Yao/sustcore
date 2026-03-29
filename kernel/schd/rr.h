@@ -1,9 +1,9 @@
 /**
  * @file rr.h
  * @author theflysong (song_of_the_fly@163.com)
- * @brief Round Robin Schedule Algorithm
+ * @brief Round Robin 调度器
  * @version alpha-1.0.0
- * @date 2026-02-10
+ * @date 2026-03-30
  *
  * @copyright Copyright (c) 2026
  *
@@ -11,113 +11,149 @@
 
 #pragma once
 
-#include <schd/metadata.h>
-#include <schd/schedule.h>
+#include <schd/hook.h>
+#include <schd/schdbase.h>
 #include <sus/list.h>
+#include <sustcore/errcode.h>
 
-// Schedule Policies
-namespace schd {
-    template <typename TCBType>
-    class RR : public BaseScheduler<TCBType, RRData> {
+namespace schd::rr {
+    class Metadata {
     public:
-        using MetadataType                 = RRData;
-        using Base                         = BaseScheduler<TCBType, RRData>;
-        static constexpr size_t RR_QUANTUM = 5;
+        ThreadState state                   = ThreadState::EMPTY;
+        int slice_cnt                       = 0;
+        util::ListHead<Metadata> _schd_head = {};
 
-    protected:
-        util::IntrusiveList<MetadataType, &MetadataType::_schedule_head>
-            _ready_queue;
-        TCBType *_current = nullptr;
-        constexpr static bool is_ready(const MetadataType &thread) {
-            return thread.state == ThreadState::READY ||
-                   thread.state == ThreadState::RUNNING;
-        }
-        constexpr static bool replacable(const MetadataType &thread) {
-            return thread.state == ThreadState::YIELD;
-        }
-        constexpr static bool runnable(const MetadataType *thread) {
-            return thread != nullptr && is_ready(*thread) && thread->_cnt > 0;
-        }
-        inline void _add(MetadataType *thread) {
-            thread->state = ThreadState::READY;
-            thread->_cnt  = RR_QUANTUM;
-            _ready_queue.push_back(*thread);
-        }
+        Metadata()  = default;
+        ~Metadata() = default;
+    };
 
-        TCBType *_schedule(void) {
-            while (!_ready_queue.empty()) {
-                // 首先查看就绪队列头部的线程是否可运行
-                auto &thread = _ready_queue.front();
-                if (runnable(&thread)) {
-                    thread.state = ThreadState::RUNNING;
-                    return this->upcast(&thread);
-                }
+    class tags : public schd::tags::on_tick {};
 
-                // 否则, 将其从就绪队列中移除
-                // 如果可重新加入就绪队列, 则加入就绪队列的尾部
-                _ready_queue.pop_front();
-                if (replacable(thread)) {
-                    _add(&thread);
-                }
-            }
+    template <typename SU>
+    class RR : public SchdBase<SU, Metadata, tags> {
+    public:
+        using SUType       = SU;
+        using MetadataType = Metadata;
+        using Tags         = tags;
+        using Base         = SchdBase<SUType, MetadataType, Tags>;
+        using Base::downcast;
+        using Base::upcast;
+        constexpr static int TIME_SLICES = 5;
 
-            return nullptr;
+    private:
+        util::IntrusiveList<MetadataType, &MetadataType::_schd_head>
+            _ready_queue    = {};
+        SUType *_current_su = nullptr;
+
+        constexpr static bool P_ready(const MetadataType &meta) {
+            return meta.state == ThreadState::READY;
         }
 
-        // 单例模式
-        RR() : Base(), _ready_queue() {}
-        ~RR() {}
+        constexpr static bool P_runnable(const MetadataType &meta) {
+            return meta.state == ThreadState::READY ||
+                   meta.state == ThreadState::RUNNING;
+        }
 
-        static RR _instance;
+        constexpr static bool P_rescheduable(const MetadataType &meta) {
+            return meta.state == ThreadState::READY ||
+                   meta.state == ThreadState::YIELD ||
+                   meta.state == ThreadState::RUNNING;
+        }
 
     public:
-        static RR *get_instance() {
-            return &_instance;
+        constexpr RR()  = default;
+        constexpr ~RR() = default;
+
+        virtual Result<void> insert(SUType *su) override {
+            if (su == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            auto meta       = downcast(su);
+            meta->state     = ThreadState::READY;
+            meta->slice_cnt = 0;
+            _ready_queue.push_back(*meta);
+            void_return();
         }
 
-        // 全局对象的构造函数并不会被默认触发, 需要我们手动调用
-        static void init_instance() {
-            _instance = RR();
+        virtual Result<void> remove(SUType *su) override {
+            if (su == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            auto meta = downcast(su);
+            if (!_ready_queue.contains(*meta)) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            _ready_queue.remove(*meta);
+            meta->state = ThreadState::EMPTY;
+            void_return();
         }
 
-        inline void add(TCBType *thread) {
-            if (thread != nullptr) {
-                _add(this->downcast(thread));
+        virtual SUType *current() override {
+            return _current_su;
+        }
+
+        virtual SUType *peer() override {
+            if (_ready_queue.empty()) {
+                return _current_su;
+            }
+            auto meta = &_ready_queue.front();
+            return upcast(meta);
+        }
+
+        virtual SUType *pick() override {
+            if (_ready_queue.empty()) {
+                return _current_su;
+            }
+            auto next_meta = &_ready_queue.front();
+            _ready_queue.pop_front();
+            if (_current_su) {
+                auto current_meta = downcast(_current_su);
+                if (P_rescheduable(*current_meta)) {
+                    current_meta->state = ThreadState::READY;
+                    _ready_queue.push_back(*current_meta);
+                }
+            }
+            _current_su          = upcast(next_meta);
+            next_meta->state     = ThreadState::RUNNING;
+            next_meta->slice_cnt = 0;
+            return _current_su;
+        }
+
+        virtual bool should_switch() override {
+            if (_ready_queue.empty()) {
+                return false;
+            }
+
+            if (_current_su == nullptr) {
+                return true;
+            }
+
+            auto current_meta = downcast(_current_su);
+            // 当前线程不可继续运行, 或者时间片已用尽, 都需要切换
+            return !P_runnable(*current_meta) ||
+                   current_meta->slice_cnt >= TIME_SLICES;
+        }
+
+        virtual void yield() override {
+            if (_current_su) {
+                auto current_meta   = downcast(_current_su);
+                current_meta->state = ThreadState::YIELD;
             }
         }
 
-        inline TCBType *current(void) {
-            return _current;
-        }
-
-        inline TCBType *schedule(void) {
-            _current = this->_schedule();
-            return this->current();
-        }
-
-        void yield(TCBType *thread) {
-            // 要求thread必须是当前正在运行的线程
-            if (thread != this->current()) {
-                return;
-            }
-
-            if (thread != nullptr) {
-                thread->state = ThreadState::YIELD;
+        virtual void suspend() override {
+            if (_current_su) {
+                auto current_meta   = downcast(_current_su);
+                current_meta->state = ThreadState::EMPTY;
+                _current_su         = nullptr;
             }
         }
 
-        void exit(TCBType *thread) {
-            // 要求thread必须是当前正在运行的线程
-            if (thread != this->current()) {
-                return;
-            }
-
-            if (thread != nullptr) {
-                thread->state = ThreadState::EMPTY;
+        virtual void on_tick(units::tick /*gap_ticks*/) {
+            if (_current_su) {
+                auto current_meta = downcast(_current_su);
+                current_meta->slice_cnt += 1;
             }
         }
     };
-
-    template <typename TCBType>
-    RR<TCBType> RR<TCBType>::_instance;
-}  // namespace schd
+}  // namespace schd::rr

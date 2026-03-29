@@ -210,8 +210,6 @@ extern "C" void post_init(void) {
     kernelman.modify_range_flags<PageMan::ModifyMask::U>(
         lowvm, uppm - lowpm, PageMan::RWX::NONE, true, false);
 
-    TCBManager::init();
-
     TestFramework framework;
     collect_tests(framework);
     framework.run_all();

@@ -13,8 +13,9 @@
 #include <arch/riscv64/int/isr.h>
 #include <kio.h>
 #include <sbi/sbi.h>
-#include <schd/hooks.h>
 #include <sus/logger.h>
+#include <sustcore/timer.h>
+#include <task/scheduler.h>
 #include <task/task_struct.h>
 
 namespace Exceptions {
@@ -174,8 +175,9 @@ namespace Handlers {
         units::tick gap_ticks     = current_ticks - timer_info.last_ticks;
 
         // 发布TimerTickEvent
-        TimerTickEvent tick_event = {.gap_ticks = gap_ticks};
-        schd::on_tick(tick_event);
+        TimerTickInfo tick_info = {.last_tick = timer_info.last_ticks,
+                                   .increment = timer_info.increment,
+                                   .gap_ticks = gap_ticks};
 
         timer_info.last_ticks = current_ticks;
 

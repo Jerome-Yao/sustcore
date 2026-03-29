@@ -15,10 +15,3 @@
 #include <sus/id.h>
 #include <sus/list.h>
 #include <task/task_struct.h>
-
-extern util::Defer<util::IDManager<>> TID;
-
-class TCBManager {
-public:
-    static void init();
-};
