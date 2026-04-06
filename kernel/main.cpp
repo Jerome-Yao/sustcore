@@ -229,9 +229,9 @@ extern "C" void post_init(void) {
     env().pgd = kernel_root;
 
     // Kernel tests
-    // TestFramework framework;
-    // collect_tests(framework);
-    // framework.run_all();
+    TestFramework framework;
+    collect_tests(framework);
+    framework.run_all();
 
     auto gfp_res = GFP::get_free_page<KernelStage::POST_INIT>();
     if (!gfp_res.has_value()) {
