@@ -84,11 +84,11 @@ Result<void> TM::remove_vma(VirAddr vma_addr) {
 }
 
 bool TM::on_np(const NoPresentEvent &e) {
-    PAGING::DEBUG("TM::on_np: access_address=%p, tm_pgd=%p, pman_root=%p",
+    loggers::PAGING::DEBUG("TM::on_np: access_address=%p, tm_pgd=%p, pman_root=%p",
                   e.access_address.addr(), _pgd.addr(), _pman.get_root().addr());
     auto locate_res = locate(e.access_address);
     if (!locate_res.has_value()) {
-        PAGING::ERROR("TM::on_np: 地址不在任何 VMA 中: %p, err=%d",
+        loggers::PAGING::ERROR("TM::on_np: 地址不在任何 VMA 中: %p, err=%d",
                       e.access_address.addr(), locate_res.error());
         return false;
     }
@@ -101,7 +101,7 @@ bool TM::on_np(const NoPresentEvent &e) {
     // 分配物理页并映射
     auto gfp_res = GFP::get_free_page();
     if (!gfp_res.has_value()) {
-        TASK::ERROR("无法处理缺页异常: 无可用物理页");
+        loggers::TASK::ERROR("无法处理缺页异常: 无可用物理页");
         return false;
     }
     PhyAddr paddr = gfp_res.value();
@@ -119,13 +119,13 @@ bool TM::on_np(const NoPresentEvent &e) {
     PageMan verify_pman(hw_root);
     auto verify_res = verify_pman.query_page(aligned_vaddr);
     if (!verify_res.has_value()) {
-        PAGING::ERROR(
+        loggers::PAGING::ERROR(
             "TM::on_np: 映射后在当前页表中仍查不到该页: vaddr=%p, "
             "err=%d, hw_root=%p, tm_pgd=%p",
             aligned_vaddr.addr(), verify_res.error(), hw_root.addr(),
             _pgd.addr());
     } else {
-        PAGING::DEBUG(
+        loggers::PAGING::DEBUG(
             "TM::on_np: 页映射成功: vaddr=%p, hw_root=%p, tm_pgd=%p",
             aligned_vaddr.addr(), hw_root.addr(), _pgd.addr());
     }

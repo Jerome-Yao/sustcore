@@ -363,7 +363,7 @@ public:
 
             // 已有映射, 无法继续
             if (pte.rwx != RWX::P) {
-                PAGING::ERROR(
+                loggers::PAGING::ERROR(
                     "VPN[%d] = %d 处已有映射! pte->rwx = %d, pte = %p, &pte = "
                     "%p",
                     level, vpn[level], pte.rwx, pte.value, &pte);
@@ -372,7 +372,7 @@ public:
 
             // 有效但不存在
             if (pte.v && pte.np) {
-                PAGING::ERROR("VPN[%d] = %d 处页表项有效但不存在!");
+                loggers::PAGING::ERROR("VPN[%d] = %d 处页表项有效但不存在!");
                 break;
             }
 
@@ -385,7 +385,7 @@ public:
                 // 分配下一级页表
                 auto new_page_res = new_page();
                 if (!new_page_res.has_value()) {
-                    PAGING::ERROR("无法映射页: 无可用物理页");
+                    loggers::PAGING::ERROR("无法映射页: 无可用物理页");
                     return;
                 }
                 PhyAddr new_pt = new_page_res.value();
@@ -400,7 +400,7 @@ public:
                 pte.a   = 0;
                 pte.d   = 0;
                 pte.np  = 0;
-                PAGING::DEBUG(
+                loggers::PAGING::DEBUG(
                     "VPN[%d] = %d 处页表项 %p 不存在, 构造为 pte = %p", level,
                     vpn[level], &pte, pte.value);
             }
@@ -410,7 +410,7 @@ public:
         }
 
         if (target_pte == nullptr) {
-            PAGING::ERROR("未找到目标页表项!");
+            loggers::PAGING::ERROR("未找到目标页表项!");
             return;
         }
 
@@ -422,7 +422,7 @@ public:
         target_pte->g   = g;
         target_pte->a   = 0;
         target_pte->d   = 0;
-        PAGING::DEBUG(
+        loggers::PAGING::DEBUG(
             "成功映射 vaddr = %p 到 paddr = %p, rwx = %d, u = %d, g = %d",
             vaddr.addr(), paddr.addr(), rwx_cast(rwx), u, g);
     }
@@ -495,12 +495,12 @@ public:
 
     void unmap_page(VirAddr vaddr) {
         // TODO: implement unmap_page
-        PAGING::ERROR("unmap_page尚未实现");
+        loggers::PAGING::ERROR("unmap_page尚未实现");
     }
 
     void unmap_range(VirAddr vstart, size_t size) {
         // TODO: implement unmap_range
-        PAGING::ERROR("unmap_range尚未实现");
+        loggers::PAGING::ERROR("unmap_range尚未实现");
     }
 
     static constexpr umb_t to_rwx_mask(ModifyMask mask) {

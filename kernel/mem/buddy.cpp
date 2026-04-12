@@ -36,7 +36,7 @@ void BuddyAllocator::pre_init(MemRegion *regions, size_t region_count) {
             PhyAddr end_addr   = (region.ptr + region.size).page_align_down();
             size_t pages       = (end_addr - start_addr) / PAGESIZE;
             if (pages > 0) {
-                BUDDY::DEBUG("添加可用内存区域 [%p, %p), 共 %d 页",
+                loggers::BUDDY::DEBUG("添加可用内存区域 [%p, %p), 共 %d 页",
                              start_addr.addr(), end_addr.addr(), pages);
                 add_memory_range<KernelStage::PRE_INIT>(start_addr, pages);
             }
@@ -45,14 +45,14 @@ void BuddyAllocator::pre_init(MemRegion *regions, size_t region_count) {
 }
 
 void BuddyAllocator::post_init(MemRegion *regions, size_t region_count) {
-    BUDDY::DEBUG("进入 BuddyAllocator::post_init, 迁移空闲块链表到KPA空间");
+    loggers::BUDDY::DEBUG("进入 BuddyAllocator::post_init, 迁移空闲块链表到KPA空间");
 
     // 先进行一次遍历, 打印迁移前的链表状态
-    BUDDY::DEBUG("Buddy Allocator Memory Layout:\n");
+    loggers::BUDDY::DEBUG("Buddy Allocator Memory Layout:\n");
     for (int i = 0; i <= MAX_BUDDY_ORDER; i++) {
         BlockList &list = free_area[i].get();
         auto *sentinel_pa = convert<PhyAddr>((KvaAddr)&list.sentinel()).addr();
-        BUDDY::DEBUG("Order %d: %d blocks:", i, list.size());
+        loggers::BUDDY::DEBUG("Order %d: %d blocks:", i, list.size());
         for (auto iter = list.begin(); iter != list.end(); ++iter) {
             auto *nxt = iter.operator->();
 
@@ -61,7 +61,7 @@ void BuddyAllocator::post_init(MemRegion *regions, size_t region_count) {
             }
 
             PhyAddr paddr = block2pa<KernelStage::PRE_INIT>(&*iter);
-            BUDDY::DEBUG("    Free block at [%p, %p)\n", i, paddr.addr(),
+            loggers::BUDDY::DEBUG("    Free block at [%p, %p)\n", i, paddr.addr(),
                          (paddr + (1ul << (i + 12))).addr());
         }
     }
@@ -94,7 +94,7 @@ void BuddyAllocator::post_init(MemRegion *regions, size_t region_count) {
             iter->list_head.prev =
                 prev_ka == sentinel ? &list.sentinel() : prev_ka;
 
-            BUDDY::DEBUG("next PA: %p -> KPA: %p, prev PA: %p -> KPA: %p",
+            loggers::BUDDY::DEBUG("next PA: %p -> KPA: %p, prev PA: %p -> KPA: %p",
                          next_pa.addr(), iter->list_head.next, prev_pa.addr(),
                          iter->list_head.prev);
 
@@ -105,5 +105,5 @@ void BuddyAllocator::post_init(MemRegion *regions, size_t region_count) {
     }
 
     __print_memory_layout<KernelStage::POST_INIT>();
-    BUDDY::INFO("BuddyAllocator initialized and migrated to KVA.");
+    loggers::BUDDY::INFO("BuddyAllocator initialized and migrated to KVA.");
 }

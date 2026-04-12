@@ -89,11 +89,11 @@ Capability::~Capability() {
     }
 
     // 声明将亡
-    CAPABILITY::DEBUG("开始移除(%d, %d)@Space %d", this->_idx.group,
+    loggers::CAPABILITY::DEBUG("开始移除(%d, %d)@Space %d", this->_idx.group,
                       this->_idx.slot, this->_space->sp_idx);
     // 通知父节点移除自己
     if (parent != nullptr) {
-        CAPABILITY::DEBUG("从(%d, %d)@Space %d中移除自身", parent->_idx.group,
+        loggers::CAPABILITY::DEBUG("从(%d, %d)@Space %d中移除自身", parent->_idx.group,
                           parent->_idx.slot, parent->_space->sp_idx);
         parent->remove_child(this);
     }
@@ -113,12 +113,12 @@ Capability::~Capability() {
         // 加入该能力的直接子能力
         for (auto &subcap : cur->children) {
             __working_queue.push(subcap);
-            CAPABILITY::DEBUG("加入工作队列: (%d, %d)@Space %d", subcap->_idx.group,
+            loggers::CAPABILITY::DEBUG("加入工作队列: (%d, %d)@Space %d", subcap->_idx.group,
                               subcap->_idx.slot, subcap->_space->sp_idx);
         }
 
         // 删除该能力
-        CAPABILITY::DEBUG("移除(%d, %d)@Space %d", cur->_idx.group, cur->_idx.slot,
+        loggers::CAPABILITY::DEBUG("移除(%d, %d)@Space %d", cur->_idx.group, cur->_idx.slot,
                           cur->_space->sp_idx);
         kill(cur);
     }
@@ -126,14 +126,14 @@ Capability::~Capability() {
     // 根部Capability持有这个Payload
     // 因此需要删除这个Payload
     if (_is_root && _payload != nullptr) {
-        CAPABILITY::DEBUG("Deleting payloads");
+        loggers::CAPABILITY::DEBUG("Deleting payloads");
         delete _payload;
     }
 }
 
 Result<void> Capability::revoke(Capability *subcap) {
     if (subcap->parent != this) {
-        CAPABILITY::ERROR("无法撤销非直接子能力");
+        loggers::CAPABILITY::ERROR("无法撤销非直接子能力");
         return {unexpect, ErrCode::INVALID_CAPABILITY};
     }
     // 将subcap从子节点列表中移除

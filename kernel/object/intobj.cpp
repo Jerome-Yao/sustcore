@@ -17,7 +17,7 @@
 Result<int> IntOp::read() const {
     using namespace perm::intobj;
     if (!imply<READ>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     return _obj->_read();
@@ -26,7 +26,7 @@ Result<int> IntOp::read() const {
 Result<void> IntOp::write(int v) {
     using namespace perm::intobj;
     if (!imply<WRITE>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     _obj->_write(v);
@@ -36,7 +36,7 @@ Result<void> IntOp::write(int v) {
 Result<void> IntOp::increase() {
     using namespace perm::intobj;
     if (!imply<INCREASE>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     _obj->_increase();
@@ -46,7 +46,7 @@ Result<void> IntOp::increase() {
 Result<void> IntOp::decrease() {
     using namespace perm::intobj;
     if (!imply<DECREASE>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     _obj->_decrease();
@@ -56,7 +56,7 @@ Result<void> IntOp::decrease() {
 Result<int> SIntOp::read() const {
     using namespace perm::sintobj;
     if (!imply<READ>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     return _obj->_read();
@@ -65,7 +65,7 @@ Result<int> SIntOp::read() const {
 Result<void> SIntOp::write(int v) {
     using namespace perm::sintobj;
     if (!imply<WRITE>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     _obj->_write(v);
@@ -75,7 +75,7 @@ Result<void> SIntOp::write(int v) {
 Result<void> SIntOp::increase() {
     using namespace perm::sintobj;
     if (!imply<INCREASE>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     _obj->_increase();
@@ -85,7 +85,7 @@ Result<void> SIntOp::increase() {
 Result<void> SIntOp::decrease() {
     using namespace perm::sintobj;
     if (!imply<DECREASE>()) {
-        CAPABILITY::ERROR("权限不足");
+        loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
     _obj->_decrease();

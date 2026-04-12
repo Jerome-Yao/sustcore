@@ -21,7 +21,7 @@ PermissionBits::PermissionBits(b64 basic, const b64 *bitmap, PayloadType type)
       type(type) {
     if (is_inline(type)) {
         if (bitmap != nullptr) {
-            CAPABILITY::WARN(
+            loggers::CAPABILITY::WARN(
                 "具有类型%s的权限对象不应提供权限位图, 但实际提供了非空指针, "
                 "已忽略该指针",
                 to_string(type));

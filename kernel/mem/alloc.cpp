@@ -26,14 +26,14 @@ void* LinearGrowAllocator::malloc(size_t size) {
         size_t pages = page_align_up(size) / PAGESIZE;
         Result<PhyAddr> gfp_res = GFP::get_free_page(pages);
         if (! gfp_res.has_value()) {
-            MEMORY::ERROR("无法分配大对象内存");
+            loggers::MEMORY::ERROR("无法分配大对象内存");
             return nullptr;
         }
         PhyAddr paddr = gfp_res.value();
         return convert<KpaAddr>(paddr).addr();
     }
     if (lga_offset + size > SIZE) {
-        MEMORY::FATAL("%s", "内存不足");
+        loggers::MEMORY::FATAL("%s", "内存不足");
         return nullptr;  // 内存不足
     }
     void* ptr   = &LGA_HEAP[lga_offset];
@@ -43,10 +43,10 @@ void* LinearGrowAllocator::malloc(size_t size) {
 
 void LinearGrowAllocator::free(void* ptr) {
     // 线性增长分配器不支持释放内存
-    MEMORY::DEBUG("%s", "线性增长分配器不支持释放内存");
+    loggers::MEMORY::DEBUG("%s", "线性增长分配器不支持释放内存");
     (void)ptr;  // 避免未使用参数警告
 }
 
 void LinearGrowAllocator::init(void) {
-    LOGGER::INFO("线性增长分配器初始化完成, 可用内存大小: %u 字节", SIZE);
+    loggers::SUSTCORE::INFO("线性增长分配器初始化完成, 可用内存大小: %u 字节", SIZE);
 }

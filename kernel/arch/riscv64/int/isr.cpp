@@ -68,27 +68,27 @@ namespace Exceptions {
 namespace Handlers {
     bool illegal_instruction(csr_scause_t scause, umb_t sepc, umb_t stval,
                              Riscv64Context *ctx) {
-        INTERRUPT::DEBUG("进入非法指令异常处理程序");
+        loggers::INTERRUPT::DEBUG("进入非法指令异常处理程序");
         // 我们可以通过该指令自定义kernel服务
         dword ins = *((dword *)sepc);
-        INTERRUPT::INFO("指令内容: 0x%08x", ins);
+        loggers::INTERRUPT::INFO("指令内容: 0x%08x", ins);
         // 这是一个任意的非法指令
         // 被我们选中用于模拟真实指令
         if (ins == 0x000000FF) {
-            INTERRUPT::INFO("自定义Kernel服务: Hello, World!");
+            loggers::INTERRUPT::INFO("自定义Kernel服务: Hello, World!");
         } else if (ins == 0x00FF00FF) {
-            INTERRUPT::INFO("自定义Kernel服务: 计算t0的t1次方, 结果存储到t0中");
+            loggers::INTERRUPT::INFO("自定义Kernel服务: 计算t0的t1次方, 结果存储到t0中");
             int t0 = ctx->regs[5 - 1];  // x5 = t0
             int t1 = ctx->regs[6 - 1];  // x6 = t1
-            INTERRUPT::INFO("计算参数: t0=%d, t1=%d", t0, t1);
+            loggers::INTERRUPT::INFO("计算参数: t0=%d, t1=%d", t0, t1);
             int result = 1;
             for (int i = 0; i < t1; i++) {
                 result *= t0;
             }
             ctx->regs[5 - 1] = result;  // x5 = t0
-            INTERRUPT::INFO("计算完成!");
+            loggers::INTERRUPT::INFO("计算完成!");
         } else {
-            INTERRUPT::ERROR("非kernel自定义指令: 0x%08x", ins);
+            loggers::INTERRUPT::ERROR("非kernel自定义指令: 0x%08x", ins);
             return false;
         }
 
@@ -98,13 +98,13 @@ namespace Handlers {
 
     bool paging_fault(csr_scause_t scause, umb_t sepc, umb_t stval,
                       Riscv64Context *ctx) {
-        INTERRUPT::DEBUG("进入页异常处理程序");
-        INTERRUPT::INFO("异常页地址: 0x%016lx", stval);
+        loggers::INTERRUPT::DEBUG("进入页异常处理程序");
+        loggers::INTERRUPT::INFO("异常页地址: 0x%016lx", stval);
 
         const VirAddr fault_addr = VirAddr(stval);
         PhyAddr hw_root          = PageMan::read_root();
         Environment &e           = env();
-        INTERRUPT::DEBUG("paging_fault: hw_root=%p, env.pgd=%p, tm=%p",
+        loggers::INTERRUPT::DEBUG("paging_fault: hw_root=%p, env.pgd=%p, tm=%p",
                          hw_root.addr(), e.pgd.addr(), e.tm);
         PageMan pman(hw_root);
 
@@ -131,7 +131,7 @@ namespace Handlers {
                 if (query_res.error() == ErrCode::PAGE_NOT_PRESENT) {
                     cause = FaultCause::NO_PRESENT;
                 } else {
-                    INTERRUPT::ERROR("查询页表时发生错误: addr=%p, err=%d",
+                    loggers::INTERRUPT::ERROR("查询页表时发生错误: addr=%p, err=%d",
                                      fault_addr.addr(), query_res.error());
                     cause = FaultCause::UNKNOWN;
                 }
@@ -160,7 +160,7 @@ namespace Handlers {
                     }
 
                 } else {
-                    INTERRUPT::ERROR(
+                    loggers::INTERRUPT::ERROR(
                         "页面存在但未被标记为有效! addr=%p, pte=%p",
                         fault_addr.addr(), pte);
                     cause = FaultCause::UNKNOWN;
@@ -172,11 +172,11 @@ namespace Handlers {
 
         switch (cause) {
             case FaultCause::NO_PRESENT: {
-                INTERRUPT::INFO("缺页异常: 0x%016lx", stval);
+                loggers::INTERRUPT::INFO("缺页异常: 0x%016lx", stval);
                 // 使用缺页异常处理程序处理缺页异常
                 auto *tm = e.tm;
                 if (tm != nullptr) {
-                    INTERRUPT::DEBUG(
+                    loggers::INTERRUPT::DEBUG(
                         "调用 TM::on_np 处理缺页: addr=%p, tm_pgd=%p",
                         fault_addr.addr(), tm->pgd().addr());
                     processsed |= tm->on_np({fault_addr});
@@ -188,13 +188,13 @@ namespace Handlers {
                         PageMan verify_pman(hw_root_after);
                         auto verify_res = verify_pman.query_page(fault_addr);
                         if (!verify_res.has_value()) {
-                            INTERRUPT::ERROR(
+                            loggers::INTERRUPT::ERROR(
                                 "TM::on_np 返回成功但页面仍不存在: addr=%p, "
                                 "err=%d, hw_root_after=%p",
                                 fault_addr.addr(), verify_res.error(),
                                 hw_root_after.addr());
                         } else {
-                            INTERRUPT::DEBUG(
+                            loggers::INTERRUPT::DEBUG(
                                 "TM::on_np 映射完成: addr=%p, hw_root_after=%p",
                                 fault_addr.addr(), hw_root_after.addr());
                         }
@@ -203,19 +203,19 @@ namespace Handlers {
                 break;
             }
             case FaultCause::SAU_NO_SUM: {
-                INTERRUPT::ERROR("内核态访问用户页但未设置 SUM 位! addr=%p",
+                loggers::INTERRUPT::ERROR("内核态访问用户页但未设置 SUM 位! addr=%p",
                                  fault_addr.addr());
                 break;
             }
             case FaultCause::UAS: {
-                INTERRUPT::ERROR("用户态访问用户页但权限不足! addr=%p",
+                loggers::INTERRUPT::ERROR("用户态访问用户页但权限不足! addr=%p",
                                  fault_addr.addr());
                 break;
             }
             case FaultCause::INVALID_AD: {
                 auto query_res = pman.query_page(fault_addr);
                 if (!query_res.has_value()) {
-                    INTERRUPT::ERROR(
+                    loggers::INTERRUPT::ERROR(
                         "处理 A/D 位错误时查询页表失败: addr=%p, err=%d",
                         fault_addr.addr(), query_res.error());
                     break;
@@ -223,7 +223,7 @@ namespace Handlers {
                 PageMan::PTE *pte = query_res.value().pte;
                 bool present      = PageMan::is_present(*pte);
                 if (!present) {
-                    INTERRUPT::ERROR(
+                    loggers::INTERRUPT::ERROR(
                         "处理 A/D 位错误时页面不存在: addr=%p, pte=%p",
                         fault_addr.addr(), pte);
                     break;
@@ -245,13 +245,13 @@ namespace Handlers {
                 processsed |= updated;
                 if (updated) {
                     PageMan::flush_tlb();
-                    INTERRUPT::DEBUG("修复 A/D 位后重试: addr=%p, A=%d, D=%d",
+                    loggers::INTERRUPT::DEBUG("修复 A/D 位后重试: addr=%p, A=%d, D=%d",
                                      fault_addr.addr(), pte->a, pte->d);
                 }
                 break;
             }
             default: {
-                INTERRUPT::ERROR("未知页异常! addr=%p", fault_addr.addr());
+                loggers::INTERRUPT::ERROR("未知页异常! addr=%p", fault_addr.addr());
                 break;
             }
         }
@@ -272,21 +272,21 @@ namespace Handlers {
         // 输出异常类型
         if (scause.cause < sizeof(Exceptions::MSG) / sizeof(Exceptions::MSG[0]))
         {
-            INTERRUPT::INFO("发生异常! 类型: %s (%lu)",
+            loggers::INTERRUPT::INFO("发生异常! 类型: %s (%lu)",
                             Exceptions::MSG[scause.cause], scause.cause);
         } else {
-            INTERRUPT::INFO("发生异常! 类型: 未知 (%lu)", scause.cause);
+            loggers::INTERRUPT::INFO("发生异常! 类型: 未知 (%lu)", scause.cause);
         }
         if (ctx->sstatus.spp) {
-            INTERRUPT::ERROR("异常发生在S-Mode");
+            loggers::INTERRUPT::ERROR("异常发生在S-Mode");
         } else {
-            INTERRUPT::ERROR("异常发生在U-Mode");
+            loggers::INTERRUPT::ERROR("异常发生在U-Mode");
         }
         // 输出寄存器状态
-        INTERRUPT::ERROR(
+        loggers::INTERRUPT::ERROR(
             "scause: 0x%lx, sepc: 0x%lx, stval: 0x%lx, sstatus: 0x%lx",
             scause.value, sepc, stval, ctx->sstatus.value);
-        INTERRUPT::ERROR("ctx: 0x%lx", ctx);
+        loggers::INTERRUPT::ERROR("ctx: 0x%lx", ctx);
 
         bool processed = false;
         switch (scause.cause) {
@@ -302,13 +302,13 @@ namespace Handlers {
                 processed = paging_fault(scause, sepc, stval, ctx);
                 break;
             default:
-                INTERRUPT::INFO("无异常处理程序!");
+                loggers::INTERRUPT::INFO("无异常处理程序!");
                 processed = false;
                 break;
         }
 
         if (!processed) {
-            INTERRUPT::ERROR("无法处理该异常, 终止相关进程");
+            loggers::INTERRUPT::ERROR("无法处理该异常, 终止相关进程");
             while (true);
         }
     }

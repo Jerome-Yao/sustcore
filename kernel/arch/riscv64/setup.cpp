@@ -47,7 +47,7 @@ void Riscv64Initialization::pre_init(void) {
         while (true);
     }
 
-    DEVICE::DEBUG("时钟频率为 %d Hz", hz.to_hz());
+    loggers::DEVICE::DEBUG("时钟频率为 %d Hz", hz.to_hz());
 }
 
 // 触发非法指令异常
@@ -63,7 +63,7 @@ __attribute__((noinline)) int trigger_illegal_instruction(void) {
         : "=r"(a)
         : "r"(a), "r"(b)
         : "t0", "t1");  // 自定义非法指令2
-    INTERRUPT::INFO("计算结果: %d", a);
+    loggers::INTERRUPT::INFO("计算结果: %d", a);
     return -1;
 }
 
@@ -76,11 +76,11 @@ void Riscv64Initialization::post_init(void) {
     if (freq < 0) {
         // 使用QEMU virt机器的默认值10MHz
         freq = 10_MHz;
-        DEVICE::ERROR("获取时钟频率失败, 使用默认值 %d Hz", freq);
+        loggers::DEVICE::ERROR("获取时钟频率失败, 使用默认值 %d Hz", freq);
     }
-    DEVICE::INFO("时钟频率: %d Hz = %d KHz = %d MHz", freq.to_hz(), freq.to_khz(), freq.to_mhz());
+    loggers::DEVICE::INFO("时钟频率: %d Hz = %d KHz = %d MHz", freq.to_hz(), freq.to_khz(), freq.to_mhz());
     init_timer(freq, 100_Hz); 
-    DEVICE::INFO("启用时钟中断...");
+    loggers::DEVICE::INFO("启用时钟中断...");
 
     // 开启中断
     Riscv64Interrupt::sti();

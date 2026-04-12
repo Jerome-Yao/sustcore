@@ -29,33 +29,18 @@ constexpr KernelIO kio;
 
 static_assert(basecpp::IOTrait<KernelIO>, "KernelIO does not satisfy IOTrait");
 
-
 // Loggers
+#include <config/log.h>
 #include <sus/logger.h>
 
-// NOLINTBEGIN(cppcoreguidelines-macro-usage)
-#ifdef DISABLE_LOG
-// #define IF_ENABLE(level) LogLevel::DISABLE
-#else
-#define IF_ENABLE(level) level
-#endif
-// NOLINTEND(cppcoreguidelines-macro-usage)
-
-// 通用Logger
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::DEBUG), LOGGER);
-
-// 内存管理相关Logger
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::INFO), MEMORY)
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::INFO), PAGING);
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::INFO), BUDDY)
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::DEBUG), SLUB);
-
-// 设备相关Logger
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::DEBUG), DEVICE)
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::DEBUG), INTERRUPT);
-
-// Capability相关Logger
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::DEBUG), CAPABILITY);
-
-// 调度相关Logger
-DECLARE_LOGGER(KernelIO, IF_ENABLE(LogLevel::DEBUG), TASK);
+namespace loggers {
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_SUSTCORE, SUSTCORE);
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_MEMORY, MEMORY)
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_PAGING, PAGING);
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_BUDDY, BUDDY)
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_SLUB, SLUB);
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_DEVICE, DEVICE)
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_INTERRUPT, INTERRUPT);
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_CAPABILITY, CAPABILITY);
+    DECLARE_LOGGER(KernelIO, __CONF_LOGGER_LEVEL_TASK, TASK);
+};  // namespace loggers

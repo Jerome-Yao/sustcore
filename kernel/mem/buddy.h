@@ -79,13 +79,13 @@ public:
 
     template <KernelStage Stage = KernelStage::POST_INIT>
     static void __print_memory_layout() {
-        BUDDY::DEBUG("Buddy Allocator Memory Layout (Stage: %d):\n", static_cast<int>(Stage));
+        loggers::BUDDY::DEBUG("Buddy Allocator Memory Layout (Stage: %d):\n", static_cast<int>(Stage));
         for (int i = 0; i <= MAX_BUDDY_ORDER; i++) {
             BlockList &list = free_area[i].get();
-            BUDDY::DEBUG("Order %d: %d blocks:", i, list.size());
+            loggers::BUDDY::DEBUG("Order %d: %d blocks:", i, list.size());
             for (auto iter = list.begin(); iter != list.end(); ++iter) {
                 PhyAddr paddr = block2pa<Stage>(&*iter);
-                BUDDY::DEBUG("    Free block at [%p, %p)\n", i, paddr.addr(),
+                loggers::BUDDY::DEBUG("    Free block at [%p, %p)\n", i, paddr.addr(),
                              (paddr + (1ul << (i + 12))).addr());
             }
         }
@@ -171,7 +171,7 @@ private:
 
         if (current_order > BuddyAllocator::MAX_BUDDY_ORDER) {
             // 无可用内存块
-            BUDDY::ERROR("无可用内存块");
+            loggers::BUDDY::ERROR("无可用内存块");
             unexpect_return(ErrCode::OUT_OF_MEMORY);
         }
 
@@ -188,7 +188,7 @@ private:
             umb_t block_size    = 1ul << (current_order + 12);
             PhyAddr buddy_paddr = paddr + block_size;
 
-            BUDDY::DEBUG("将 [%p, %p) 分割为 [%p, %p) 和 [%p, %p)",
+            loggers::BUDDY::DEBUG("将 [%p, %p) 分割为 [%p, %p) 和 [%p, %p)",
                          paddr.addr(), (paddr + (block_size << 1)).addr(),
                          paddr.addr(), (paddr + block_size).addr(),
                          buddy_paddr.addr(), (buddy_paddr + block_size).addr());
@@ -234,7 +234,7 @@ Result<PhyAddr> BuddyAllocator::get_free_page(size_t frame_count) {
         unexpect_return(ErrCode::INVALID_PARAM);
     }
     if (frame_count > (1ul << MAX_BUDDY_ORDER)) {
-        BUDDY::ERROR("请求的页数 %u 超出最大支持的范围", frame_count);
+        loggers::BUDDY::ERROR("请求的页数 %u 超出最大支持的范围", frame_count);
         unexpect_return(ErrCode::INVALID_PARAM);
     }
 
@@ -260,7 +260,7 @@ Result<PhyAddr> BuddyAllocator::get_free_page(size_t frame_count) {
 template <KernelStage Stage>
 Result<PhyAddr> BuddyAllocator::get_free_pages_in_order(size_t order) {
     if (order > BuddyAllocator::MAX_BUDDY_ORDER) {
-        BUDDY::ERROR("无可用内存块: order %d 超出范围", order);
+        loggers::BUDDY::ERROR("无可用内存块: order %d 超出范围", order);
         unexpect_return(ErrCode::INVALID_PARAM);
     }
     return fetch_frame_order<Stage>(order);
@@ -339,7 +339,7 @@ void BuddyAllocator::put_page_in_order(const PhyAddr paddr, int order) {
         if (buddy) {
             PhyAddr buddy_paddr  = block2pa<Stage>(buddy);
             PhyAddr merged_paddr = is_left ? cur_paddr : cur_paddr - block_size;
-            BUDDY::DEBUG("将 [%p, %p) 与 [%p, %p) 合并为 [%p, %p)",
+            loggers::BUDDY::DEBUG("将 [%p, %p) 与 [%p, %p) 合并为 [%p, %p)",
                          cur_paddr.addr(), (cur_paddr + block_size).addr(),
                          buddy_paddr.addr(), (buddy_paddr + block_size).addr(),
                          merged_paddr.addr(),

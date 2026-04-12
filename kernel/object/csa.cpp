@@ -79,7 +79,7 @@ Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
             // 刚刚migrate成功, 但是却无法remove
             // 现在, 能力空间中既有原来的能力, 又有迁移后的能力
             // 这是一个严重的问题, 需要在此处崩溃
-            CAPABILITY::FATAL("迁移失败后撤销迁移操作时发生错误: %d",
+            loggers::CAPABILITY::FATAL("迁移失败后撤销迁移操作时发生错误: %d",
                               static_cast<int>(err2.error()));
             panic("无法撤销迁移操作, 能力空间已处于不一致状态!");
         }

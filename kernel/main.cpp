@@ -123,7 +123,7 @@ void __sus_cxa_throw(const std::exception &e) {
 RamDiskDevice *make_initrd(void) {
     size_t sz             = (char *)&e_initrd - (char *)&s_initrd;
     RamDiskDevice *device = new RamDiskDevice(&s_initrd, sz, 1);
-    LOGGER::INFO("initrd大小为 %u KB", sz / 1024, sz / 1024 / 1024);
+    loggers::SUSTCORE::INFO("initrd大小为 %u KB", sz / 1024, sz / 1024 / 1024);
     return device;
 }
 
@@ -144,7 +144,7 @@ void run_defers(void *s_defer, void *e_defer) {
     size_t defer_seg_size             = (char *)e_defer - (char *)s_defer;
     assert(defer_seg_size % DEFER_ENTRY_SIZE == 0);
     size_t defer_count = defer_seg_size / DEFER_ENTRY_SIZE;
-    LOGGER::INFO(
+    loggers::SUSTCORE::INFO(
         "开始运行defer构造函数。本批次defer起始地址为%p, 终结于%p, "
         "总共%u个defer",
         s_defer, e_defer, defer_count);
@@ -159,7 +159,7 @@ void run_defers(void *s_defer, void *e_defer) {
                 prev->_constructor == entry->_constructor)
             {
                 duplicated = true;
-                LOGGER::WARN(
+                loggers::SUSTCORE::WARN(
                     "跳过重复defer注册: 当前第%d项与第%d项重复, "
                     "defer实例地址为%p, 构造器为%p",
                     i, j, entry->_instance, entry->_constructor);
@@ -169,7 +169,7 @@ void run_defers(void *s_defer, void *e_defer) {
         if (duplicated) {
             continue;
         }
-        LOGGER::DEBUG("运行第%d个defer构造函数, defer实例地址为%p, 构造器为%p",
+        loggers::SUSTCORE::DEBUG("运行第%d个defer构造函数, defer实例地址为%p, 构造器为%p",
                       i, entry->_instance, entry->_constructor);
         entry->_constructor(entry->_instance);
     }
@@ -181,7 +181,7 @@ void kernel_paging_setup(void) {
     // 创建内核页表管理器
     auto gfp_res                = GFP::get_free_page<STAGE>();
     if (!gfp_res.has_value()) {
-        LOGGER::ERROR("无法为内核页表分配物理页");
+        loggers::SUSTCORE::ERROR("无法为内核页表分配物理页");
         while (true);
     }
 
@@ -204,7 +204,7 @@ void kernel_paging_setup(void) {
 
 extern "C" void post_init(void) {
     // logger
-    LOGGER::INFO("已进入 post-init 阶段");
+    loggers::SUSTCORE::INFO("已进入 post-init 阶段");
 
     // 将 pre-init 阶段中初始化的子系统再次初始化, 以适应内核虚拟地址空间
     GFP::post_init(regions, region_cnt);
@@ -235,7 +235,7 @@ extern "C" void post_init(void) {
 
     auto gfp_res = GFP::get_free_page<KernelStage::POST_INIT>();
     if (!gfp_res.has_value()) {
-        LOGGER::ERROR("无法为 TM 分配物理页");
+        loggers::SUSTCORE::ERROR("无法为 TM 分配物理页");
         while (true);
     }
     PhyAddr tm_pgd = gfp_res.value();
@@ -246,7 +246,7 @@ extern "C" void post_init(void) {
 
     Result<void> add_res = tm->add_vma(VMA::Type::DATA, data_vaddr, data_size);
     if (!add_res.has_value()) {
-        LOGGER::ERROR("无法添加VMA: %d", add_res.error());
+        loggers::SUSTCORE::ERROR("无法添加VMA: %d", add_res.error());
         while (true);
     }
 
@@ -260,11 +260,11 @@ extern "C" void post_init(void) {
     PhyAddr hw_root   = PageMan::read_root();
     PhyAddr env_root  = env().pgd;
     PhyAddr tm_root   = tm->pgd();
-    LOGGER::DEBUG(
+    loggers::SUSTCORE::DEBUG(
         "TM 切换完成: hw_root=%p, env_root=%p, tm_root=%p",
         hw_root.addr(), env_root.addr(), tm_root.addr());
     if (!(hw_root == env_root && env_root == tm_root)) {
-        LOGGER::ERROR(
+        loggers::SUSTCORE::ERROR(
             "页表根不一致! hw_root=%p, env_root=%p, tm_root=%p",
             hw_root.addr(), env_root.addr(), tm_root.addr());
     }
@@ -289,7 +289,7 @@ extern "C" void post_init(void) {
     sstatus.sum = 0;
     csr_set_sstatus(sstatus);
 
-    LOGGER::INFO("Test complete. Entering idle loop.");
+    loggers::SUSTCORE::INFO("Test complete. Entering idle loop.");
 
     while (true);
 }
@@ -308,17 +308,17 @@ void pre_init(void) {
         PhyAddr start = regions[i].ptr;
         PhyAddr end   = start + regions[i].size;
 
-        LOGGER::INFO("探测到内存区域 %d: [%p, %p) Status: %d", i, start.addr(),
+        loggers::SUSTCORE::INFO("探测到内存区域 %d: [%p, %p) Status: %d", i, start.addr(),
                      end.addr(), static_cast<int>(regions[i].status));
         if (upper_bound < end) {
             upper_bound = end;
         }
     }
 
-    LOGGER::INFO("初始化GFP");
+    loggers::SUSTCORE::INFO("初始化GFP");
     GFP::pre_init(regions, region_cnt);
 
-    LOGGER::INFO("初始化内核地址空间管理器");
+    loggers::SUSTCORE::INFO("初始化内核地址空间管理器");
     EarlyPageMan::init();
     uppm = upper_bound;
     kernel_paging_setup();
@@ -328,12 +328,12 @@ void pre_init(void) {
     typedef void (*RediveFuncType)(void);
     PhyAddr redive_paddr  = (PhyAddr)(void *)redive;
     KvaAddr redive_kvaddr = convert<KvaAddr>(redive_paddr);
-    LOGGER::DEBUG("redive函数物理地址: %p, 内核虚拟地址: %p",
+    loggers::SUSTCORE::DEBUG("redive函数物理地址: %p, 内核虚拟地址: %p",
                   redive_paddr.addr(), redive_kvaddr.addr());
     RediveFuncType redive_func = (RediveFuncType)redive_kvaddr.addr();
-    LOGGER::DEBUG("跳转到内核虚拟地址空间中的redive函数: %p", redive_func);
+    loggers::SUSTCORE::DEBUG("跳转到内核虚拟地址空间中的redive函数: %p", redive_func);
     redive_func();
-    LOGGER::ERROR("redive函数返回了, 这不应该发生!");
+    loggers::SUSTCORE::ERROR("redive函数返回了, 这不应该发生!");
     while (true);
 }
 

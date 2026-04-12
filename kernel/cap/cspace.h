@@ -45,11 +45,11 @@ public:
     Result<void> create(CSpace *space, CapIdx idx, Args &&...args) {
         const size_t slot_idx = idx.slot;
         if (slot_idx >= CGROUP_SLOTS) {
-            CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
+            loggers::CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
             return {unexpect, ErrCode::INVALID_INDEX};
         }
         if (_slot_used[slot_idx]) {
-            CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
+            loggers::CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
             return {unexpect, ErrCode::SLOT_BUSY};
         }
         // 直接构造Payload
@@ -113,7 +113,7 @@ public:
     Result<void> create(CapIdx idx, Args &&...args) {
         const size_t group_idx = idx.group;
         if (group_idx >= CSPACE_SIZE) {
-            CAPABILITY::ERROR("CGroup索引%u超出CSpace %d容量", group_idx,
+            loggers::CAPABILITY::ERROR("CGroup索引%u超出CSpace %d容量", group_idx,
                               this->sp_idx);
             return {unexpect, ErrCode::INVALID_INDEX};
         }
