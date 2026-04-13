@@ -13,9 +13,8 @@ Checks: >
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays
 
-HeaderFilterRegex: '.*'
-
-Checks: 'cppcoreguidelines-owning-memory'
 CheckOptions:
   - key:   cppcoreguidelines-owning-memory.OwnerTypes
     value: '::util::gsl_owner'
+
+HeaderFilterRegex: '.*'
