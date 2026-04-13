@@ -9,6 +9,7 @@ Checks: >
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-owning-memory,
   -bugprone-reserved-identifier,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays

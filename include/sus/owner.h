@@ -14,9 +14,6 @@
 #include <type_traits>
 
 namespace util {
-    template <class T, std::enable_if_t<std::is_pointer<T>::value, bool> = true>
-    using gsl_owner = T;
-
     /**
      * @brief 表示拥有所有权的指针类型
      *
@@ -68,7 +65,7 @@ namespace util {
             return ptr != nullptr;
         }
 
-        operator gsl_owner<pointer>() const {
+        operator pointer() const {
             return ptr;
         }
     };
