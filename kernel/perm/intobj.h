@@ -15,7 +15,7 @@
 #include <sustcore/capability.h>
 
 namespace perm::intobj {
-    // IntObject的权限定义
+    // IntObjectect的权限定义
     // 该对象仅用于测试能力系统, 因此权限非常简单
     constexpr b64 READ     = 0x1'0000;
     constexpr b64 WRITE    = 0x2'0000;
@@ -24,7 +24,7 @@ namespace perm::intobj {
 }  // namespace perm::intobj
 
 namespace perm::sintobj {
-    // SIntObject的权限定义
+    // SharedIntObjectect的权限定义
     // 该对象仅用于测试能力系统, 因此权限非常简单
     constexpr b64 READ     = 0x1'0000;
     constexpr b64 WRITE    = 0x2'0000;

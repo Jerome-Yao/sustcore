@@ -29,7 +29,7 @@ public:
     bool _slot_used[CGROUP_SLOTS];
 
     // 构造/删除Capability
-    void _emplace_create(CSpace *space, CapIdx idx, Payload *payload);
+    void _emplace_create(CSpace *space, CapIdx idx, util::owner<Payload *> payload);
     void _emplace_clone(CSpace *space, CapIdx idx, Capability *parent);
     void _emplace_migrate(CSpace *space, CapIdx idx, Capability *origin);
     void _remove(size_t slot_idx);
@@ -53,7 +53,22 @@ public:
             return {unexpect, ErrCode::SLOT_BUSY};
         }
         // 直接构造Payload
-        Payload *payload = new PayloadType(std::forward<Args>(args)...);
+        auto payload = util::owner(new PayloadType(std::forward<Args>(args)...));
+        _emplace_create(space, idx, payload);
+        return {};
+    }
+
+    template <typename PayloadType>
+    Result<void> create_from(CSpace *space, CapIdx idx, util::owner<Payload *> payload) {
+        const size_t slot_idx = idx.slot;
+        if (slot_idx >= CGROUP_SLOTS) {
+            loggers::CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+        }
+        if (_slot_used[slot_idx]) {
+            loggers::CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
+            return {unexpect, ErrCode::SLOT_BUSY};
+        }
         _emplace_create(space, idx, payload);
         return {};
     }
@@ -79,7 +94,7 @@ public:
         return !flag;
     }
 
-    friend class CSAOp;
+    friend class CSAOperator;
 };
 
 // CSpace
@@ -121,6 +136,19 @@ public:
         return group->create<PayloadType>(this, idx,
                                           std::forward<Args>(args)...);
     }
+
+    template <typename PayloadType>
+    Result<void> create_from(CapIdx idx, util::owner<Payload *> payload) {
+        const size_t group_idx = idx.group;
+        if (group_idx >= CSPACE_SIZE) {
+            loggers::CAPABILITY::ERROR("CGroup索引%u超出CSpace %d容量", group_idx,
+                              this->sp_idx);
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+        }
+        CGroup *group = group_at(group_idx);
+        return group->create_from<PayloadType>(this, idx, payload);
+    }
+
     Result<void> clone(CapIdx idx, Capability *parent);
     Result<void> migrate(CapIdx idx, Capability *origin);
     Result<void> remove(CapIdx idx);
@@ -139,7 +167,7 @@ public:
     // 腾出CSpace中所有为空的CGroup
     void tidyup(void);
 
-    friend class CSAOp;
+    friend class CSAOperator;
 };
 
 class RecvSpace : protected CSpace {
@@ -164,5 +192,5 @@ public:
         _recv_src[group_idx] = src_cholder_id;
     }
 
-    friend class CSAOp;
+    friend class CSAOperator;
 };

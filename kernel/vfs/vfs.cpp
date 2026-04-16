@@ -165,7 +165,7 @@ Result<void> VFS::tidy_up() {
     // 最后遍历mount_table, 对每个挂载点的inode_cache进行整理
     for (const auto &entry : mount_table) {
         VSuperblock *vsb = entry.second.get();
-        auto tidy_res = vsb->tidy_up();
+        auto tidy_res    = vsb->tidy_up();
         if (!tidy_res.has_value()) {
             unexpect_return(ErrCode::FS_ERROR);
         }
@@ -223,7 +223,7 @@ Result<VINode *> VSuperblock::update_inode(inode_t inode_id) {
 
 // 将mnt_path的root更新到dentry_cache中
 Result<void> VFS::update_root(const util::Path &mnt_path) {
-    if (! mount_table.contains(mnt_path)) {
+    if (!mount_table.contains(mnt_path)) {
         unexpect_return(ErrCode::INVALID_PARAM);
     }
     auto get_res = mount_table.get(mnt_path);
@@ -231,9 +231,8 @@ Result<void> VFS::update_root(const util::Path &mnt_path) {
         unexpect_return(ErrCode::UNKNOWN_ERROR);
     }
     VSuperblock *vsb = get_res.value().get();
-    auto root_res = vsb->sb()->root().and_then(
-        [vsb](inode_t root_id) { return vsb->update_inode(root_id); }
-    );
+    auto root_res    = vsb->sb()->root().and_then(
+        [vsb](inode_t root_id) { return vsb->update_inode(root_id); });
     propagate(root_res);
     VINode *root_vind = root_res.value();
     util::owner<DEntry *> root_de =
@@ -241,7 +240,7 @@ Result<void> VFS::update_root(const util::Path &mnt_path) {
     if (!root_de) {
         unexpect_return(ErrCode::OUT_OF_MEMORY);
     }
-    assert (! dentry_cache.contains(mnt_path));
+    assert(!dentry_cache.contains(mnt_path));
     dentry_cache.put(mnt_path, root_de);
     void_return();
 }
@@ -251,8 +250,8 @@ Result<DEntry *> VFS::locate(const util::Path &path) {
     // 沿着path向上寻找, 直到找到一个在dentry_cache中的路径
     // 然后沿着这个路径向下更新dentry_cache, 直到path被包含在内
     util::Path cur_path = path;
-    bool rooted = false;
-    while (! rooted) {
+    bool rooted         = false;
+    while (!rooted) {
         if (cur_path == "/") {
             rooted = true;
         }
@@ -322,4 +321,68 @@ Result<void> VFS::update_dentry(const util::Path &path) {
 
     // 如此一来, 就更新了dentry_cache, 使其包含path
     void_return();
+}
+
+// 读取文件内容到buf中, 返回实际读取的字节数
+Result<size_t> VFS::read(VINode *vfile, off_t offset, void *buf, size_t len) const {
+    // check if vfile is valid
+    if (vfile->closable()) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    // get interfaces from vfile
+    auto file_res = vfile->inode()->as_file();
+    propagate(file_res);
+    IFile *file = file_res.value();
+
+    return file->read(offset, buf, len);
+}
+
+// 将buf中的内容写入文件, 返回实际写入的字节数
+Result<size_t> VFS::write(VINode *vfile, off_t offset, const void *buf,
+                          size_t len) const
+{
+    // check if vfile is valid
+    if (vfile->closable()) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    // get interfaces from vfile
+    auto file_res = vfile->inode()->as_file();
+    propagate(file_res);
+    IFile *file = file_res.value();
+
+    return file->write(offset, buf, len);
+}
+
+// 获取文件大小
+Result<size_t> VFS::size(VINode *vfile) const
+{
+    // check if vfile is valid
+    if (vfile->closable()) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    // get interfaces from vfile
+    auto file_res = vfile->inode()->as_file();
+    propagate(file_res);
+    IFile *file = file_res.value();
+
+    return file->size();
+}
+
+// 刷新文件内容到存储设备
+Result<void> VFS::sync(VINode *vfile) const
+{
+    // check if vfile is valid
+    if (vfile->closable()) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    // get interfaces from vfile
+    auto file_res = vfile->inode()->as_file();
+    propagate(file_res);
+    IFile *file = file_res.value();
+
+    return file->sync();
 }

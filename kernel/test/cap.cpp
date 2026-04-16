@@ -52,21 +52,21 @@ namespace test::cap {
 
             auto csa_result = holder0->csa();
             tassert(csa_result.has_value());
-            CSAOp op0(csa_result.value());
+            CSAOperator op0(csa_result.value());
 
             auto gfs_result = op0.get_free_slot();
             tassert(gfs_result.has_value(), "分配槽位 idx_obj0");
             CapIdx idx_obj0 = gfs_result.value();
 
-            expect("在 holder0 创建 IntObj 能力, 初始值应为 12345");
-            auto create_result = op0.create<IntObj>(idx_obj0, 12345);
-            tassert(create_result.has_value(), "创建 IntObj");
+            expect("在 holder0 创建 IntObject 能力, 初始值应为 12345");
+            auto create_result = op0.create<IntObject>(idx_obj0, 12345);
+            tassert(create_result.has_value(), "创建 IntObject");
 
             check("从 CSpace 取回新建能力并执行 read() 校验初始值");
             auto get_result = holder0->space().get(idx_obj0);
             tassert(get_result.has_value(), "获取初始对象能力");
 
-            IntOp op_obj0(get_result.value());
+            IntObjOperator op_obj0(get_result.value());
             auto read_obj0 = op_obj0.read();
             tassert(read_obj0.has_value() && read_obj0.value() == 12345,
                     "初始对象读值校验");
@@ -75,7 +75,7 @@ namespace test::cap {
 
     class CaseSharedObject : public TestCase {
     public:
-        CaseSharedObject() : TestCase("共享对象 SIntObj split 生命周期测试") {}
+        CaseSharedObject() : TestCase("共享对象 SharedIntObject split 生命周期测试") {}
         void _run(void* env [[maybe_unused]]) const noexcept override {
             CHolderManager cholder_manager;
             auto holder0_res = cholder_manager.create_holder();
@@ -84,52 +84,52 @@ namespace test::cap {
 
             auto csa_result = holder0->csa();
             tassert(csa_result.has_value());
-            CSAOp op0(csa_result.value());
+            CSAOperator op0(csa_result.value());
 
-            SIntManager manager;
+            SharedIntObjectManager manager;
 
             auto gfs_result_root = op0.get_free_slot();
             tassert(gfs_result_root.has_value(), "分配槽位 idx_sint_root0");
             CapIdx idx_root = gfs_result_root.value();
 
             expect(
-                "在 holder0 创建共享对象 SIntObj 访问器能力, 初始值应为 31415");
+                "在 holder0 创建共享对象 SharedIntObject 访问器能力, 初始值应为 31415");
             auto create_result =
-                op0.create<SIntAcc>(idx_root, manager.create(31415));
+                op0.create<SharedIntObjectAccessor>(idx_root, manager.create(31415));
             tassert(create_result.has_value(), "创建根能力 #0");
             ttest(manager.object_count() == 1);
 
             auto get_root_result = holder0->space().get(idx_root);
             tassert(get_root_result.has_value(), "获取共享对象根能力 #0");
-            SIntOp root_op(get_root_result.value());
+            SharedIntObjOperator root_op(get_root_result.value());
             auto root_read0 = root_op.read();
             tassert(root_read0.has_value() && root_read0.value() == 31415,
                     "共享对象初始读值校验");
 
             expect(
                 "使用 split 创建两个新根能力, 三个根能力应同时持有同一 "
-                "SIntObj");
+                "SharedIntObject");
 
             auto gfs_result_root1 = op0.get_free_slot();
             tassert(gfs_result_root1.has_value(), "分配槽位 idx_sint_root1");
             CapIdx idx_root1 = gfs_result_root1.value();
             auto split_root1_result =
-                op0.split<SIntAcc>(idx_root1, &holder0->space(), idx_root);
+                op0.split<SharedIntObjectAccessor>(idx_root1, &holder0->space(), idx_root);
             tassert(split_root1_result.has_value(), "split 创建根能力 #1");
 
             auto gfs_result_root2 = op0.get_free_slot();
             tassert(gfs_result_root2.has_value(), "分配槽位 idx_sint_root2");
             CapIdx idx_root2 = gfs_result_root2.value();
             auto split_root2_result =
-                op0.split<SIntAcc>(idx_root2, &holder0->space(), idx_root);
+                op0.split<SharedIntObjectAccessor>(idx_root2, &holder0->space(), idx_root);
             tassert(split_root2_result.has_value(), "split 创建根能力 #2");
 
             auto get_root1_result = holder0->space().get(idx_root1);
             auto get_root2_result = holder0->space().get(idx_root2);
             tassert(get_root1_result.has_value() && get_root2_result.has_value(),
                     "获取 split 后根能力");
-            SIntOp root1_op(get_root1_result.value());
-            SIntOp root2_op(get_root2_result.value());
+            SharedIntObjOperator root1_op(get_root1_result.value());
+            SharedIntObjOperator root2_op(get_root2_result.value());
 
             action("通过根能力 #1 写入后, 其余根能力应观察到同一结果");
             auto increase_root1_result = root1_op.increase();
@@ -175,7 +175,7 @@ namespace test::cap {
 
     class CaseSplitPermission : public TestCase {
     public:
-        CaseSplitPermission() : TestCase("SIntObj split 权限边界测试") {}
+        CaseSplitPermission() : TestCase("SharedIntObject split 权限边界测试") {}
         void _run(void* env [[maybe_unused]]) const noexcept override {
             CHolderManager cholder_manager;
             auto holder0_res = cholder_manager.create_holder();
@@ -184,15 +184,15 @@ namespace test::cap {
 
             auto csa_result = holder0->csa();
             tassert(csa_result.has_value());
-            CSAOp op0(csa_result.value());
-            SIntManager manager;
+            CSAOperator op0(csa_result.value());
+            SharedIntObjectManager manager;
 
             auto gfs_result_no_split_src = op0.get_free_slot();
             tassert(gfs_result_no_split_src.has_value(),
                     "分配槽位 idx_no_split_src");
             CapIdx idx_no_split_src = gfs_result_no_split_src.value();
             auto create_no_split_result =
-                op0.create<SIntAcc>(idx_no_split_src, manager.create(27182));
+                op0.create<SharedIntObjectAccessor>(idx_no_split_src, manager.create(27182));
             tassert(create_no_split_result.has_value(),
                     "创建无 SPLIT 负向场景源能力");
 
@@ -211,7 +211,7 @@ namespace test::cap {
             CapIdx idx_no_split_dst = gfs_result_no_split_dst.value();
 
             expect("去除 SPLIT 权限后执行 split 应失败");
-            auto split_no_split_result = op0.split<SIntAcc>(
+            auto split_no_split_result = op0.split<SharedIntObjectAccessor>(
                 idx_no_split_dst, &holder0->space(), idx_no_split_src);
             tassert(!split_no_split_result.has_value() &&
                         split_no_split_result.error() ==
@@ -224,7 +224,7 @@ namespace test::cap {
                     "分配槽位 idx_split_only_src");
             CapIdx idx_split_only_src = gfs_result_split_only_src.value();
             auto create_split_only_result =
-                op0.create<SIntAcc>(idx_split_only_src, manager.create(16180));
+                op0.create<SharedIntObjectAccessor>(idx_split_only_src, manager.create(16180));
             tassert(create_split_only_result.has_value(),
                     "创建 SPLIT-only 场景源能力");
 
@@ -236,14 +236,14 @@ namespace test::cap {
             tassert(gfs_result_split_observer.has_value(),
                     "分配槽位 idx_split_observer");
             CapIdx idx_split_observer = gfs_result_split_observer.value();
-            auto split_observer_result = op0.split<SIntAcc>(
+            auto split_observer_result = op0.split<SharedIntObjectAccessor>(
                 idx_split_observer, &holder0->space(), idx_split_only_src);
             tassert(split_observer_result.has_value(), "创建观测能力(完整权限)");
 
             auto get_split_observer_result =
                 holder0->space().get(idx_split_observer);
             tassert(get_split_observer_result.has_value(), "获取观测能力");
-            SIntOp split_observer_op(get_split_observer_result.value());
+            SharedIntObjOperator split_observer_op(get_split_observer_result.value());
             auto observer_read0 = split_observer_op.read();
             tassert(
                 observer_read0.has_value() && observer_read0.value() == 16180,
@@ -256,7 +256,7 @@ namespace test::cap {
             tassert(downgrade_split_only_result.has_value(),
                     "仅保留 SPLIT 权限");
 
-            SIntOp split_only_src_op(get_split_only_result.value());
+            SharedIntObjOperator split_only_src_op(get_split_only_result.value());
             auto src_read = split_only_src_op.read();
             tassert(
                 !src_read.has_value() &&
@@ -290,7 +290,7 @@ namespace test::cap {
             CapIdx idx_split_chain_l1 = gfs_result_split_chain_l1.value();
 
             expect("保留 SPLIT 且移除其它权限后, split 仍应成功");
-            auto split_chain_l1_result = op0.split<SIntAcc>(
+            auto split_chain_l1_result = op0.split<SharedIntObjectAccessor>(
                 idx_split_chain_l1, &holder0->space(), idx_split_only_src);
             tassert(split_chain_l1_result.has_value(),
                     "验证 SPLIT-only 权限下 split 成功");
@@ -299,7 +299,7 @@ namespace test::cap {
             tassert(gfs_result_split_chain_l2.has_value(),
                     "分配槽位 idx_split_chain_l2");
             CapIdx idx_split_chain_l2 = gfs_result_split_chain_l2.value();
-            auto split_chain_l2_result = op0.split<SIntAcc>(
+            auto split_chain_l2_result = op0.split<SharedIntObjectAccessor>(
                 idx_split_chain_l2, &holder0->space(), idx_split_chain_l1);
             tassert(split_chain_l2_result.has_value(),
                     "验证链式 split 成功(l1 -> l2)");
@@ -311,8 +311,8 @@ namespace test::cap {
             tassert(get_split_chain_l1_result.has_value() &&
                         get_split_chain_l2_result.has_value(),
                     "获取链式 split 结果能力");
-            SIntOp split_chain_l1_op(get_split_chain_l1_result.value());
-            SIntOp split_chain_l2_op(get_split_chain_l2_result.value());
+            SharedIntObjOperator split_chain_l1_op(get_split_chain_l1_result.value());
+            SharedIntObjOperator split_chain_l2_op(get_split_chain_l2_result.value());
             auto l1_read = split_chain_l1_op.read();
             auto l2_read = split_chain_l2_op.read();
             tassert(!l1_read.has_value() &&
@@ -353,14 +353,14 @@ namespace test::cap {
 
             auto csa_result = holder0->csa();
             tassert(csa_result.has_value());
-            CSAOp op0(csa_result.value());
+            CSAOperator op0(csa_result.value());
 
             auto gfs_result_obj0 = op0.get_free_slot();
             tassert(gfs_result_obj0.has_value(), "分配槽位 idx_obj0");
             CapIdx idx_obj0 = gfs_result_obj0.value();
 
-            auto create_result = op0.create<IntObj>(idx_obj0, 12345);
-            tassert(create_result.has_value(), "创建 IntObj");
+            auto create_result = op0.create<IntObject>(idx_obj0, 12345);
+            tassert(create_result.has_value(), "创建 IntObject");
 
             auto gfs_result_obj0_clone = op0.get_free_slot();
             tassert(gfs_result_obj0_clone.has_value(),
@@ -375,7 +375,7 @@ namespace test::cap {
             check("读取 clone 能力, 期望值仍为 12345");
             auto get_clone_result = holder0->space().get(idx_obj0_clone);
             tassert(get_clone_result.has_value());
-            IntOp op_clone(get_clone_result.value());
+            IntObjOperator op_clone(get_clone_result.value());
             auto read_clone_result = op_clone.read();
             tassert(read_clone_result.has_value() &&
                         read_clone_result.value() == 12345,
@@ -399,14 +399,14 @@ namespace test::cap {
             auto csa_result1 = holder1->csa();
             tassert(csa_result0.has_value() && csa_result1.has_value(),
                     "获取源/目标 CHolder 的 CSA 能力");
-            CSAOp op0(csa_result0.value());
-            CSAOp op1(csa_result1.value());
+            CSAOperator op0(csa_result0.value());
+            CSAOperator op1(csa_result1.value());
 
             auto gfs_result_obj0 = op0.get_free_slot();
             tassert(gfs_result_obj0.has_value(), "分配槽位 idx_obj0");
             CapIdx idx_obj0 = gfs_result_obj0.value();
-            auto create_result = op0.create<IntObj>(idx_obj0, 12345);
-            tassert(create_result.has_value(), "创建 IntObj");
+            auto create_result = op0.create<IntObject>(idx_obj0, 12345);
+            tassert(create_result.has_value(), "创建 IntObject");
 
             auto gfs_result_obj1 = op1.get_free_slot();
             tassert(gfs_result_obj1.has_value(), "分配槽位 idx_obj1");
@@ -422,7 +422,7 @@ namespace test::cap {
             check("校验目标槽位读值正确");
             auto get_migrated_result = holder1->space().get(idx_obj1);
             tassert(get_migrated_result.has_value());
-            IntOp op_migrated(get_migrated_result.value());
+            IntObjOperator op_migrated(get_migrated_result.value());
             auto read_migrated_result = op_migrated.read();
             tassert(read_migrated_result.has_value() &&
                         read_migrated_result.value() == 12345,
@@ -441,14 +441,14 @@ namespace test::cap {
 
             auto csa_result = holder0->csa();
             tassert(csa_result.has_value());
-            CSAOp op0(csa_result.value());
+            CSAOperator op0(csa_result.value());
             auto gfs_result = op0.get_free_slot();
             tassert(gfs_result.has_value(), "分配槽位 idx");
             CapIdx idx = gfs_result.value();
-            auto create_result = op0.create<IntObj>(idx, 12345);
-            tassert(create_result.has_value(), "创建 IntObj");
+            auto create_result = op0.create<IntObject>(idx, 12345);
+            tassert(create_result.has_value(), "创建 IntObject");
             auto get_result = holder0->space().get(idx);
-            tassert(get_result.has_value(), "获取 IntObj 能力");
+            tassert(get_result.has_value(), "获取 IntObject 能力");
             Capability* cap = get_result.value();
 
             expect("降权到 READ-only, 写操作应被拒绝");
@@ -456,7 +456,7 @@ namespace test::cap {
             auto downgrade_read_result = cap->downgrade(read_only);
             tassert(downgrade_read_result.has_value(), "执行降权至 READ");
 
-            IntOp op(cap);
+            IntObjOperator op(cap);
             auto increase_result = op.increase();
             tassert(!increase_result.has_value() &&
                         increase_result.error() ==
@@ -493,12 +493,12 @@ namespace test::cap {
 
             auto csa_result = holder0->csa();
             tassert(csa_result.has_value());
-            CSAOp op0(csa_result.value());
+            CSAOperator op0(csa_result.value());
             auto gfs_result_src = op0.get_free_slot();
             tassert(gfs_result_src.has_value(), "分配槽位 idx_src");
             CapIdx idx_src = gfs_result_src.value();
-            auto create_result = op0.create<IntObj>(idx_src, 24680);
-            tassert(create_result.has_value(), "创建 IntObj");
+            auto create_result = op0.create<IntObject>(idx_src, 24680);
+            tassert(create_result.has_value(), "创建 IntObject");
             auto get_src_result = holder0->space().get(idx_src);
             tassert(get_src_result.has_value(), "获取源能力");
             Capability* cap_src = get_src_result.value();
@@ -532,7 +532,7 @@ namespace test::cap {
             check("通过 CHolder::access 访问应成功");
             auto access_result = holder1->access(idx_dst);
             tassert(access_result.has_value(), "通过 CHolder::access 访问能力");
-            IntOp op_dst(access_result.value());
+            IntObjOperator op_dst(access_result.value());
             auto read_dst_result = op_dst.read();
             tassert(read_dst_result.has_value() && read_dst_result.value() == 24680,
                     "RecvSpace 目标能力读值校验");
@@ -555,13 +555,13 @@ namespace test::cap {
             auto csa_result1 = holder1->csa();
             tassert(csa_result0.has_value() && csa_result1.has_value(),
                     "获取源/目标 CHolder 的 CSA 能力");
-            CSAOp op0(csa_result0.value());
-            CSAOp op1(csa_result1.value());
+            CSAOperator op0(csa_result0.value());
+            CSAOperator op1(csa_result1.value());
 
             auto gfs_result_root = op0.get_free_slot();
             tassert(gfs_result_root.has_value(), "分配槽位 idx_root");
             CapIdx idx_root = gfs_result_root.value();
-            auto create_result = op0.create<IntObj>(idx_root, 999);
+            auto create_result = op0.create<IntObject>(idx_root, 999);
             tassert(create_result.has_value(), "创建根能力");
 
             auto gfs_result_l1_keep = op0.get_free_slot();

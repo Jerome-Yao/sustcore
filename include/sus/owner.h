@@ -40,6 +40,10 @@ namespace util {
 
     public:
         constexpr explicit owner(pointer p = nullptr) : ptr(p) {}
+
+        template <typename U, typename = std::enable_if_t<std::is_convertible_v<U*, pointer>>>
+        constexpr owner(owner<U*> other) : ptr(other.get()) {}
+
         ~owner() = default;
 
         constexpr owner(const owner&)             = default;

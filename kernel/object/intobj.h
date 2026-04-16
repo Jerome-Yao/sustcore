@@ -19,21 +19,21 @@
 #include <perm/intobj.h>
 #include <sustcore/capability.h>
 
-class IntOp;
-class SIntOp;
+class IntObjOperator;
+class SharedIntObjOperator;
 
-class IntObj : public _PayloadHelper<IntObj> {
+class IntObject : public _PayloadHelper<IntObject> {
 public:
     static constexpr PayloadType IDENTIFIER = PayloadType::INTOBJ;
-    friend class IntOp;
-    using Operation = IntOp;
+    friend class IntObjOperator;
+    using Operation = IntObjOperator;
 
 private:
     int value;
 
 public:
-    constexpr IntObj(int v) : value(v) {}
-    ~IntObj() = default;
+    constexpr IntObject(int v) : value(v) {}
+    ~IntObject() = default;
 protected:
     int _read() const {
         return value;
@@ -49,22 +49,22 @@ protected:
     }
 };
 
-class SIntManager;
+class SharedIntObjectManager;
 
-class SIntObj : public SharedObject<SIntObj> {
+class SharedIntObject : public SharedObject<SharedIntObject> {
 public:
     static constexpr PayloadType IDENTIFIER = PayloadType::SINTOBJ;
-    friend class SIntOp;
-    friend class SIntManager;
-    using Operation = SIntOp;
+    friend class SharedIntObjOperator;
+    friend class SharedIntObjectManager;
+    using Operation = SharedIntObjOperator;
 
 private:
     int value;
     bool discarded = false;
 
 public:
-    constexpr SIntObj(int v) : value(v) {}
-    virtual ~SIntObj() = default;
+    constexpr SharedIntObject(int v) : value(v) {}
+    virtual ~SharedIntObject() = default;
 
     virtual void on_death() {
         discarded = true;
@@ -85,14 +85,14 @@ protected:
     }
 };
 
-class SIntManager {
+class SharedIntObjectManager {
 protected:
-    util::ArrayList<SIntObj *> objects;
+    util::ArrayList<SharedIntObject *> objects;
 
 public:
-    constexpr SIntManager() : objects() {}
-    ~SIntManager() {
-        for (SIntObj *obj : objects) {
+    constexpr SharedIntObjectManager() : objects() {}
+    ~SharedIntObjectManager() {
+        for (SharedIntObject *obj : objects) {
             assert(obj->discarded == false);
             delete obj;
         }
@@ -114,8 +114,8 @@ public:
     }
 
     template <typename... Args>
-    SIntObj *create(Args... args) {
-        SIntObj *obj = new SIntObj(args...);
+    SharedIntObject *create(Args... args) {
+        SharedIntObject *obj = new SharedIntObject(args...);
         objects.push_back(obj);
         return obj;
     }
@@ -125,12 +125,12 @@ public:
     }
 };
 
-using SIntAcc = SharedObjectAccessor<SIntObj>;
+using SharedIntObjectAccessor = SharedObjectAccessor<SharedIntObject>;
 
-class IntOp {
+class IntObjOperator {
 protected:
     Capability *_cap;
-    IntObj *_obj;
+    IntObject *_obj;
 
     template <b64 perm>
     bool imply() const {
@@ -138,9 +138,9 @@ protected:
     }
 
 public:
-    constexpr IntOp(Capability *cap)
-        : _cap(cap), _obj(cap->payload<IntObj>()) {}
-    ~IntOp() = default;
+    constexpr IntObjOperator(Capability *cap)
+        : _cap(cap), _obj(cap->payload<IntObject>()) {}
+    ~IntObjOperator() = default;
 
     void *operator new(size_t size) = delete;
     void operator delete(void *ptr) = delete;
@@ -151,20 +151,20 @@ public:
     Result<void> decrease();
 };
 
-class SIntOp {
+class SharedIntObjOperator {
 protected:
     Capability *_cap;
-    SIntAcc *_acc;
-    SIntObj *_obj;
+    SharedIntObjectAccessor *_acc;
+    SharedIntObject *_obj;
     template <b64 perm>
     bool imply() const {
         return _cap->perm().basic_imply(perm);
     }
 
 public:
-    constexpr SIntOp(Capability *cap)
-        : _cap(cap), _acc(cap->payload<SIntAcc>()), _obj(_acc->obj()) {}
-    ~SIntOp() = default;
+    constexpr SharedIntObjOperator(Capability *cap)
+        : _cap(cap), _acc(cap->payload<SharedIntObjectAccessor>()), _obj(_acc->obj()) {}
+    ~SharedIntObjOperator() = default;
 
     void *operator new(size_t size) = delete;
     void operator delete(void *ptr) = delete;

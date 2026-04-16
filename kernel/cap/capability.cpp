@@ -21,7 +21,7 @@
 
 // capability
 
-Capability::Capability(Payload *payload, PermissionBits &&perm, CSpace *space,
+Capability::Capability(util::owner<Payload *> payload, PermissionBits &&perm, CSpace *space,
                        CapIdx idx)
     : TreeBase(),
       _payload(payload),

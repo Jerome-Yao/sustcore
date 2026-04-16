@@ -13,6 +13,7 @@
 
 #include <perm/permission.h>
 #include <mem/alloc.h>
+#include <sus/owner.h>
 #include <sus/raii.h>
 #include <sus/refcount.h>
 #include <sus/rtti.h>
@@ -65,7 +66,7 @@ protected:
     // 构造一个Capability
     // 其中, Payload被显式提供
     // 这也意味着, 这个Capability是一个根Capability, 直接管理该Payload
-    Capability(Payload *payload, PermissionBits &&perm, CSpace *space,
+    Capability(util::owner<Payload *> payload, PermissionBits &&perm, CSpace *space,
                CapIdx idx);
 
     // 派生构造函数
@@ -100,7 +101,7 @@ public:
 
 protected:
     // 创建能力
-    static Capability *create(void *ptr, Payload *payload,
+    static Capability *create(void *ptr, util::owner<Payload *> payload,
                               PermissionBits &&perm, CSpace *space,
                               CapIdx idx) {
         assert(payload != nullptr);

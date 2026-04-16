@@ -11,8 +11,10 @@
 
 #pragma once
 
+#include <cap/cholder.h>
 #include <mem/vma.h>
 #include <sustcore/addr.h>
+#include <vfs/vfs.h>
 
 namespace env {
     // passkey
@@ -29,6 +31,8 @@ namespace env {
 
         struct tm : public tags {};
         struct meminfo : public tags {};
+        struct vfs : public tags {};
+        struct chman : public tags {};
         struct pgd : public unmodifiable {};
     }  // namespace key
 
@@ -49,6 +53,8 @@ namespace env {
     class Environment {
     protected:
         TM *_tm;
+        VFS *_vfs;
+        CHolderManager *_chman;
         MemInfo _meminfo;
     public:
         constexpr Environment()
@@ -63,6 +69,12 @@ namespace env {
 
         const MemInfo &meminfo() const;
         MemInfo &meminfo(key::meminfo);
+
+        VFS *vfs() const;
+        VFS *&vfs(key::vfs);
+
+        CHolderManager *chman() const;
+        CHolderManager *&chman(key::chman);
     };
 
     void construct();

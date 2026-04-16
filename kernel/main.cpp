@@ -18,7 +18,8 @@
 #include <cap/cspace.h>
 #include <device/block.h>
 #include <env.h>
-#include <vfs/tarfs.h>
+#include <exe/task.h>
+#include <exe/elfloader.h>
 #include <kio.h>
 #include <mem/addr.h>
 #include <mem/alloc.h>
@@ -41,6 +42,7 @@
 #include <task/task.h>
 #include <test/framework.h>
 #include <vfs/ops.h>
+#include <vfs/tarfs.h>
 #include <vfs/vfs.h>
 
 #include <cstdarg>
@@ -56,11 +58,10 @@ namespace env {
     Environment &inst() {
         return _env;
     }
-    
-    void construct()
-    {
+
+    void construct() {
         // call the constructor here
-        new(&_env) Environment();
+        new (&_env) Environment();
     }
 
     TM *Environment::tm() const {
@@ -74,29 +75,44 @@ namespace env {
         return PageMan::read_root();
     }
 
-    const MemInfo &Environment::meminfo() const
-    {
+    const MemInfo &Environment::meminfo() const {
         return _meminfo;
     }
 
-    MemInfo &Environment::meminfo(key::meminfo)
-    {
+    MemInfo &Environment::meminfo(key::meminfo) {
         return _meminfo;
     }
-}
+
+    VFS *Environment::vfs() const {
+        return _vfs;
+    }
+
+    VFS *&Environment::vfs(key::vfs) {
+        return _vfs;
+    }
+
+    CHolderManager *Environment::chman() const {
+        return _chman;
+    }
+
+    CHolderManager *&Environment::chman(key::chman) {
+        return _chman;
+    }
+}  // namespace env
 
 namespace key {
-    struct main : public env::key::tm, env::key::meminfo
-    {
+    using namespace env::key;
+    struct main : public tm, meminfo, vfs, chman {
     public:
         main() = default;
     };
-}
+}  // namespace key
 
 // path
-PhyAddr kernel_root = PhyAddr::null;
-constexpr const char *initrd_path   = "/initrd";
-constexpr const char *setupmod_path = "mods/setup.mod";
+PhyAddr kernel_root                   = PhyAddr::null;
+constexpr const char *INITRD_PATH     = "/initrd";
+constexpr const char *SETUPMOD_PATH   = "/initrd/setup.mod";
+constexpr const char *DEFAULTMOD_PATH = "/initrd/default.mod";
 
 RamDiskDevice *make_initrd(void) {
     size_t sz             = (char *)&e_initrd - (char *)&s_initrd;
@@ -145,7 +161,7 @@ void run_defers(void *s_defer, void *e_defer) {
 void kernel_paging_setup(void) {
     [[maybe_unused]]
     constexpr KernelStage STAGE = KernelStage::PRE_INIT;
-    auto &e = env::inst();
+    auto &e                     = env::inst();
     // 创建内核页表管理器
     auto gfp_res                = GFP::get_free_page<STAGE>();
     if (!gfp_res.has_value()) {
@@ -170,6 +186,26 @@ void kernel_paging_setup(void) {
     kernelman.flush_tlb();
 }
 
+Result<void> init_vfs() {
+    auto &e = env::inst();
+
+    // 构造VFS
+    auto vfs           = new VFS();
+    e.vfs(key::main()) = vfs;
+
+    // 加载驱动程序
+    auto tarfs        = util::owner(new tarfs::TarFSDriver());
+    auto register_res = vfs->register_fs(tarfs);
+    propagate(register_res);
+
+    auto initrd_device = make_initrd();
+    auto mount_res     = vfs->mount("tarfs", initrd_device, INITRD_PATH,
+                                    MountFlags::NONE, nullptr);
+    propagate(mount_res);
+
+    void_return();
+}
+
 extern "C" void post_init(void) {
     loggers::SUSTCORE::INFO("已进入 post-init 阶段");
     auto &e = env::inst();
@@ -191,7 +227,8 @@ extern "C" void post_init(void) {
     auto &meminfo = e.meminfo();
     PageMan kernelman(kernel_root);
     kernelman.modify_range_flags<PageMan::ModifyMask::U>(
-        meminfo.lowvm, meminfo.uppm - meminfo.lowpm, PageMan::RWX::NONE, true, false);
+        meminfo.lowvm, meminfo.uppm - meminfo.lowpm, PageMan::RWX::NONE, true,
+        false);
 
     // Kernel tests
 #ifdef __CONF_KERNEL_TESTS
@@ -200,56 +237,41 @@ extern "C" void post_init(void) {
     framework.run_all();
 #endif
 
-    auto gfp_res = GFP::get_free_page<KernelStage::POST_INIT>();
+    auto init_res = init_vfs();
+    if (!init_res.has_value()) {
+        loggers::SUSTCORE::ERROR("初始化VFS失败! 错误码: %s",
+                                 to_cstring(init_res.error()));
+        while (true);
+    }
+
+    e.chman(key::main()) = new CHolderManager();
+
+    // 测试 ELF 程序加载
+    LoadPrm load_prm{};
+    load_prm.src_path = DEFAULTMOD_PATH;
+    TaskSpec spec;
+    auto create_res = e.chman()->create_holder();
+    if (!create_res.has_value()) {
+        loggers::SUSTCORE::ERROR("创建CHolder失败! 错误码: %s",
+                                 to_cstring(create_res.error()));
+        while (true);
+    }
+    spec.holder = create_res.value();
+
+    // 构造一个页表以开始加载程序
+    auto gfp_res = GFP::get_free_page();
     if (!gfp_res.has_value()) {
-        loggers::SUSTCORE::ERROR("无法为 TM 分配物理页");
+        loggers::SUSTCORE::ERROR("无法为程序页表分配物理页");
         while (true);
     }
-    PhyAddr tm_pgd = gfp_res.value();
-    TM *tm         = new TM(tm_pgd);
+    spec.tm = util::owner(new TM(gfp_res.value()));
 
-    constexpr VirAddr data_vaddr = VirAddr(0x0000'0000'9000'0000);
-    constexpr size_t data_size   = 0x0000'0000'1000'0000;  // 256MB
-
-    Result<void> add_res = tm->add_vma(VMA::Type::DATA, data_vaddr, data_size);
-    if (!add_res.has_value()) {
-        loggers::SUSTCORE::ERROR("无法添加VMA: %d", add_res.error());
+    // 开始加载程序
+    auto load_res = loader::elf::load(spec, load_prm);
+    if (!load_res.has_value()) {
+        loggers::SUSTCORE::ERROR("加载ELF程序失败! 错误码: %s", to_cstring(load_res.error()));
         while (true);
     }
-
-    // 切换当前页表到 TM 管理的页表
-    tm->pman().switch_root();
-    tm->pman().flush_tlb();
-    env::inst().tm(key::main()) = tm;
-
-    // 调试: 检查当前页表根一致性
-    PhyAddr tm_root  = tm->pgd();
-    loggers::SUSTCORE::DEBUG("TM 切换完成: hw_root=%p, tm_root=%p",
-                             env::inst().pgd().addr(), tm_root.addr());
-    if (env::inst().pgd() != tm_root) {
-        loggers::SUSTCORE::ERROR("页表根不一致!");
-        while (true);
-    }
-
-    // try access pages in the new VMA to trigger on_np
-
-    // first, allow the kernel to directly read/write user memory
-    // it'll be removed later
-
-    csr_sstatus_t sstatus = csr_get_sstatus();
-    sstatus.sum           = 1;  // 允许S-MODE访问U-MODE内存
-    csr_set_sstatus(sstatus);
-
-    volatile char *ptr              = (volatile char *)data_vaddr.addr();
-    constexpr char THE_FINAL_ANSWER = 0x42;
-    // write the page
-    for (int i = 0; i < 8 * PAGESIZE; i++) {
-        ptr[i] = THE_FINAL_ANSWER;
-    }
-
-    sstatus     = csr_get_sstatus();
-    sstatus.sum = 0;
-    csr_set_sstatus(sstatus);
 
     loggers::SUSTCORE::INFO("Test complete. Entering idle loop.");
 
@@ -266,20 +288,20 @@ void pre_init(void) {
 
     Initialization::pre_init();
 
-    auto &e = env::inst();
+    auto &e         = env::inst();
     auto detect_res = MemoryLayout::detect();
 
-    if (! detect_res.has_value())
-    {
-        loggers::SUSTCORE::FATAL("探测内存区域失败!错误码: %s", to_cstring(detect_res.error()));
+    if (!detect_res.has_value()) {
+        loggers::SUSTCORE::FATAL("探测内存区域失败!错误码: %s",
+                                 to_cstring(detect_res.error()));
         while (true);
     }
 
     PhyAddr upper_bound = PhyAddr::null;
     for (int i = 0; i < e.meminfo().region_cnt; i++) {
         const auto &reg = e.meminfo().regions[i];
-        PhyAddr start = reg.ptr;
-        PhyAddr end   = start + reg.size;
+        PhyAddr start   = reg.ptr;
+        PhyAddr end     = start + reg.size;
 
         loggers::SUSTCORE::INFO("探测到内存区域 %d: [%p, %p) Status: %d", i,
                                 start.addr(), end.addr(),

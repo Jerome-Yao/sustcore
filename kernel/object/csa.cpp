@@ -15,7 +15,7 @@
 
 #include <cassert>
 
-Result<void> CSAOp::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
+Result<void> CSAOperator::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     using namespace perm;
     using namespace csa;
 
@@ -41,7 +41,7 @@ Result<void> CSAOp::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     return _space->clone(dst_idx, cap_opt.value());
 }
 
-Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
+Result<void> CSAOperator::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     using namespace perm;
     using namespace csa;
 
@@ -89,7 +89,7 @@ Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     return {};
 }
 
-Result<void> CSAOp::remove(CapIdx idx) {
+Result<void> CSAOperator::remove(CapIdx idx) {
     using namespace perm::csa;
     // 检查权限
     if (!slot_imply<SLOT_REMOVE>(idx)) {
@@ -99,7 +99,7 @@ Result<void> CSAOp::remove(CapIdx idx) {
     return _space->remove(idx);
 }
 
-CapIdx CSAOp::__get_free_slot(void) {
+CapIdx CSAOperator::__get_free_slot(void) {
     using namespace perm::csa;
     // 这里我们简单地从0开始线性扫描, 寻找第一个空闲槽位
     // 实际上, 可以使用更高效的数据结构来管理空闲槽位, 以避免线性扫描的性能问题
@@ -125,7 +125,7 @@ CapIdx CSAOp::__get_free_slot(void) {
     return CapIdxNull;  // 没有空闲槽位
 }
 
-Result<CapIdx> CSAOp::get_free_slot(void) {
+Result<CapIdx> CSAOperator::get_free_slot(void) {
     using namespace perm::csa;
     // 检查权限
     if (!imply<ALLOC>()) {

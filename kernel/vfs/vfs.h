@@ -19,7 +19,6 @@
 #include <sustcore/errcode.h>
 #include <vfs/ops.h>
 #include <vfs/vfs.h>
-
 #include <string>
 
 class VFsDriver;
@@ -58,11 +57,12 @@ private:
     util::owner<ISuperblock *> _sb;
     util::refc_ptr<VFsDriver> _fsd;
     util::LinkedMap<inode_t, util::owner<VINode *>> inode_cache;
+
 public:
     VSuperblock(util::owner<ISuperblock *> sb, VFsDriver &fsd)
         : _sb(sb), _fsd(&fsd) {}
     virtual ~VSuperblock() {
-        assert (inode_cache.empty());
+        assert(inode_cache.empty());
         delete _sb;
     }
     constexpr ISuperblock *sb() const {
@@ -113,17 +113,6 @@ public:
     }
 };
 
-class VFileAccessor : public SharedObjectAccessor<VINode> {
-public:
-    using Base                              = SharedObjectAccessor<VINode>;
-    using Payload                           = Base::Payload;
-    static constexpr PayloadType IDENTIFIER = Base::IDENTIFIER;
-
-public:
-    constexpr VFileAccessor(VINode *vind) : Base(vind) {}
-    virtual ~VFileAccessor() {}
-};
-
 class DEntry : public util::refc<DEntry> {
 public:
     constexpr void on_death() {}
@@ -154,11 +143,23 @@ public:
 
 enum class MountFlags { NONE = 0 };
 
+class VFileAccessor : public SharedObjectAccessor<VINode> {
+public:
+    using Base                              = SharedObjectAccessor<VINode>;
+    using Payload                           = Base::Payload;
+    static constexpr PayloadType IDENTIFIER = Base::IDENTIFIER;
+
+public:
+    constexpr VFileAccessor(VINode *vind) : Base(vind) {}
+    virtual ~VFileAccessor() {}
+};
+
 class VFS {
 private:
     util::LinkedMap<std::string, util::owner<VFsDriver *>> fs_table;
     util::LinkedMap<util::Path, util::owner<VSuperblock *>> mount_table;
     util::LinkedMap<util::Path, util::owner<DEntry *>> dentry_cache;
+
 public:
     VFS()  = default;
     ~VFS() = default;
@@ -177,13 +178,8 @@ public:
                        const char *options);
     Result<void> umount(const char *mountpoint);
     // 打开文件
+    // 此处将会返回一个VFileAccessor, 其生命周期与Capability绑定
     Result<util::owner<VFileAccessor *>> open(const char *filepath);
-    // 关闭文件不需要额外接口, 直接delete VFileAccessor即可
-    // 不过, 仍然在此处预留这样一个接口, 帮助你delete(
-    constexpr Result<void> close(const util::owner<VFileAccessor *> &file_acc) {
-        delete file_acc;
-        void_return();
-    }
 
     // 整理dentry_cache
     Result<void> tidy_up();
@@ -195,4 +191,15 @@ protected:
     Result<DEntry *> locate(const util::Path &path);
     // 更新dentry_cache, 使其包含指定路径的dentry
     Result<void> update_dentry(const util::Path &path);
+public:
+    // 读取文件内容到buf中, 返回实际读取的字节数
+    Result<size_t> read(VINode *vfile, off_t offset, void *buf,
+                        size_t len) const;
+    // 将buf中的内容写入文件, 返回实际写入的字节数
+    Result<size_t> write(VINode *vfile, off_t offset, const void *buf,
+                         size_t len) const;
+    // 获取文件大小
+    Result<size_t> size(VINode *vfile) const;
+    // 刷新文件内容到存储设备
+    Result<void> sync(VINode *vfile) const;
 };

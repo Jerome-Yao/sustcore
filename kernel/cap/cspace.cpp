@@ -36,7 +36,7 @@ CGroup::~CGroup() {
     }
 }
 
-void CGroup::_emplace_create(CSpace *space, CapIdx idx, Payload *payload) {
+void CGroup::_emplace_create(CSpace *space, CapIdx idx, util::owner<Payload *> payload) {
     const size_t slot_idx = idx.slot;
     assert(slot_idx < CGROUP_SLOTS);
     assert(!_slot_used[slot_idx]);

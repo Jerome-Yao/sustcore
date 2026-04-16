@@ -14,6 +14,7 @@
 #include <string_view>
 #include <cap/cholder.h>
 #include <mem/vma.h>
+#include <sustcore/addr.h>
 
 /**
  * @brief Load Parameter
@@ -31,7 +32,7 @@ struct LoadPrm
  * @brief Task Specification
  *
  * Task Manager从中构造出task对象
- * 其由Task Manager构造, 并由loader填充
+ * 其由Task Manager构造, 并由loader填充一部分
  * 其包含了 Task 所持有的一些资源
  * 所有的资源均由Task Manager构造
  *
@@ -39,7 +40,9 @@ struct LoadPrm
 struct TaskSpec
 {
     // 进程内存管理
-    TM *tm;
-    // 进程Capability Holder
-    CHolder *holder;
+    util::owner<TM *> tm;
+    // 进程Capability Holder (created from Task Manager)
+    CHolder * holder;
+    // 入口点
+    VirAddr entrypoint;
 };
