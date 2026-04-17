@@ -86,6 +86,8 @@ union CapIdx {
     // 默认major
     constexpr CapIdx(b16 group, b16 slot)
         : CapIdx(SpaceType::MAJOR, group, slot){};
+    constexpr CapIdx()
+        : CapIdx(SpaceType::NULLABLE, 0, 0){};
 
     constexpr bool nullable(void) const noexcept {
         return type == SpaceType::NULLABLE;

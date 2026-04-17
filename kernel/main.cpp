@@ -206,6 +206,54 @@ Result<void> init_vfs() {
     void_return();
 }
 
+Result<void> test_elf_loader() {
+    auto &e = env::inst();
+
+    TaskSpec spec;
+    auto create_res = e.chman()->create_holder();
+    if (!create_res.has_value()) {
+        loggers::SUSTCORE::ERROR("创建CHolder失败! 错误码: %s",
+                                 to_cstring(create_res.error()));
+        unexpect_return(ErrCode::CREATION_FAILED);
+    }
+    spec.holder = create_res.value();
+
+    // 构造一个页表以开始加载程序
+    auto gfp_res = GFP::get_free_page();
+    if (!gfp_res.has_value()) {
+        loggers::SUSTCORE::ERROR("无法为程序页表分配物理页");
+        unexpect_return(ErrCode::CREATION_FAILED);
+    }
+    spec.tm = util::owner(new TM(gfp_res.value()));
+
+    // 测试 ELF 程序加载
+    LoadPrm load_prm;
+    load_prm.src_path = DEFAULTMOD_PATH;
+
+    // 打开文件
+    auto *vfs     = env::inst().vfs();
+    auto open_res = vfs->open(DEFAULTMOD_PATH);
+    propagate(open_res);
+    util::owner<VFileAccessor *> file_acc = open_res.value();
+
+    // 加载到CHolder中
+    auto csa_res = spec.holder->csa();
+    propagate(csa_res);
+    CSAOperator csa_op(csa_res.value());
+    auto insert_res = csa_op.insert_from<VFileAccessor>(file_acc);
+    propagate(insert_res);
+    load_prm.image_file_cap = insert_res.value();
+
+    // 开始加载程序
+    auto load_res = loader::elf::load(spec, load_prm);
+    if (!load_res.has_value()) {
+        loggers::SUSTCORE::ERROR("加载ELF程序失败! 错误码: %s", to_cstring(load_res.error()));
+        unexpect_return(ErrCode::CREATION_FAILED);
+    }
+
+    void_return();
+}
+
 extern "C" void post_init(void) {
     loggers::SUSTCORE::INFO("已进入 post-init 阶段");
     auto &e = env::inst();
@@ -246,30 +294,10 @@ extern "C" void post_init(void) {
 
     e.chman(key::main()) = new CHolderManager();
 
-    // 测试 ELF 程序加载
-    LoadPrm load_prm{};
-    load_prm.src_path = DEFAULTMOD_PATH;
-    TaskSpec spec;
-    auto create_res = e.chman()->create_holder();
-    if (!create_res.has_value()) {
-        loggers::SUSTCORE::ERROR("创建CHolder失败! 错误码: %s",
-                                 to_cstring(create_res.error()));
-        while (true);
-    }
-    spec.holder = create_res.value();
-
-    // 构造一个页表以开始加载程序
-    auto gfp_res = GFP::get_free_page();
-    if (!gfp_res.has_value()) {
-        loggers::SUSTCORE::ERROR("无法为程序页表分配物理页");
-        while (true);
-    }
-    spec.tm = util::owner(new TM(gfp_res.value()));
-
-    // 开始加载程序
-    auto load_res = loader::elf::load(spec, load_prm);
-    if (!load_res.has_value()) {
-        loggers::SUSTCORE::ERROR("加载ELF程序失败! 错误码: %s", to_cstring(load_res.error()));
+    auto test_res = test_elf_loader();
+    if (!test_res.has_value()) {
+        loggers::SUSTCORE::ERROR("测试ELF加载器失败! 错误码: %s",
+                                 to_cstring(test_res.error()));
         while (true);
     }
 

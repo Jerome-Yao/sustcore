@@ -19,6 +19,7 @@
 #include <kio.h>
 #include <mem/kaddr.h>
 #include <object/csa.h>
+#include <object/vfile.h>
 #include <sustcore/addr.h>
 
 #include <cstring>
@@ -50,22 +51,6 @@ namespace loader::elf {
 
     inline bool overflow_add_u64(uint64_t a, uint64_t b) {
         return a > (~uint64_t(0) - b);
-    }
-
-    // 读取一定长度的数据到缓冲区
-    // 这里保证一定读取了这么多的字节
-    Result<size_t> read_exact(VINode *file, off_t offset, void *buf,
-                              size_t len) {
-        auto *vfs     = env::inst().vfs();
-        auto read_res = vfs->read(file, offset, buf, len);
-        if (!read_res.has_value()) {
-            propagate_return(read_res);
-        }
-        size_t got = read_res.value();
-        if (got != len) {
-            unexpect_return(ErrCode::IO_ERROR);
-        }
-        return got;
     }
 
     Result<void> validate_elf64(const Elf64_Ehdr &ehdr, size_t file_size) {
@@ -104,31 +89,14 @@ namespace loader::elf {
         void_return();
     }
 
-    Result<VFileAccessor *> open_program(CHolder *holder,
-                                         const std::string &path) {
-        // 打开文件
-        auto *vfs     = env::inst().vfs();
-        auto open_res = vfs->open(path.c_str());
-        propagate(open_res);
-        util::owner<VFileAccessor *> file_acc = open_res.value();
-
-        // 加载到CHolder中
-        auto csa_res = holder->csa();
-        propagate(csa_res);
-        CSAOperator csa_op(csa_res.value());
-        auto insert_res = csa_op.insert_from<VFileAccessor>(file_acc);
-        propagate(insert_res);
-        return file_acc.get();
-    }
-
     // 将段内内容加载到内存中
-    Result<void> loadsegs(VINode *file, Elf64_Ehdr ehdr) {
+    Result<void> loadsegs(VFileOperator &fop, Elf64_Ehdr ehdr) {
         // 解析程序头表并将段内容加载到内存中
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
             // 定位到程序头
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
-            auto read_phdr_res = read_exact(file, offset, &phdr, sizeof(phdr));
+            auto read_phdr_res = fop.read_exact(offset, &phdr, sizeof(phdr));
             propagate(read_phdr_res);
 
             if (phdr.p_type != PT_LOAD) {
@@ -137,13 +105,13 @@ namespace loader::elf {
 
             // 读入段内容到内存
             VirAddr segvaddr(phdr.p_vaddr);
-            auto read_res = read_exact(file, phdr.p_offset,
-                                       segvaddr.addr(), phdr.p_filesz);
+            auto read_res =
+                fop.read_exact(phdr.p_offset, segvaddr.addr(), phdr.p_filesz);
             propagate(read_res);
 
             // 如果内存大小大于文件大小，说明需要将剩余部分清零
             if (phdr.p_memsz > phdr.p_filesz) {
-                size_t zero_sz = phdr.p_memsz - phdr.p_filesz;
+                size_t zero_sz   = phdr.p_memsz - phdr.p_filesz;
                 void *zero_start = (segvaddr + phdr.p_filesz).addr();
                 memset(zero_start, 0, zero_sz);
             }
@@ -162,13 +130,12 @@ namespace loader::elf {
 
         auto *vfs = env::inst().vfs();
 
-        // Open Program Image File
-        std::string src_path(prm.src_path);
-        auto open_res = open_program(spec.holder, src_path);
-        propagate(open_res);
-        VINode *file = open_res.value()->obj();
+        // Get file capabilty from CHolder
+        auto access_res = spec.holder->access(prm.image_file_cap);
+        propagate(access_res);
+        VFileOperator fop(access_res.value());
 
-        auto fsz_res = vfs->size(file);
+        auto fsz_res = fop.size();
         if (!fsz_res.has_value()) {
             propagate_return(fsz_res);
         }
@@ -178,7 +145,7 @@ namespace loader::elf {
         }
 
         Elf64_Ehdr ehdr{};
-        auto read_hdr_res = read_exact(file, 0, &ehdr, sizeof(ehdr));
+        auto read_hdr_res = fop.read_exact(0, &ehdr, sizeof(ehdr));
         propagate(read_hdr_res);
 
         auto valid_res = validate_elf64(ehdr, file_size);
@@ -189,7 +156,7 @@ namespace loader::elf {
             Elf64_Phdr phdr{};
             // 定位到程序头
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
-            auto read_phdr_res = read_exact(file, offset, &phdr, sizeof(phdr));
+            auto read_phdr_res = fop.read_exact(offset, &phdr, sizeof(phdr));
             propagate(read_phdr_res);
 
             if (phdr.p_type != PT_LOAD) {
@@ -230,8 +197,8 @@ namespace loader::elf {
         }
 
         // 记录当前的TM, 以便稍后恢复
-        TM *origin_tm                    = env::inst().tm();
-        PhyAddr origin_pgd               = env::inst().pgd();
+        TM *origin_tm      = env::inst().tm();
+        PhyAddr origin_pgd = env::inst().pgd();
 
         // 切换到加载程序的TM
         env::inst().tm(key::elfloader()) = spec.tm.get();
@@ -239,13 +206,13 @@ namespace loader::elf {
         spec.tm->pman().switch_root();
 
         // 开始加载段
-        auto load_res = loadsegs(file, ehdr);
+        auto load_res = loadsegs(fop, ehdr);
         propagate(load_res);
 
         // 将各个段的VMA的loading标记为false
         // 同时将其对应的内存权限改回正常值
         for (auto &vma : spec.tm->vma_list) {
-            vma.loading = false;
+            vma.loading      = false;
             PageMan::RWX rwx = VMA::seg2rwx(vma.type);
             spec.tm->pman().modify_range_flags<PageMan::ModifyMask::RWX>(
                 vma.vaddr, vma.size, rwx, true, false);
@@ -255,18 +222,21 @@ namespace loader::elf {
         loggers::SUSTCORE::INFO("每个VMA的前16字节内容:");
         for (const auto &vma : spec.tm->vma_list) {
             ker_paddr::SumGuard sum_guard;  // 确保可以访问用户空间地址
-            loggers::SUSTCORE::INFO("  VMA类型: %s, 起始地址: %p",
-                                     vma.type == VMA::Type::CODE ? "CODE" : "DATA",
-                                     vma.vaddr.addr());
+            loggers::SUSTCORE::INFO(
+                "  VMA类型: %s, 起始地址: %p",
+                vma.type == VMA::Type::CODE ? "CODE" : "DATA",
+                vma.vaddr.addr());
             const size_t dump_size = vma.size < 16 ? vma.size : 16;
-            const unsigned char *data = reinterpret_cast<const unsigned char *>(vma.vaddr.addr());
+            const unsigned char *data =
+                reinterpret_cast<const unsigned char *>(vma.vaddr.addr());
             std::string hex_dump;
             for (size_t i = 0; i < dump_size; ++i) {
                 char buf[4];
                 sprintf(buf, "%02x ", data[i]);
                 hex_dump += buf;
             }
-            loggers::SUSTCORE::INFO("    前%d字节: %s", dump_size, hex_dump.c_str());
+            loggers::SUSTCORE::INFO("    前%d字节: %s", dump_size,
+                                    hex_dump.c_str());
         }
 
         // 恢复到原来的TM, 以便继续执行内核代码

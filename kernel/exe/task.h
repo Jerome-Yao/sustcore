@@ -24,7 +24,9 @@
  */
 struct LoadPrm
 {
-    // 源路径
+    // 进程文件的能力索引
+    CapIdx image_file_cap;
+    // 进程文件的路径
     std::string_view src_path;
 };
 
@@ -41,7 +43,8 @@ struct TaskSpec
 {
     // 进程内存管理
     util::owner<TM *> tm;
-    // 进程Capability Holder (created from Task Manager)
+    // 进程Capability Holder
+    // 进程文件能力已经存放在该CHolder中了
     CHolder * holder;
     // 入口点
     VirAddr entrypoint;

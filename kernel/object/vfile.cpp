@@ -9,59 +9,46 @@
  *
  */
 
+#include <env.h>
 #include <object/vfile.h>
 #include <perm/vfile.h>
-#include <env.h>
 
-Result<size_t> VFileOperator::read(off_t offset, void *buf, size_t len)
-{
+Result<size_t> VFileOperator::read(off_t offset, void *buf, size_t len) {
     using namespace perm::vfile;
     if (!imply<READ>()) {
         loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
-    // Get VFS from Environment
-    auto &vfs = env::inst().vfs();
     // 调用VFS的read接口
-    return vfs.read(_file, offset, buf, len);
+    return env::inst().vfs()->read(_file, offset, buf, len);
 }
 
-
-Result<size_t> VFileOperator::write(off_t offset, const void *buf, size_t len)
-{
+Result<size_t> VFileOperator::write(off_t offset, const void *buf, size_t len) {
     using namespace perm::vfile;
     if (!imply<WRITE>()) {
         loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
-    // Get VFS from Environment
-    auto &vfs = env::inst().vfs();
     // 调用VFS的write接口
-    return vfs.write(_file, offset, buf, len);
+    return env::inst().vfs()->write(_file, offset, buf, len);
 }
 
-Result<size_t> VFileOperator::size()
-{
+Result<size_t> VFileOperator::size() {
     using namespace perm::vfile;
     if (!imply<READ>()) {
         loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
-    // Get VFS from Environment
-    auto &vfs = env::inst().vfs();
     // 调用VFS的size接口
-    return vfs.size(_file);
+    return env::inst().vfs()->size(_file);
 }
 
-Result<void> VFileOperator::sync()
-{
+Result<void> VFileOperator::sync() {
     using namespace perm::vfile;
     if (!imply<WRITE>()) {
         loggers::CAPABILITY::ERROR("权限不足");
         return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
     }
-    // Get VFS from Environment
-    auto &vfs = env::inst().vfs();
     // 调用VFS的sync接口
-    return vfs.sync(_file);
+    return env::inst().vfs()->sync(_file);
 }
