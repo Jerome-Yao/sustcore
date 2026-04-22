@@ -479,66 +479,6 @@ namespace test::cap {
         }
     };
 
-    class CaseRecvSpace : public TestCase {
-    public:
-        CaseRecvSpace() : TestCase("RecvSpace 接收测试") {}
-        void _run(void* env [[maybe_unused]]) const noexcept override {
-            CHolderManager cholder_manager;
-            auto holder0_res = cholder_manager.create_holder();
-            auto holder1_res = cholder_manager.create_holder();
-            tassert(holder0_res.has_value() && holder1_res.has_value(),
-                "创建 CHolder 实例");
-            CHolder* holder0 = holder0_res.value();
-            CHolder* holder1 = holder1_res.value();
-
-            auto csa_result = holder0->csa();
-            tassert(csa_result.has_value());
-            CSAOperator op0(csa_result.value());
-            auto gfs_result_src = op0.get_free_slot();
-            tassert(gfs_result_src.has_value(), "分配槽位 idx_src");
-            CapIdx idx_src = gfs_result_src.value();
-            auto create_result = op0.create<IntObject>(idx_src, 24680);
-            tassert(create_result.has_value(), "创建 IntObject");
-            auto get_src_result = holder0->space().get(idx_src);
-            tassert(get_src_result.has_value(), "获取源能力");
-            Capability* cap_src = get_src_result.value();
-
-            CapIdx idx_dst(SpaceType::RECV, idx_src.group, 0);
-
-            check("未设置 sender 时接收应失败");
-            auto recv_without_sender_result =
-                holder1->recv_space().migrate(idx_dst, cap_src);
-            tassert(!recv_without_sender_result.has_value() &&
-                        recv_without_sender_result.error() ==
-                            ErrCode::OUT_OF_BOUNDARY,
-                    "未设置 sender 时接收失败");
-
-            check("设置错误 sender 时接收应失败");
-            holder1->recv_space().set_sender(idx_dst.group, holder1->cholder_id);
-            auto recv_wrong_sender_result =
-                holder1->recv_space().migrate(idx_dst, cap_src);
-            tassert(!recv_wrong_sender_result.has_value() &&
-                        recv_wrong_sender_result.error() ==
-                            ErrCode::OUT_OF_BOUNDARY,
-                    "设置错误 sender 时接收失败");
-
-            check("设置正确 sender 后接收应成功");
-            holder1->recv_space().set_sender(idx_dst.group, holder0->cholder_id);
-            auto recv_success_result =
-                holder1->recv_space().migrate(idx_dst, cap_src);
-            tassert(recv_success_result.has_value(),
-                    "通过 RecvSpace 进行迁移");
-
-            check("通过 CHolder::access 访问应成功");
-            auto access_result = holder1->access(idx_dst);
-            tassert(access_result.has_value(), "通过 CHolder::access 访问能力");
-            IntObjOperator op_dst(access_result.value());
-            auto read_dst_result = op_dst.read();
-            tassert(read_dst_result.has_value() && read_dst_result.value() == 24680,
-                    "RecvSpace 目标能力读值校验");
-        }
-    };
-
     class CaseRevoke : public TestCase {
     public:
         CaseRevoke() : TestCase("Revoke 子树清理测试") {}
@@ -613,7 +553,6 @@ namespace test::cap {
         cases.push_back(new CaseClone());
         cases.push_back(new CaseMigrate());
         cases.push_back(new CaseDowngrade());
-        cases.push_back(new CaseRecvSpace());
         cases.push_back(new CaseRevoke());
 
         framework.add_category(

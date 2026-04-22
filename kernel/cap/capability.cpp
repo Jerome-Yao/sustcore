@@ -11,7 +11,6 @@
 
 #include <cap/capability.h>
 #include <cap/cspace.h>
-#include <cassert>
 #include <kio.h>
 #include <perm/permission.h>
 #include <sus/defer.h>
@@ -19,33 +18,35 @@
 #include <sus/queue.h>
 #include <sustcore/capability.h>
 
+#include <cassert>
+
 // capability
 
-Capability::Capability(util::owner<Payload *> payload, PermissionBits &&perm, CSpace *space,
-                       CapIdx idx)
+Capability::Capability(util::owner<Payload *> payload, PermissionBits &&perm,
+                       CGroup *group, CapIdx idx)
     : TreeBase(),
       _payload(payload),
       _is_root(true),
       _perm(std::move(perm)),
-      _space(space),
+      _group(group),
       _idx(idx) {}
 
-Capability::Capability(Capability *parent, PermissionBits &&perm, CSpace *space,
+Capability::Capability(Capability *parent, PermissionBits &&perm, CGroup *group,
                        CapIdx idx)
     : TreeBase(parent),
       _payload(parent->_payload),
       _is_root(false),
       _perm(std::move(perm)),
-      _space(space),
+      _group(group),
       _idx(idx) {}
 
-Capability::Capability(Capability *origin, CSpace *space, CapIdx idx)
+Capability::Capability(Capability *origin, CGroup *group, CapIdx idx)
     : TreeBase(origin->parent, std::move(origin->children)),
       _payload(origin->_payload),
       _is_root(origin->_is_root),
       // 注意: origin的权限位被移动到新Capability中, 因此origin的权限位已被清空
       _perm(std::move(origin->_perm)),
-      _space(space),
+      _group(group),
       _idx(idx) {
     origin->_payload = nullptr;
 
@@ -67,12 +68,12 @@ Capability::Capability(Capability *origin, CSpace *space, CapIdx idx)
 Result<void> Capability::kill(Capability *cap) {
     assert(cap != nullptr);
     // 定位到cap所在的CSpace与Index
-    CSpace *sp = cap->_space;
-    assert(sp != nullptr);
+    CGroup *grp = cap->_group;
+    assert(grp != nullptr);
     CapIdx idx = cap->_idx;
-    assert(!idx.nullable());
+    assert(capidx::valid(idx));
     cap->murder_flag = true;
-    return sp->remove(idx);
+    return grp->remove(idx);
 }
 
 // 构造工作队列
@@ -89,12 +90,14 @@ Capability::~Capability() {
     }
 
     // 声明将亡
-    loggers::CAPABILITY::DEBUG("开始移除(%d, %d)@Space %d", this->_idx.group,
-                      this->_idx.slot, this->_space->sp_idx);
+    loggers::CAPABILITY::DEBUG("开始移除(%d, %d)",
+                               capidx::group(this->_idx),
+                               capidx::slot(this->_idx));
     // 通知父节点移除自己
     if (parent != nullptr) {
-        loggers::CAPABILITY::DEBUG("从(%d, %d)@Space %d中移除自身", parent->_idx.group,
-                          parent->_idx.slot, parent->_space->sp_idx);
+        loggers::CAPABILITY::DEBUG("从(%d, %d)中移除自身",
+                       capidx::group(parent->_idx),
+                       capidx::slot(parent->_idx));
         parent->remove_child(this);
     }
 
@@ -105,7 +108,7 @@ Capability::~Capability() {
     }
 
     // 通过广度优先搜索删除其子能力
-    while (! __working_queue.empty()) {
+    while (!__working_queue.empty()) {
         // 取出头部的能力
         Capability *cur = __working_queue.front();
         __working_queue.pop();
@@ -113,13 +116,15 @@ Capability::~Capability() {
         // 加入该能力的直接子能力
         for (auto &subcap : cur->children) {
             __working_queue.push(subcap);
-            loggers::CAPABILITY::DEBUG("加入工作队列: (%d, %d)@Space %d", subcap->_idx.group,
-                              subcap->_idx.slot, subcap->_space->sp_idx);
+            loggers::CAPABILITY::DEBUG(
+                "加入工作队列: (%d, %d)", capidx::group(subcap->_idx),
+                capidx::slot(subcap->_idx));
         }
 
         // 删除该能力
-        loggers::CAPABILITY::DEBUG("移除(%d, %d)@Space %d", cur->_idx.group, cur->_idx.slot,
-                          cur->_space->sp_idx);
+        loggers::CAPABILITY::DEBUG(
+            "移除(%d, %d)", capidx::group(cur->_idx),
+            capidx::slot(cur->_idx));
         kill(cur);
     }
 
@@ -140,6 +145,141 @@ Result<void> Capability::revoke(Capability *subcap) {
     return kill(subcap);
 }
 
-CHolder *Capability::holder(void) const {
-    return _space->holder();
+// 内存池
+
+namespace kop {
+    util::Defer<KOP<CGroup>> CGroup;
+    AutoDefer(CGroup);
+}
+
+// CGroup
+
+CGroup::CGroup() {
+    memset(_cap_storage, 0, sizeof(_cap_storage));
+    memset(_slot_used, 0, sizeof(_slot_used));
+}
+
+CGroup::~CGroup() {
+    // 删除所有已使用的槽位中的Capability
+    for (size_t i = 0; i < CGROUP_SLOTS; i++) {
+        if (_slot_used[i]) {
+            _remove(i);
+        }
+    }
+}
+
+void CGroup::_emplace_create(CapIdx idx, util::owner<Payload *> payload) {
+    const size_t slot_idx = capidx::slot(idx);
+    assert(slot_idx < CGROUP_SLOTS);
+    assert(!_slot_used[slot_idx]);
+    void *place = &_cap_storage[slot_idx].data;
+    Capability::create(place, payload,
+                       PermissionBits::allperm(payload->type_id()), this, idx);
+    _slot_used[slot_idx] = true;
+}
+
+void CGroup::_emplace_clone(CapIdx idx, Capability *parent) {
+    const size_t slot_idx = capidx::slot(idx);
+    assert(slot_idx < CGROUP_SLOTS);
+    assert(!_slot_used[slot_idx]);
+    void *place = &_cap_storage[slot_idx].data;
+    Capability::clone(place, parent, this, idx);
+    _slot_used[slot_idx] = true;
+}
+
+void CGroup::_emplace_migrate(CapIdx idx, Capability *origin) {
+    const size_t slot_idx = capidx::slot(idx);
+    assert(slot_idx < CGROUP_SLOTS);
+    assert(!_slot_used[slot_idx]);
+    void *place = &_cap_storage[slot_idx].data;
+    Capability::migrate(place, origin, this, idx);
+    _slot_used[slot_idx] = true;
+}
+
+void CGroup::_remove(size_t slot_idx) {
+    assert(slot_idx < CGROUP_SLOTS);
+    assert(_slot_used[slot_idx]);
+    Capability *cap =
+        reinterpret_cast<Capability *>(&_cap_storage[slot_idx].data);
+    delete cap;
+    _slot_used[slot_idx] = false;
+}
+
+Result<void> CGroup::clone(CapIdx idx, Capability *parent) {
+    const size_t slot_idx = capidx::slot(idx);
+    if (slot_idx >= CGROUP_SLOTS) {
+        loggers::CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+    }
+    if (_slot_used[slot_idx]) {
+        loggers::CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
+        return {unexpect, ErrCode::SLOT_BUSY};
+    }
+    _emplace_clone(idx, parent);
+    return {};
+}
+
+Result<void> CGroup::migrate(CapIdx idx, Capability *origin) {
+    const size_t slot_idx = capidx::slot(idx);
+    if (slot_idx >= CGROUP_SLOTS) {
+        loggers::CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+    }
+    if (_slot_used[slot_idx]) {
+        loggers::CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
+        return {unexpect, ErrCode::SLOT_BUSY};
+    }
+    _emplace_migrate(idx, origin);
+    return {};
+}
+
+Result<void> CGroup::remove(CapIdx idx) {
+    const size_t slot_idx = capidx::slot(idx);
+    if (slot_idx >= CGROUP_SLOTS) {
+        loggers::CAPABILITY::ERROR("槽位索引(%u, %u)超出CGroup容量", capidx::group(idx),
+                          slot_idx);
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+    }
+    if (!_slot_used[slot_idx]) {
+        loggers::CAPABILITY::ERROR("槽位索引(%u, %u)未被占用", capidx::group(idx), slot_idx);
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+    }
+    _remove(slot_idx);
+    return {};
+}
+
+Result<Capability *> CGroup::get(CapIdx idx) {
+    const size_t slot_idx = capidx::slot(idx);
+    if (slot_idx >= CGROUP_SLOTS) {
+        loggers::CAPABILITY::ERROR("槽位索引(%u, %u)超出CGroup容量", capidx::group(idx), slot_idx);
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+    }
+    if (!_slot_used[slot_idx]) {
+        loggers::CAPABILITY::ERROR("槽位索引(%u, %u)未被占用", capidx::group(idx), slot_idx);
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+    }
+    Capability *cap =
+        reinterpret_cast<Capability *>(&_cap_storage[slot_idx].data);
+    return cap;
+}
+
+int CGroup::lookup_free(int last) {
+    const size_t start = last < 0 ? 0 : last + 1;
+    for (size_t i = start; i < CGROUP_SLOTS; i++) {
+        if (!_slot_used[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// 通过KOP分配CGroup实例
+void *CGroup::operator new(size_t size) {
+    assert(size == sizeof(CGroup));
+    return kop::CGroup->alloc();
+}
+
+// 通过KOP删除CGroup实例
+void CGroup::operator delete(void *ptr) {
+    kop::CGroup->free(static_cast<CGroup *>(ptr));
 }

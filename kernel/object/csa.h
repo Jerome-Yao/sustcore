@@ -57,7 +57,7 @@ protected:
 
     template <b64 perm>
     bool slot_imply(CapIdx idx) const {
-        return __slot_imply<perm>(idx.group);
+        return __slot_imply<perm>(capidx::group(idx));
     }
 
 public:
@@ -117,7 +117,6 @@ public:
         }
 
         assert(src_cap != nullptr);
-        assert(src_cap->space() == src_space);
         assert(src_cap->idx() == src_idx);
 
         // split 实际上是 clone 操作与 downgrade 操作针对SharedObject类型的组合

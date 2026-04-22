@@ -35,7 +35,6 @@ Result<void> CSAOperator::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_id
     }
 
     assert(src_cap != nullptr);
-    assert(src_cap->space() == src_space);
     assert(src_cap->idx() == src_idx);
 
     return _space->clone(dst_idx, cap_opt.value());
@@ -61,7 +60,6 @@ Result<void> CSAOperator::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_
     }
 
     assert(src_cap != nullptr);
-    assert(src_cap->space() == src_space);
     assert(src_cap->idx() == src_idx);
 
     Result<void> err = _space->migrate(dst_idx, cap_opt.value());
@@ -110,8 +108,8 @@ CapIdx CSAOperator::__get_free_slot(void) {
         }
         // 判断group是否为空
         if (_space->_groups[groupidx] == nullptr) {
-            return CapIdx(groupidx,
-                          0);  // 该groupidx下的第0个槽位即为一个空闲槽位
+            return capidx::make(groupidx,
+                                0);  // 该groupidx下的第0个槽位即为一个空闲槽位
         }
         CGroup *grp = _space->_groups[groupidx];
         // 否则, 继续扫描该groupidx下的槽位
@@ -119,10 +117,10 @@ CapIdx CSAOperator::__get_free_slot(void) {
             if (grp->_slot_used[slotidx]) {
                 continue;  // 该槽位已被使用, 继续扫描下一个槽
             }
-            return CapIdx(groupidx, slotidx);
+            return capidx::make(groupidx, slotidx);
         }
     }
-    return CapIdxNull;  // 没有空闲槽位
+    return capidx::null;  // 没有空闲槽位
 }
 
 Result<CapIdx> CSAOperator::get_free_slot(void) {
@@ -133,7 +131,7 @@ Result<CapIdx> CSAOperator::get_free_slot(void) {
     }
 
     CapIdx free_slot = __get_free_slot();
-    if (free_slot.nullable()) {
+    if (!capidx::valid(free_slot)) {
         return {unexpect, ErrCode::SLOT_BUSY};  // 没有空闲槽位
     }
     return free_slot;
