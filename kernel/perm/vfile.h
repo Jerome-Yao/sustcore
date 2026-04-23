@@ -20,7 +20,4 @@ namespace perm::vfile {
     constexpr b64 READ  = 0x01'0000;
     constexpr b64 WRITE = 0x02'0000;
     constexpr b64 EXEC  = 0x04'0000;
-    constexpr b64 SEEK  = 0x10'0000;
-    constexpr b64 SIZE  = 0x20'0000;
-    constexpr b64 FLUSH = 0x40'0000;
 }  // namespace perm::vfile

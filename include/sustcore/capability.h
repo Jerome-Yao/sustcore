@@ -29,7 +29,7 @@ enum class PayloadType : b64 {
     VFILE           = INLINE_PERM | 0x004
 };
 
-inline bool operator&(PayloadType a, PayloadType b) {
+constexpr bool operator&(PayloadType a, PayloadType b) {
     return (static_cast<b64>(a) & static_cast<b64>(b)) != 0;
 }
 
@@ -55,68 +55,50 @@ constexpr size_t CGROUP_SLOTS = 64;
 // 因此CSpace的容量为:
 constexpr size_t CSPACE_CAPACITY = CSPACE_SIZE * CGROUP_SLOTS;
 
-// SpaceType在CSpace中将被忽略
-// 只有在未指明CSpace的情况下, 才会使用SpaceType来指明寻找能力的空间
-namespace SpaceType {
-    constexpr b64 NULLABLE = 0;
-    constexpr b64 MAJOR    = 1;
-    constexpr b64 RECV     = 2;
-    constexpr b64 ERROR    = 3;
-}  // namespace SpaceType
+using CapIdx = b64;
+using RecvIdx = b64;
 
-union CapIdx {
-    // Note: 我们不考虑大端序机器
-    struct {
-        // 低位
-        b16 slot : 16;
-        // 高位
-        b16 group : 16;
-        // type
-        b16 type : 16;
-        // rsvf
-        b16 rsvd : 16;
-    } __attribute__((packed));
-    static constexpr b64 MASK = 0x0000FFFFFFFFFFFF;
-    b64 raw;
-
-    // 然而, 构造函数中, 我们先指明group再指明slot,
-    // 以符合我们平时习惯的Group在前, 槽位在后的表达方式
-    constexpr CapIdx(b16 type, b16 group, b16 slot)
-        : slot(slot), group(group), type(type){};
-    // 默认major
-    constexpr CapIdx(b16 group, b16 slot)
-        : CapIdx(SpaceType::MAJOR, group, slot){};
-
-    constexpr bool nullable(void) const noexcept {
-        return type == SpaceType::NULLABLE;
-    }
-
-    static constexpr CapIdx from_raw(b64 raw) noexcept {
-        return CapIdx(raw);
-    }
-
-protected:
-    // 仅允许CapIdx类访问该方法
-    constexpr CapIdx(b64 raw) : raw(raw){};
-
-public:
-    bool operator==(const CapIdx &other) const noexcept {
-        if ((this->raw & MASK) == (other.raw & MASK))
-            return true;
-        if (this->type == other.type) {
-            if (this->type == SpaceType::NULLABLE ||
-                this->type == SpaceType::ERROR)
-            {
-                return true;
-            }
+namespace capidx {
+    template <b64 mask>
+    consteval b64 CALC_MASK_SHIFT() {
+        static_assert(mask != 0, "Mask cannot be zero");
+        b64 shift = 0;
+        b64 m     = mask;
+        while ((m & 1) == 0) {
+            m >>= 1;
+            ++shift;
         }
-        return false;
+        return shift;
     }
-    bool operator!=(const CapIdx &other) const noexcept {
-        return !(*this == other);
+
+    constexpr CapIdx null  = 0;
+    constexpr CapIdx error = 0xFFFFFFFFFFFFFFFF;
+
+    constexpr b64 MASK_VALID = 0x8000000000000000;
+    constexpr b64 MASK_SLOT  = 0x00000000000FFFFF;
+    constexpr b64 SLOT_SHIFT = CALC_MASK_SHIFT<MASK_SLOT>();
+    constexpr b64 MASK_GROUP  = 0x00000FFFFF000000;
+    constexpr b64 GROUP_SHIFT = CALC_MASK_SHIFT<MASK_GROUP>();
+    constexpr b64 MASK_RSVD =
+        0xFFFFFFFFFFFFFFFF & ~(MASK_VALID | MASK_SLOT | MASK_GROUP);
+
+    constexpr bool valid(CapIdx idx) {
+        return (idx & MASK_VALID) != 0 && (idx & MASK_RSVD) == 0;
     }
-};
+
+    constexpr CapIdx make(b64 group, b64 slot) {
+        return MASK_VALID |
+               ((group << GROUP_SHIFT) & MASK_GROUP) |
+               (slot & MASK_SLOT);
+    }
+
+    constexpr b64 group(CapIdx idx) {
+        return (idx & MASK_GROUP) >> GROUP_SHIFT;
+    }
+
+    constexpr b64 slot(CapIdx idx) {
+        return (idx & MASK_SLOT) >> SLOT_SHIFT;
+    }
+}  // namespace capidx
 
 static_assert(sizeof(CapIdx) == sizeof(b64), "CapIdx must be 64 bits in size");
-
-inline static CapIdx CapIdxNull = CapIdx(SpaceType::NULLABLE, 0, 0);

@@ -262,3 +262,9 @@ inline static PhyAddr convert_pointer(T *ptr) {
         return PhyAddr::null;  // Unreachable, but silences compiler warning
     }
 }
+
+inline static bool is_user_vaddr(VirAddr vaddr) {
+    return within_scope(vaddr.arith(), AddrType::VADDR) &&
+           !within_scope(vaddr.arith(), AddrType::KVA) &&
+           !within_scope(vaddr.arith(), AddrType::KPA);
+}

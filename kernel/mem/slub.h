@@ -168,7 +168,7 @@ namespace slub {
         ObjType *alloc() {
             auto gfp_res = GFP::get_free_page(obj_pages);
             if (! gfp_res.has_value()) {
-                SLUB::ERROR("无法分配大对象内存");
+                loggers::SLUB::ERROR("无法分配大对象内存");
                 return nullptr;
             }
             PhyAddr p = gfp_res.value();
@@ -178,7 +178,7 @@ namespace slub {
         }
         void free(ObjType *ptr) {
             if (!ptr) {
-                SLUB::WARN("can't free null pointer");
+                loggers::SLUB::WARN("can't free null pointer");
                 return;
             }
 
@@ -236,7 +236,7 @@ namespace slub {
     SlabHeader *SlubAllocator<ObjType>::new_slab() {
         Result<PhyAddr> gfp_res = GFP::get_free_page(pages_);
         if (! gfp_res.has_value()) {
-            SLUB::ERROR("无法分配新的 slab 内存");
+            loggers::SLUB::ERROR("无法分配新的 slab 内存");
             return nullptr;
         }
         PhyAddr paddr = gfp_res.value();
@@ -294,7 +294,7 @@ namespace slub {
         } else {
             slab = new_slab();
             if (slab == nullptr) {
-                SLUB::ERROR("无法分配新的 slab");
+                loggers::SLUB::ERROR("无法分配新的 slab");
                 return nullptr;
             }
             slab->state = SlabHeader::SlabState::PARTIAL;
@@ -317,7 +317,7 @@ namespace slub {
     template <typename ObjType>
     void SlubAllocator<ObjType>::inner_free(void *ptr) {
         if (!ptr) {
-            SLUB::WARN("can't free null pointer");
+            loggers::SLUB::WARN("can't free null pointer");
             return;
         }
         SlabHeader *slab_header         = slab_of(ptr);
@@ -335,7 +335,7 @@ namespace slub {
     template <typename ObjType>
     void SlubAllocator<ObjType>::free(ObjType *ptr) {
         if (!ptr) {
-            SLUB::WARN("can't free null pointer");
+            loggers::SLUB::WARN("can't free null pointer");
             return;
         }
 
@@ -460,13 +460,13 @@ namespace slub {
         }
 
         static void *large_malloc(size_t rsz) {
-            MEMORY::DEBUG("转交到large_malloc途径分配");
+            loggers::MEMORY::DEBUG("转交到large_malloc途径分配");
             assert(is_pow2(rsz));
             const size_t pages = get_pages(rsz);
             assert(pages > 0);
             Result<PhyAddr> gfp_res = GFP::get_free_page(pages);
             if (!gfp_res.has_value()) {
-                SLUB::ERROR("无法分配大对象内存");
+                loggers::SLUB::ERROR("无法分配大对象内存");
                 return nullptr;
             }
             PhyAddr paddr = gfp_res.value();
@@ -486,7 +486,7 @@ namespace slub {
                 case 1024: return FixedSizeAllocator<1024>::malloc();
                 case 2048: return FixedSizeAllocator<2048>::malloc();
                 default:
-                    SLUB::ERROR("不支持的对象大小: %zu", rsz);
+                    loggers::SLUB::ERROR("不支持的对象大小: %zu", rsz);
                     return nullptr;
             }
         }
@@ -508,7 +508,7 @@ namespace slub {
                     case 512:  FixedSizeAllocator<512>::free(ptr); return;
                     case 1024: FixedSizeAllocator<1024>::free(ptr); return;
                     case 2048: FixedSizeAllocator<2048>::free(ptr); return;
-                    default:   SLUB::ERROR("不支持的对象大小: %zu", rsz); return;
+                    default:   loggers::SLUB::ERROR("不支持的对象大小: %zu", rsz); return;
                 }
             }
         }
@@ -526,10 +526,10 @@ namespace slub {
             assert(Helper::contains(rsz) || rsz >= KMAX);
             void *ptr = (rsz >= KMAX) ? large_malloc(rsz) : small_malloc(rsz);
             if (ptr == nullptr) {
-                MEMORY::ERROR("无法分配内存!");
+                loggers::MEMORY::ERROR("无法分配内存!");
                 return nullptr;
             }
-            MEMORY::DEBUG("分配了 %p, size = %d(实际大小为%d)", ptr, sz, rsz);
+            loggers::MEMORY::DEBUG("分配了 %p, size = %d(实际大小为%d)", ptr, sz, rsz);
             add_record(ptr, rsz);
             return ptr;
         }
@@ -537,7 +537,7 @@ namespace slub {
         static void free(void *ptr) {
             AllocRecord *record = get_record(ptr);
             if (record == nullptr) {
-                MEMORY::ERROR("未查询到地址%p分配记录", ptr);
+                loggers::MEMORY::ERROR("未查询到地址%p分配记录", ptr);
                 return;
             }
             _free(ptr, record->size);

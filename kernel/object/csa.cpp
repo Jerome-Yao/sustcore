@@ -15,7 +15,7 @@
 
 #include <cassert>
 
-Result<void> CSAOp::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
+Result<void> CSAOperator::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     using namespace perm;
     using namespace csa;
 
@@ -26,7 +26,7 @@ Result<void> CSAOp::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
 
     auto cap_opt = src_space->get(src_idx);
     if (!cap_opt.has_value()) {
-        return {unexpect, ErrCode::INVALID_INDEX};
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
     }
 
     Capability *src_cap = cap_opt.value();
@@ -35,13 +35,12 @@ Result<void> CSAOp::clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     }
 
     assert(src_cap != nullptr);
-    assert(src_cap->space() == src_space);
     assert(src_cap->idx() == src_idx);
 
     return _space->clone(dst_idx, cap_opt.value());
 }
 
-Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
+Result<void> CSAOperator::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     using namespace perm;
     using namespace csa;
 
@@ -52,7 +51,7 @@ Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
 
     auto cap_opt = src_space->get(src_idx);
     if (!cap_opt.has_value()) {
-        return {unexpect, ErrCode::INVALID_INDEX};
+        return {unexpect, ErrCode::OUT_OF_BOUNDARY};
     }
 
     Capability *src_cap = cap_opt.value();
@@ -61,7 +60,6 @@ Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     }
 
     assert(src_cap != nullptr);
-    assert(src_cap->space() == src_space);
     assert(src_cap->idx() == src_idx);
 
     Result<void> err = _space->migrate(dst_idx, cap_opt.value());
@@ -79,7 +77,7 @@ Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
             // 刚刚migrate成功, 但是却无法remove
             // 现在, 能力空间中既有原来的能力, 又有迁移后的能力
             // 这是一个严重的问题, 需要在此处崩溃
-            CAPABILITY::FATAL("迁移失败后撤销迁移操作时发生错误: %d",
+            loggers::CAPABILITY::FATAL("迁移失败后撤销迁移操作时发生错误: %d",
                               static_cast<int>(err2.error()));
             panic("无法撤销迁移操作, 能力空间已处于不一致状态!");
         }
@@ -89,7 +87,7 @@ Result<void> CSAOp::migrate(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx) {
     return {};
 }
 
-Result<void> CSAOp::remove(CapIdx idx) {
+Result<void> CSAOperator::remove(CapIdx idx) {
     using namespace perm::csa;
     // 检查权限
     if (!slot_imply<SLOT_REMOVE>(idx)) {
@@ -99,7 +97,7 @@ Result<void> CSAOp::remove(CapIdx idx) {
     return _space->remove(idx);
 }
 
-CapIdx CSAOp::__get_free_slot(void) {
+CapIdx CSAOperator::__get_free_slot(void) {
     using namespace perm::csa;
     // 这里我们简单地从0开始线性扫描, 寻找第一个空闲槽位
     // 实际上, 可以使用更高效的数据结构来管理空闲槽位, 以避免线性扫描的性能问题
@@ -110,8 +108,8 @@ CapIdx CSAOp::__get_free_slot(void) {
         }
         // 判断group是否为空
         if (_space->_groups[groupidx] == nullptr) {
-            return CapIdx(groupidx,
-                          0);  // 该groupidx下的第0个槽位即为一个空闲槽位
+            return capidx::make(groupidx,
+                                0);  // 该groupidx下的第0个槽位即为一个空闲槽位
         }
         CGroup *grp = _space->_groups[groupidx];
         // 否则, 继续扫描该groupidx下的槽位
@@ -119,13 +117,13 @@ CapIdx CSAOp::__get_free_slot(void) {
             if (grp->_slot_used[slotidx]) {
                 continue;  // 该槽位已被使用, 继续扫描下一个槽
             }
-            return CapIdx(groupidx, slotidx);
+            return capidx::make(groupidx, slotidx);
         }
     }
-    return CapIdxNull;  // 没有空闲槽位
+    return capidx::null;  // 没有空闲槽位
 }
 
-Result<CapIdx> CSAOp::get_free_slot(void) {
+Result<CapIdx> CSAOperator::get_free_slot(void) {
     using namespace perm::csa;
     // 检查权限
     if (!imply<ALLOC>()) {
@@ -133,7 +131,7 @@ Result<CapIdx> CSAOp::get_free_slot(void) {
     }
 
     CapIdx free_slot = __get_free_slot();
-    if (free_slot.nullable()) {
+    if (!capidx::valid(free_slot)) {
         return {unexpect, ErrCode::SLOT_BUSY};  // 没有空闲槽位
     }
     return free_slot;

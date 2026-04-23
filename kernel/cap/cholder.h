@@ -23,7 +23,6 @@
 class CHolder {
 protected:
     CSpace _space;
-    RecvSpace _recv_space;  // 接收空间, 用于接收从其他CHolder迁移过来的能力
     CapIdx _csa_idx;  // 指向自身CSpace访问器(最大)的能力索引
 public:
     const size_t cholder_id;
@@ -35,14 +34,6 @@ public:
     }
     constexpr CSpace &space(void) {
         return _space;
-    }
-
-    constexpr const RecvSpace &recv_space(void) const {
-        return _recv_space;
-    }
-
-    constexpr RecvSpace &recv_space(void) {
-        return _recv_space;
     }
 
     Result<Capability *> access(CapIdx idx);
@@ -69,7 +60,7 @@ public:
 
     Result<CHolder *> get_holder(size_t id) const {
         return _holders.get(id)
-            .transform_error(always(ErrCode::INVALID_INDEX))
+            .transform_error(always(ErrCode::OUT_OF_BOUNDARY))
             .transform(
                 std::mem_fn(&std::reference_wrapper<CHolder *const>::get));
     }

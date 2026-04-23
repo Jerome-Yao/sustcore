@@ -34,10 +34,10 @@ protected:
 public:
     CSpaceAccessor(CSpace *space) : _space(space) {}
     ~CSpaceAccessor() = default;
-    friend class CSAOp;
+    friend class CSAOperator;
 };
 
-class CSAOp {
+class CSAOperator {
 protected:
     Capability *_cap;
     CSpaceAccessor *_obj;
@@ -57,17 +57,17 @@ protected:
 
     template <b64 perm>
     bool slot_imply(CapIdx idx) const {
-        return __slot_imply<perm>(idx.group);
+        return __slot_imply<perm>(capidx::group(idx));
     }
 
 public:
-    constexpr CSAOp(Capability *cap)
+    constexpr CSAOperator(Capability *cap)
         : _cap(cap),
           _obj(cap->payload<CSpaceAccessor>()),
           _space(_obj->_space) {
         assert(_space != nullptr);
     }
-    ~CSAOp() = default;
+    ~CSAOperator() = default;
 
     void *operator new(size_t size) = delete;
     void operator delete(void *ptr) = delete;
@@ -81,6 +81,17 @@ public:
         }
 
         return _space->create<PayloadType>(idx, std::forward<Args>(args)...);
+    }
+
+    template <typename PayloadType>
+    Result<void> create_from(CapIdx idx, util::owner<PayloadType *> payload) {
+        using namespace perm::csa;
+        // 检查权限
+        if (!slot_imply<SLOT_INSERT>(idx)) {
+            return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
+        }
+
+        return _space->create_from<PayloadType>(idx, payload);
     }
 
     Result<void> clone(CapIdx dst_idx, CSpace *src_space, CapIdx src_idx);
@@ -97,7 +108,7 @@ public:
 
         auto cap_opt = src_space->get(src_idx);
         if (!cap_opt.has_value()) {
-            return {unexpect, ErrCode::INVALID_INDEX};
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
         }
 
         Capability *src_cap = cap_opt.value();
@@ -106,7 +117,6 @@ public:
         }
 
         assert(src_cap != nullptr);
-        assert(src_cap->space() == src_space);
         assert(src_cap->idx() == src_idx);
 
         // split 实际上是 clone 操作与 downgrade 操作针对SharedObject类型的组合
@@ -114,7 +124,7 @@ public:
         // 首先, 从original_cap中获取原始的Accessor对象
         AccessorType *original_acc = src_cap->payload<AccessorType>();
         if (original_acc == nullptr) {
-            return {unexpect, ErrCode::INVALID_INDEX};
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
         }
         auto original_obj = original_acc->obj();
         // 通过create接口在dst_idx上创建一个新的Accessor对象, 该对象持有与original_obj相同的SharedObject
@@ -140,11 +150,35 @@ public:
         }
         auto cap_opt = _space->get(idx);
         if (!cap_opt.has_value()) {
-            return {unexpect, ErrCode::INVALID_INDEX};
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
         }
         return cap_opt.value();
     }
     Result<CapIdx> get_free_slot(void);
+
+    template <typename PayloadType, typename... Args>
+    Result<CapIdx> insert(Args... args)
+    {
+        using namespace perm::csa;
+        auto slot_res = get_free_slot();
+        propagate(slot_res);
+        CapIdx idx = slot_res.value();
+        auto create_res = create<PayloadType>(idx, std::forward<Args>(args)...);
+        propagate(create_res);
+        return idx;
+    }
+
+    template <typename PayloadType>
+    Result<CapIdx> insert_from(util::owner<PayloadType *> payload)
+    {
+        using namespace perm::csa;
+        auto slot_res = get_free_slot();
+        propagate(slot_res);
+        CapIdx idx = slot_res.value();
+        auto create_res = create_from<PayloadType>(idx, std::move(payload));
+        propagate(create_res);
+        return idx;
+    }
 
 protected:
     CapIdx __get_free_slot(void);

@@ -28,7 +28,7 @@ kernel-flags ?=
 
 arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 	global-env=$(global-env) path-bin=$(path-bin) path-objects=$(path-objects) \
-	kernel-flags=$(kernel-flags)
+	kernel-flags="$(kernel-flags)" features="$(features)"
 
 -include $(path-script)/config.mk
 

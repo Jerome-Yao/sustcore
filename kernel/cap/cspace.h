@@ -14,74 +14,6 @@
 #include <cap/capability.h>
 #include <expected>
 
-// CGroup
-// CGroup是CSpace中的一个容器, 用于存放Capability
-class CGroup {
-public:
-    struct PreCap {
-        alignas(Capability) char data[sizeof(Capability)];
-    };
-    static_assert(sizeof(PreCap) == sizeof(Capability),
-                  "PreCap must be the same size as Capability");
-    // 预分配的Capability存储空间
-    // 该CGroup中每个槽位的使用情况
-    PreCap _cap_storage[CGROUP_SLOTS];
-    bool _slot_used[CGROUP_SLOTS];
-
-    // 构造/删除Capability
-    void _emplace_create(CSpace *space, CapIdx idx, Payload *payload);
-    void _emplace_clone(CSpace *space, CapIdx idx, Capability *parent);
-    void _emplace_migrate(CSpace *space, CapIdx idx, Capability *origin);
-    void _remove(size_t slot_idx);
-
-public:
-    CGroup();
-    ~CGroup();
-
-    // 每个Payload的生命周期都与一个Capability绑定
-    // 因此, Payload产生时, Capability也随之产生; Payload销毁时,
-    // Capability也随之销毁
-    template <typename PayloadType, typename... Args>
-    Result<void> create(CSpace *space, CapIdx idx, Args &&...args) {
-        const size_t slot_idx = idx.slot;
-        if (slot_idx >= CGROUP_SLOTS) {
-            CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
-            return {unexpect, ErrCode::INVALID_INDEX};
-        }
-        if (_slot_used[slot_idx]) {
-            CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
-            return {unexpect, ErrCode::SLOT_BUSY};
-        }
-        // 直接构造Payload
-        Payload *payload = new PayloadType(std::forward<Args>(args)...);
-        _emplace_create(space, idx, payload);
-        return {};
-    }
-
-    Result<void> clone(CSpace *space, CapIdx idx, Capability *parent);
-    Result<void> migrate(CSpace *space, CapIdx idx, Capability *origin);
-    Result<void> remove(CapIdx idx);
-
-    Result<Capability *> get(CapIdx idx);
-    // 寻找自last开始的下一个空闲的槽位
-    // 若没有, 返回-1
-    int lookup_free(int last = -1);
-
-    // 通过KOP分配回收CGroup
-    void *operator new(size_t size);
-    void operator delete(void *ptr);
-
-    constexpr bool empty(void) const {
-        bool flag = false;
-        for (size_t i = 0; i < CGROUP_SLOTS; i++) {
-            flag |= _slot_used[i];
-        }
-        return !flag;
-    }
-
-    friend class CSAOp;
-};
-
 // CSpace
 // 每个CSpace都含有若干个CGroup
 // 然而这些CGroup并不一定一开始都被创建
@@ -111,16 +43,29 @@ public:
 
     template <typename PayloadType, typename... Args>
     Result<void> create(CapIdx idx, Args &&...args) {
-        const size_t group_idx = idx.group;
+        const size_t group_idx = capidx::group(idx);
         if (group_idx >= CSPACE_SIZE) {
-            CAPABILITY::ERROR("CGroup索引%u超出CSpace %d容量", group_idx,
+            loggers::CAPABILITY::ERROR("CGroup索引%u超出CSpace %d容量", group_idx,
                               this->sp_idx);
-            return {unexpect, ErrCode::INVALID_INDEX};
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
         }
         CGroup *group = group_at(group_idx);
-        return group->create<PayloadType>(this, idx,
+        return group->create<PayloadType>(idx,
                                           std::forward<Args>(args)...);
     }
+
+    template <typename PayloadType>
+    Result<void> create_from(CapIdx idx, util::owner<Payload *> payload) {
+        const size_t group_idx = capidx::group(idx);
+        if (group_idx >= CSPACE_SIZE) {
+            loggers::CAPABILITY::ERROR("CGroup索引%u超出CSpace %d容量", group_idx,
+                              this->sp_idx);
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+        }
+        CGroup *group = group_at(group_idx);
+        return group->create_from<PayloadType>(idx, payload);
+    }
+
     Result<void> clone(CapIdx idx, Capability *parent);
     Result<void> migrate(CapIdx idx, Capability *origin);
     Result<void> remove(CapIdx idx);
@@ -139,30 +84,5 @@ public:
     // 腾出CSpace中所有为空的CGroup
     void tidyup(void);
 
-    friend class CSAOp;
-};
-
-class RecvSpace : protected CSpace {
-protected:
-    // 记录每个group的能力来源, 以便在接收迁移过来的能力时进行权限检查
-    // 只有当recv_src[group_idx] == src_cholder_id时,
-    // 才允许接收从src_cholder迁移过来的能力
-    size_t _recv_src[CSPACE_SIZE];
-
-public:
-    RecvSpace(CHolder *holder);
-
-    using CSpace::empty;
-    using CSpace::get;
-    using CSpace::group;
-    using CSpace::remove;
-    using CSpace::tidyup;
-
-    Result<void> migrate(CapIdx idx, Capability *origin);
-    inline void set_sender(size_t group_idx, size_t src_cholder_id) {
-        assert(group_idx < CSPACE_SIZE);
-        _recv_src[group_idx] = src_cholder_id;
-    }
-
-    friend class CSAOp;
+    friend class CSAOperator;
 };

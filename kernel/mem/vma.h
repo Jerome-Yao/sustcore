@@ -16,6 +16,7 @@
 #include <sus/list.h>
 #include <sus/types.h>
 #include <sus/nonnull.h>
+#include <sustcore/addr.h>
 #include <sustcore/epacks.h>
 #include <sustcore/errcode.h>
 
@@ -75,14 +76,14 @@ struct VMA {
         }
     }
 
-    TM *tm;
-    Type type;
-    VirAddr vaddr;
-    size_t size;
-    util::ListHead<VMA> list_head;
+    TM *tm = nullptr;
+    Type type = Type::NONE;
+    VirAddr vaddr = VirAddr::null;
+    size_t size = 0;
+    bool loading = false; // 是否正在加载（如ELF加载），用于处理缺页异常时区分是正常访问还是加载过程中访问
+    util::ListHead<VMA> list_head = {};
 
-    constexpr VMA()
-        : tm(nullptr), type(Type::NONE), vaddr(), size(0), list_head({}) {}
+    constexpr VMA() = default;
     constexpr VMA(TM *tm, Type t, VirAddr v, size_t s)
         : tm(tm), type(t), vaddr(v), size(s), list_head({}) {}
     constexpr VMA(TM *tm, const VMA &other)
@@ -111,16 +112,17 @@ constexpr const char *to_string(VMA::Type type) {
 
 // Task Memory
 class TM {
-    util::IntrusiveList<VMA> vma_list;
+private:
     PhyAddr _pgd;
     PageMan _pman;
 
 public:
+    util::IntrusiveList<VMA> vma_list;
     TM(PhyAddr _pgd);
     ~TM();
 
-    Result<void> add_vma(VMA::Type type, VirAddr vaddr, size_t size);
-    Result<void> clone_vma(TM &other, VirAddr vma_addr);
+    Result<util::nonnull<VMA *>> add_vma(VMA::Type type, VirAddr vaddr, size_t size);
+    Result<util::nonnull<VMA *>> clone_vma(TM &other, VirAddr vma_addr);
     Result<util::nonnull<VMA *>> locate(VirAddr vaddr);
     Result<util::nonnull<VMA *>> locate_range(VirAddr vaddr, size_t size);
     Result<void> remove_vma(VirAddr vma_addr);

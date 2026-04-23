@@ -44,7 +44,7 @@ template <typename SharedObj>
 class SharedObjectAccessor : public Payload {
 public:
     using Payload = SharedObj;
-    static constexpr PayloadType IDENTIFIER = PayloadType::SINTOBJ;
+    static constexpr PayloadType IDENTIFIER = SharedObj::IDENTIFIER;
     virtual PayloadType type_id() const override {
         return SharedObj::IDENTIFIER;
     }

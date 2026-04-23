@@ -8,11 +8,11 @@ include $(path-script)/helper.mk
 target := $(path-kernel)
 target-phy := $(path-kernel-phy)
 
-objects := main.o cxa.o assert.o
-deps := main.d cxa.d assert.d
+objects := main.o cxa.o assert.o kio.o
+deps := main.d cxa.d assert.d kio.d
 attachments := initrd.tar.attachment.o
 
-subdirs := ./arch/$(architecture)/ ./cap ./device ./fs ./mem ./object ./perm ./schd ./task ./test ./vfs
+subdirs := ./arch/$(architecture)/ ./cap ./device ./exe ./mem ./object ./perm ./schd ./task ./test ./vfs
 
 include $(path-d)/arch/$(architecture)/subdirs.mk
 include $(foreach subdir, $(subdirs), $(path-d)/$(subdir)/include.mk)
@@ -43,7 +43,11 @@ include-third_party-cpp := -I$(path-third_party)/include -I$(path-third_party)/i
 include-cpp := -I$(path-include) -I$(path-include)/std -I$(path-include)/std/c++ \
 			   $(include-third_party-cpp) -I$(path-d) -I$(path-include)/arch
 kernel-flags ?=
-defs-cpp := -DASSERT_IMPLEMENTED=1 -D__SUS_NO_EXCEPTIONS__ -D__SUS_NO_RTTI__ $(kernel-flags)
+features ?=
+base-features := NO_RTTI NO_EXCEPTIONS
+all-features := $(base-features) $(features)
+feature-defs := $(foreach feature, $(all-features), -D__SUS_$(feature)__=1)
+defs-cpp := -DASSERT_IMPLEMENTED=1 $(feature-defs)
 
 # ASM
 flags-asm := 
@@ -69,8 +73,8 @@ libs := kersbi kerbasecpp fdt
 args-ld := flags-ld="$(flags-ld)" script-ld="$(path-d)/arch/$(architecture)/kernel.ld"
 args-phy-ld := flags-ld="$(flags-ld)" script-ld="$(path-d)/arch/$(architecture)/kernel-phy.ld"
 
-args-c := defs-c="$(defs-c)" include-c="$(include-c)" flags-c="$(flags-c)"
-args-cpp := defs-cpp="$(defs-cpp)" include-cpp="$(include-cpp)" flags-cpp="$(flags-cpp)"
+args-c := defs-c="$(defs-c)" include-c="$(include-c)" flags-c="$(flags-c) $(kernel-flags)"
+args-cpp := defs-cpp="$(defs-cpp)" include-cpp="$(include-cpp)" flags-cpp="$(flags-cpp) $(kernel-flags)"
 args-asm := flags-asm="$(flags-asm)"
 
 args := $(args-ld) $(args-c) $(args-cpp) $(args-asm) libraries="$(libs)"

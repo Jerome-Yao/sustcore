@@ -14,9 +14,6 @@
 #include <type_traits>
 
 namespace util {
-    template <class T, std::enable_if_t<std::is_pointer<T>::value, bool> = true>
-    using gsl_owner = T;
-
     /**
      * @brief 表示拥有所有权的指针类型
      *
@@ -43,6 +40,10 @@ namespace util {
 
     public:
         constexpr explicit owner(pointer p = nullptr) : ptr(p) {}
+
+        template <typename U, typename = std::enable_if_t<std::is_convertible_v<U*, pointer>>>
+        constexpr owner(owner<U*> other) : ptr(other.get()) {}
+
         ~owner() = default;
 
         constexpr owner(const owner&)             = default;
@@ -68,7 +69,7 @@ namespace util {
             return ptr != nullptr;
         }
 
-        operator gsl_owner<pointer>() const {
+        operator pointer() const {
             return ptr;
         }
     };

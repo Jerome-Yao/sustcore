@@ -13,8 +13,5 @@ deps += mem/buddy.d
 objects += mem/slub.o
 deps += mem/slub.d
 
-objects += mem/pmm.o
-deps += mem/pmm.d
-
 objects += mem/vma.o
 deps += mem/vma.d

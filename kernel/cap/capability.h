@@ -13,6 +13,7 @@
 
 #include <perm/permission.h>
 #include <mem/alloc.h>
+#include <sus/owner.h>
 #include <sus/raii.h>
 #include <sus/refcount.h>
 #include <sus/rtti.h>
@@ -25,7 +26,7 @@
 
 class Payload;
 class Capability;
-class CSpace;
+class CGroup;
 class CHolder;
 
 // 载荷基类
@@ -58,26 +59,26 @@ protected:
     // 权限位
     PermissionBits _perm;
 
-    // 所在的CSpace, CHolder与CapIdx, 用于定位该Capability
-    CSpace *_space;
+    // 所在的CGroup与CapIdx, 用于定位该Capability
+    CGroup *_group;
     const CapIdx _idx;
 
     // 构造一个Capability
     // 其中, Payload被显式提供
     // 这也意味着, 这个Capability是一个根Capability, 直接管理该Payload
-    Capability(Payload *payload, PermissionBits &&perm, CSpace *space,
+    Capability(util::owner<Payload *> payload, PermissionBits &&perm, CGroup *group,
                CapIdx idx);
 
     // 派生构造函数
     // 给出parent, permission bits与当前能力所在的CUniverse与index
     // 这也意味着, 这个Capability派生自parent Capability
-    Capability(Capability *parent, PermissionBits &&perm, CSpace *space,
+    Capability(Capability *parent, PermissionBits &&perm, CGroup *group,
                CapIdx idx);
 
     // 移动构造函数
     // 给出origin与当前能力所在的CUniverse与index
     // origin的permission bits与payload将被转移到新Capability中
-    Capability(Capability *origin, CSpace *space, CapIdx idx);
+    Capability(Capability *origin, CGroup *group, CapIdx idx);
 
     static Result<void> kill(Capability *cap);
     // 如果 murder_flag 被标记,
@@ -100,24 +101,24 @@ public:
 
 protected:
     // 创建能力
-    static Capability *create(void *ptr, Payload *payload,
-                              PermissionBits &&perm, CSpace *space,
+    static Capability *create(void *ptr, util::owner<Payload *> payload,
+                              PermissionBits &&perm, CGroup *group,
                               CapIdx idx) {
         assert(payload != nullptr);
-        return new (ptr) Capability(payload, std::move(perm), space, idx);
+        return new (ptr) Capability(payload, std::move(perm), group, idx);
     }
 
     // 派生能力
     static Capability *clone(void *ptr, Capability *parent,
-                              CSpace *space,
+                              CGroup *group,
                               CapIdx idx) {
-        return new (ptr) Capability(parent, parent->perm().clone(), space, idx);
+        return new (ptr) Capability(parent, parent->perm().clone(), group, idx);
     }
 
     // 移动能力
-    static Capability *migrate(void *ptr, Capability *origin, CSpace *space,
+    static Capability *migrate(void *ptr, Capability *origin, CGroup *group,
                                CapIdx idx) {
-        return new (ptr) Capability(origin, space, idx);
+        return new (ptr) Capability(origin, group, idx);
     }
 
     Result<void> revoke(Capability *subcap);
@@ -143,11 +144,11 @@ public:
         return _perm.downgrade(new_perm);
     }
 
-    // 获取所在的CSpace与CapIdx
-    constexpr CSpace *space(void) const {
-        return _space;
+    // 获取所在的CGroup与CapIdx
+    constexpr CGroup *group(void) const {
+        return _group;
     }
-    CHolder *holder(void) const;
+
     constexpr CapIdx idx(void) const {
         return _idx;
     }
@@ -161,4 +162,86 @@ public:
     constexpr bool is_root(void) const {
         return _is_root;
     }
+};
+
+// CGroup 是存放一组 Capability 的基本单元
+class CGroup {
+public:
+    struct PreCap {
+        alignas(Capability) char data[sizeof(Capability)];
+    };
+    static_assert(sizeof(PreCap) == sizeof(Capability),
+                  "PreCap must be the same size as Capability");
+    // 预分配的Capability存储空间
+    // 该CGroup中每个槽位的使用情况
+    PreCap _cap_storage[CGROUP_SLOTS];
+    bool _slot_used[CGROUP_SLOTS];
+
+    // 构造/删除Capability
+    void _emplace_create(CapIdx idx, util::owner<Payload *> payload);
+    void _emplace_clone(CapIdx idx, Capability *parent);
+    void _emplace_migrate(CapIdx idx, Capability *origin);
+    void _remove(size_t slot_idx);
+
+public:
+    CGroup();
+    ~CGroup();
+
+    // 每个Payload的生命周期都与一个Capability绑定
+    // 因此, Payload产生时, Capability也随之产生; Payload销毁时,
+    // Capability也随之销毁
+    template <typename PayloadType, typename... Args>
+    Result<void> create(CapIdx idx, Args &&...args) {
+        const size_t slot_idx = capidx::slot(idx);
+        if (slot_idx >= CGROUP_SLOTS) {
+            loggers::CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+        }
+        if (_slot_used[slot_idx]) {
+            loggers::CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
+            return {unexpect, ErrCode::SLOT_BUSY};
+        }
+        // 直接构造Payload
+        auto payload = util::owner(new PayloadType(std::forward<Args>(args)...));
+        _emplace_create(idx, payload);
+        return {};
+    }
+
+    template <typename PayloadType>
+    Result<void> create_from(CapIdx idx, util::owner<Payload *> payload) {
+        const size_t slot_idx = capidx::slot(idx);
+        if (slot_idx >= CGROUP_SLOTS) {
+            loggers::CAPABILITY::ERROR("槽位索引%u超出CGroup容量", slot_idx);
+            return {unexpect, ErrCode::OUT_OF_BOUNDARY};
+        }
+        if (_slot_used[slot_idx]) {
+            loggers::CAPABILITY::ERROR("槽位索引%u已被占用", slot_idx);
+            return {unexpect, ErrCode::SLOT_BUSY};
+        }
+        _emplace_create(idx, payload);
+        return {};
+    }
+
+    Result<void> clone(CapIdx idx, Capability *parent);
+    Result<void> migrate(CapIdx idx, Capability *origin);
+    Result<void> remove(CapIdx idx);
+
+    Result<Capability *> get(CapIdx idx);
+    // 寻找自last开始的下一个空闲的槽位
+    // 若没有, 返回-1
+    int lookup_free(int last = -1);
+
+    // 通过KOP分配回收CGroup
+    void *operator new(size_t size);
+    void operator delete(void *ptr);
+
+    constexpr bool empty(void) const {
+        bool flag = false;
+        for (size_t i = 0; i < CGROUP_SLOTS; i++) {
+            flag |= _slot_used[i];
+        }
+        return !flag;
+    }
+
+    friend class CSAOperator;
 };
