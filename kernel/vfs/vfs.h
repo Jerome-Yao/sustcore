@@ -13,13 +13,16 @@
 
 #include <cap/capability.h>
 #include <device/block.h>
+#include <kio.h>
 #include <sus/list.h>
 #include <sus/map.h>
+#include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/path.h>
 #include <sustcore/errcode.h>
 #include <vfs/ops.h>
 #include <vfs/vfs.h>
+
 #include <string>
 
 class VFsDriver;
@@ -117,34 +120,32 @@ public:
 
 class VFile : public cap::_PayloadHelper<PayloadType::VFILE> {
 private:
-    VINode *_vind;
+    util::nonnull<VINode *> _vind;
     bool _discarded = false;
 
 public:
-    explicit VFile(VINode *vind) : _vind(vind) {
-        assert(_vind != nullptr);
+    explicit VFile(util::nonnull<VINode *> vind) : _vind(vind) {
         _vind->keep();
     }
 
     ~VFile() override {
-        if (!_discarded && _vind != nullptr) {
-            _vind->release();
+        if (!_discarded) {
+            loggers::VFS::WARN("VFile destructed without being discarded");
         }
+
+        _vind->release();
     }
 
     void destruct() override {
         if (_discarded) {
+            loggers::VFS::WARN("VFile destructed multiple times");
             return;
-        }
-        if (_vind != nullptr) {
-            _vind->release();
-            _vind = nullptr;
         }
         _discarded = true;
     }
 
     [[nodiscard]]
-    VINode *vind() const {
+    util::nonnull<VINode *> vind() const {
         return _vind;
     }
 
@@ -157,6 +158,8 @@ public:
 class DEntry : public util::refc<DEntry> {
 public:
     constexpr void on_death() {}
+
+    [[nodiscard]]
     constexpr bool closable() const {
         return !alive();
     }
@@ -168,16 +171,17 @@ private:
     util::refc_ptr<DEntry> _parent;
 
 public:
-    constexpr DEntry(const util::Path &path, VINode *vind, DEntry *parent)
+    constexpr DEntry(const util::Path &path, util::nonnull<VINode *> vind,
+                     DEntry * parent)
         : _path(path), _vind(vind), _parent(parent) {}
     constexpr virtual ~DEntry() {}
     constexpr const util::Path &path() const {
         return _path;
     }
-    constexpr VINode *vind() const {
-        return _vind.get();
+    constexpr util::nonnull<VINode *> vind() const {
+        return util::nnullforce(_vind.get());
     }
-    constexpr DEntry *parent() const {
+    constexpr DEntry * parent() const {
         return _parent.get();
     }
 };
@@ -192,7 +196,7 @@ private:
     util::ArrayList<VFile *> open_files;
 
 public:
-    VFS()  = default;
+    VFS() = default;
     ~VFS();
 
     VFS(const VFS &)            = delete;
@@ -222,6 +226,7 @@ protected:
     Result<DEntry *> locate(const util::Path &path);
     // 更新dentry_cache, 使其包含指定路径的dentry
     Result<void> update_dentry(const util::Path &path);
+
 public:
     // 读取文件内容到buf中, 返回实际读取的字节数
     Result<size_t> read(VINode *vfile, off_t offset, void *buf,

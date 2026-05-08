@@ -9,6 +9,7 @@
  *
  */
 
+#include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/path.h>
 #include <sus/raii.h>
@@ -142,7 +143,7 @@ Result<VFile *> VFS::open(const char *filepath) {
     // get virtual inode from dentry
     auto get_res = dentry_cache.get(path);
     assert(get_res.has_value());
-    VINode *vind = get_res.value().get()->vind();
+    util::nonnull<VINode *> vind = get_res.value().get()->vind();
     auto *file = new VFile(vind);
     if (file == nullptr) {
         unexpect_return(ErrCode::OUT_OF_MEMORY);
@@ -257,7 +258,7 @@ Result<void> VFS::update_root(const util::Path &mnt_path) {
     propagate(root_res);
     VINode *root_vind = root_res.value();
     util::owner<DEntry *> root_de =
-        util::owner(new DEntry(mnt_path, root_vind, nullptr));
+        util::owner(new DEntry(mnt_path, util::nnullforce(root_vind), nullptr));
     if (!root_de) {
         unexpect_return(ErrCode::OUT_OF_MEMORY);
     }
@@ -333,7 +334,7 @@ Result<void> VFS::update_dentry(const util::Path &path) {
         walkpath = walkpath / entry;
         walkpath = walkpath.normalize();
         util::owner<DEntry *> nxtde =
-            util::owner(new DEntry(walkpath, curnd, parde));
+            util::owner(new DEntry(walkpath, util::nnullforce(curnd), parde));
         parde = nxtde.get();
 
         // update dentry cache
