@@ -43,9 +43,8 @@ namespace test::fs {
             auto open_res = vfs->open("/license");
             tassert(open_res.has_value(), "应能成功打开 /license 文件");
 
-            auto* cap = new cap::Capability(
-                open_res.value(), PermissionBits::allperm(PayloadType::VFILE));
-            VFileOperator fop(cap);
+            auto* cap = new cap::Capability(open_res.value(), perm::allperm());
+            cap::VFileObject fop(util::nnullforce(cap));
 
             auto file_size_res = fop.size();
             tassert(file_size_res.has_value() && file_size_res.value() > 0,
@@ -66,7 +65,8 @@ namespace test::fs {
             tassert(true, "应能成功关闭 /license 文件能力");
 
             auto tidy_res = vfs->tidy_up();
-            tassert(tidy_res.has_value(), "tidy_up 应成功整理 dentry/inode 缓存");
+            tassert(tidy_res.has_value(),
+                    "tidy_up 应成功整理 dentry/inode 缓存");
 
             auto umount_res = vfs->umount("/");
             tassert(umount_res.has_value(), "卸载根目录 / 应成功");
@@ -96,10 +96,9 @@ namespace test::fs {
             auto open_res2 = vfs->open("/license");
             tassert(open_res2.has_value(), "第二次打开 /license 应成功");
 
-            auto* cap1 = new cap::Capability(
-                open_res.value(), PermissionBits::allperm(PayloadType::VFILE));
-            auto* cap2 = new cap::Capability(
-                open_res2.value(), PermissionBits::allperm(PayloadType::VFILE));
+            auto* cap1 = new cap::Capability(open_res.value(), perm::allperm());
+            auto* cap2 =
+                new cap::Capability(open_res2.value(), perm::allperm());
 
             action("文件仍在打开时卸载, 应返回 BUSY");
             auto busy_umount = vfs->umount("/");
@@ -120,7 +119,8 @@ namespace test::fs {
             tassert(true, "应能成功关闭第一个 /license 文件能力");
 
             auto tidy_res = vfs->tidy_up();
-            tassert(tidy_res.has_value(), "tidy_up 应成功整理 dentry/inode 缓存");
+            tassert(tidy_res.has_value(),
+                    "tidy_up 应成功整理 dentry/inode 缓存");
 
             auto umount_res = vfs->umount("/");
             tassert(umount_res.has_value(), "释放所有访问器后卸载应成功");
@@ -167,15 +167,15 @@ namespace test::fs {
 
             action("挂载未注册文件系统应失败");
             auto invalid_mount =
-                vfs->mount("unknownfs", initrd, "/", MountFlags::NONE,
-                           nullptr);
+                vfs->mount("unknownfs", initrd, "/", MountFlags::NONE, nullptr);
             tassert(!invalid_mount.has_value() &&
                         invalid_mount.error() == ErrCode::INVALID_PARAM,
                     "未注册文件系统的挂载应被拒绝");
 
             auto mount_res =
                 vfs->mount("tarfs", initrd, "/", MountFlags::NONE, nullptr);
-            tassert(mount_res.has_value(), "首次将 tarfs 挂载到根目录 / 应成功");
+            tassert(mount_res.has_value(),
+                    "首次将 tarfs 挂载到根目录 / 应成功");
 
             action("同一挂载点重复挂载应失败");
             auto duplicate_mount =

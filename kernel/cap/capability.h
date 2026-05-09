@@ -84,11 +84,11 @@ namespace cap {
         // 载荷
         Payload *_payload;
         // 权限
-        PermissionBits _perm;
+        b64 _perm;
 
     public:
-        Capability(Payload *payload, PermissionBits &&perm)
-            : _payload(payload), _perm(std::move(perm)) {
+        Capability(Payload *payload, b64 perm)
+            : _payload(payload), _perm(perm) {
             assert(_payload != nullptr);
             _payload->keep();
         }
@@ -119,7 +119,7 @@ namespace cap {
         }
 
         [[nodiscard]]
-        const PermissionBits &perm() const {
+        b64 perm() const {
             return _perm;
         }
 
@@ -129,13 +129,17 @@ namespace cap {
         }
 
         [[nodiscard]]
-        Result<void> downgrade(const PermissionBits &new_perm) {
-            return _perm.downgrade(new_perm);
+        Result<void> downgrade(b64 new_perm) {
+            if (!perm::imply(_perm, new_perm)) {
+                unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+            }
+            _perm = new_perm;
+            void_return();
         }
 
         [[nodiscard]]
-        bool imply(const PermissionBits &other) const noexcept {
-            return _perm.imply(other);
+        bool imply(b64 required) const noexcept {
+            return perm::imply(_perm, required);
         }
     };
 
@@ -151,14 +155,15 @@ namespace cap {
         }
 
         [[nodiscard]]
-        bool implies(const PermissionBits &perm) const noexcept {
+        bool implies(b64 perm) const noexcept {
             return _cap->imply(perm);
         }
 
         [[nodiscard]]
         bool imply(b64 basic_permission) const noexcept {
-            return _cap->perm().basic_imply(basic_permission);
+            return perm::imply(_cap->perm(), basic_permission);
         }
+
     public:
         [[nodiscard]]
         Capability *cap() const {

@@ -57,7 +57,8 @@ namespace test::cap {
             tassert(idx_res.has_value(), "分配槽位");
             CapIdx idx = idx_res.value();
 
-            auto create_res = holder->internal_create<kcap::IntPayload>(idx, 12345);
+            auto create_res =
+                holder->internal_create<kcap::IntPayload>(idx, 12345);
             tassert(create_res.has_value(), "创建 IntPayload 能力");
 
             auto cap_res = holder->internal_lookup(idx);
@@ -88,13 +89,13 @@ namespace test::cap {
 
             auto src_res = holder->internal_lookup_freeslot();
             tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src = src_res.value();
+            CapIdx src      = src_res.value();
             auto create_res = holder->internal_create<kcap::IntPayload>(src, 7);
             tassert(create_res.has_value(), "创建源能力");
 
             auto dst_res = holder->internal_lookup_freeslot();
             tassert(dst_res.has_value(), "分配 clone 槽位");
-            CapIdx dst = dst_res.value();
+            CapIdx dst     = dst_res.value();
             auto clone_res = holder->internal_clone(dst, src);
             tassert(clone_res.has_value(), "clone 成功");
 
@@ -123,14 +124,15 @@ namespace test::cap {
             auto src_res = holder->internal_lookup_freeslot();
             tassert(src_res.has_value(), "分配源槽位");
             CapIdx src = src_res.value();
-            auto create_res = holder->internal_create<kcap::IntPayload>(src, 100);
+            auto create_res =
+                holder->internal_create<kcap::IntPayload>(src, 100);
             tassert(create_res.has_value(), "创建源能力");
 
             auto dst_res = holder->internal_lookup_freeslot();
             tassert(dst_res.has_value(), "分配派生槽位");
             CapIdx dst = dst_res.value();
 
-            PermissionBits read_only(perm::intobj::READ, PayloadType::INTOBJ);
+            b64 read_only   = perm::intobj::READ;
             auto derive_res = holder->internal_derive(dst, src, read_only);
             tassert(derive_res.has_value(), "derive READ-only 成功");
 
@@ -144,14 +146,6 @@ namespace test::cap {
             tassert(!write_res.has_value() &&
                         write_res.error() == ErrCode::INSUFFICIENT_PERMISSIONS,
                     "派生能力不可写");
-
-            auto bad_dst_res = holder->internal_lookup_freeslot();
-            tassert(bad_dst_res.has_value(), "分配错误降级测试槽位");
-            PermissionBits wrong_type(perm::intobj::READ, PayloadType::SINTOBJ);
-            auto bad_res = holder->internal_derive(bad_dst_res.value(), src, wrong_type);
-            tassert(!bad_res.has_value() &&
-                        bad_res.error() == ErrCode::TYPE_NOT_MATCHED,
-                    "错误类型权限降级失败");
         }
     };
 
@@ -167,12 +161,13 @@ namespace test::cap {
             auto src_res = holder->internal_lookup_freeslot();
             tassert(src_res.has_value(), "分配源槽位");
             CapIdx src = src_res.value();
-            auto create_res = holder->internal_create<kcap::IntPayload>(src, 11);
+            auto create_res =
+                holder->internal_create<kcap::IntPayload>(src, 11);
             tassert(create_res.has_value(), "创建源能力");
 
             auto dst_res = holder->internal_lookup_freeslot();
             tassert(dst_res.has_value(), "分配目标槽位");
-            CapIdx dst = dst_res.value();
+            CapIdx dst       = dst_res.value();
             auto migrate_res = holder->internal_migrate(dst, src);
             tassert(migrate_res.has_value(), "migrate 成功");
 
@@ -194,17 +189,18 @@ namespace test::cap {
         CaseSendReceive() : TestCase("send/recv 跨 CHolder 移动能力") {}
 
         void _run(void *env [[maybe_unused]]) const noexcept override {
-            auto sender_res = new_holder();
+            auto sender_res   = new_holder();
             auto receiver_res = new_holder();
             tassert(sender_res.has_value() && receiver_res.has_value(),
                     "创建发送方与接收方 CHolder");
-            auto *sender = sender_res.value();
+            auto *sender   = sender_res.value();
             auto *receiver = receiver_res.value();
 
             auto src_res = sender->internal_lookup_freeslot();
             tassert(src_res.has_value(), "分配发送槽位");
             CapIdx src = src_res.value();
-            auto create_res = sender->internal_create<kcap::IntPayload>(src, 20260426);
+            auto create_res =
+                sender->internal_create<kcap::IntPayload>(src, 20260426);
             tassert(create_res.has_value(), "创建待发送能力");
 
             auto token_res = sender->internal_send(src, receiver->id());
@@ -212,7 +208,7 @@ namespace test::cap {
 
             auto dst_res = receiver->internal_lookup_freeslot();
             tassert(dst_res.has_value(), "分配接收槽位");
-            CapIdx dst = dst_res.value();
+            CapIdx dst    = dst_res.value();
             auto recv_res = receiver->internal_recv(dst, token_res.value());
             tassert(recv_res.has_value(), "接收成功");
 
@@ -242,13 +238,13 @@ namespace test::cap {
 
             auto src_res = holder->internal_lookup_freeslot();
             tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src = src_res.value();
+            CapIdx src      = src_res.value();
             auto create_res = holder->internal_create<CountingPayload>(src, 1);
             tassert(create_res.has_value(), "创建计数 payload");
 
             auto dst_res = holder->internal_lookup_freeslot();
             tassert(dst_res.has_value(), "分配 clone 槽位");
-            CapIdx dst = dst_res.value();
+            CapIdx dst     = dst_res.value();
             auto clone_res = holder->internal_clone(dst, src);
             tassert(clone_res.has_value(), "clone 成功");
 
@@ -271,6 +267,7 @@ namespace test::cap {
         cases.push_back(new CaseSendReceive());
         cases.push_back(new CasePayloadDestruct());
 
-        framework.add_category(new TestCategory("capability", std::move(cases)));
+        framework.add_category(
+            new TestCategory("capability", std::move(cases)));
     }
 }  // namespace test::cap

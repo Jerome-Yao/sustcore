@@ -19,14 +19,12 @@
 // 载荷类型
 enum class PayloadType : b64 {
     NONE            = 0,
-    INLINE_PERM     = 0x0000,
-    BITMAP_PERM     = 0x1000,
-    NOINLINE_MASK   = 0x1000,
     // objects
-    CSPACE_ACCESSOR = BITMAP_PERM | 0x001,
-    INTOBJ          = INLINE_PERM | 0x002,
-    SINTOBJ         = INLINE_PERM | 0x003,
-    VFILE           = INLINE_PERM | 0x004
+    CSPACE_ACCESSOR = 0x001,
+    INTOBJ          = 0x002,
+    SINTOBJ         = 0x003,
+    VFILE           = 0x004,
+    MUTEX           = 0x005
 };
 
 constexpr bool operator&(PayloadType a, PayloadType b) {
@@ -40,6 +38,7 @@ constexpr const char *to_string(PayloadType type) {
         case PayloadType::INTOBJ:          return "INTOBJ";
         case PayloadType::SINTOBJ:         return "SINTOBJ";
         case PayloadType::VFILE:           return "VFILE";
+        case PayloadType::MUTEX:           return "MUTEX";
         default:                           return "UNKNOWN";
     }
 }
@@ -76,8 +75,8 @@ namespace cap {
     consteval b64 CALC_MASK_WIDTH() {
         static_assert(mask != 0, "Mask cannot be zero");
         // 先移除最低位之前的零位
-        b64 low = CALC_MASK_SHIFT<mask>();
-        b64 m   = mask >> low;
+        b64 low   = CALC_MASK_SHIFT<mask>();
+        b64 m     = mask >> low;
         // 计算剩余部分的位数
         b64 width = 0;
         while (m != 0) {
@@ -88,7 +87,7 @@ namespace cap {
     }
 
     // CSpace中的CGroup数量 (由 MASK_GROUP 的位宽决定)
-    constexpr size_t CSPACE_SIZE = 1ULL << CALC_MASK_WIDTH<MASK_GROUP>();
+    constexpr size_t CSPACE_SIZE  = 1ULL << CALC_MASK_WIDTH<MASK_GROUP>();
     // CGroup中的槽位数 (由 MASK_SLOT 的位宽决定)
     // 每个槽位都存放着一个 Capability
     constexpr size_t CGROUP_SLOTS = 1ULL << CALC_MASK_WIDTH<MASK_SLOT>();

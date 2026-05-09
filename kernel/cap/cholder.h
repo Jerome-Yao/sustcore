@@ -112,13 +112,11 @@ namespace cap {
         [[nodiscard]]
         Result<void> internal_insert(CapIdx idx, Payload *payload) {
             assert(payload != nullptr);
-            return internal_insert(idx, payload,
-                                   PermissionBits::allperm(payload->type_id()));
+            return internal_insert(idx, payload, perm::allperm());
         }
 
         [[nodiscard]]
-        Result<void> internal_insert(CapIdx idx, Payload *payload,
-                                     PermissionBits &&perm);
+        Result<void> internal_insert(CapIdx idx, Payload *payload, b64 perm);
 
         template <typename PayloadType, typename... Args>
         [[nodiscard]]
@@ -149,7 +147,7 @@ namespace cap {
 
         [[nodiscard]]
         Result<void> internal_derive(CapIdx target_idx, CapIdx src_idx,
-                                     const PermissionBits &new_perm);
+                                     b64 new_perm);
 
         [[nodiscard]]
         Result<ReceiveToken> internal_send(CapIdx src_idx, size_t target_id);
@@ -183,7 +181,7 @@ namespace cap {
 
         [[nodiscard]]
         static Result<void> derive(CapIdx target_idx, CapIdx src_idx,
-                                   const PermissionBits &new_perm);
+                                   b64 new_perm);
 
         [[nodiscard]]
         static Result<ReceiveToken> send(CapIdx src_idx, size_t target_id);

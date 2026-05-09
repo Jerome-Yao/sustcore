@@ -4,14 +4,14 @@
  * @brief 权限定义
  * @version alpha-1.0.0
  * @date 2026-02-25
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #pragma once
 
-#include <perm/csa.h>
+#include <sus/types.h>
 
 namespace perm::basic {
     // permissions
@@ -19,4 +19,4 @@ namespace perm::basic {
     constexpr b64 CLONE   = 0x0002;
     constexpr b64 MIGRATE = 0x0004;
     constexpr b64 SPLIT   = 0x0008;
-}  // namespace perm::csa
+}  // namespace perm::basic

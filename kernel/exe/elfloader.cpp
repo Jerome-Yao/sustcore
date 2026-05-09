@@ -89,7 +89,7 @@ namespace loader::elf {
     }
 
     // 将段内内容加载到内存中
-    Result<void> loadsegs(VFileOperator &fop, Elf64_Ehdr ehdr) {
+    Result<void> loadsegs(cap::VFileObject &fop, Elf64_Ehdr ehdr) {
         // 解析程序头表并将段内容加载到内存中
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
@@ -130,7 +130,7 @@ namespace loader::elf {
         // Get file capabilty from CHolder
         auto access_res = spec.holder->access(prm.image_file_cap);
         propagate(access_res);
-        VFileOperator fop(access_res.value());
+        cap::VFileObject fop(util::nnullforce(access_res.value()));
 
         auto fsz_res = fop.size();
         if (!fsz_res.has_value()) {
@@ -181,7 +181,8 @@ namespace loader::elf {
 
             // 为该段在TM中添加一个VMA
             VMA::Type vma_type = phdr_to_vma_type(phdr.p_flags);
-            auto add_res = spec.tmm->add_vma(vma_type, segvaddr, segvaddr + phdr.p_memsz);
+            auto add_res =
+                spec.tmm->add_vma(vma_type, segvaddr, segvaddr + phdr.p_memsz);
             if (!add_res.has_value()) {
                 loggers::SUSTCORE::ERROR("无法为段%d添加VMA: %d", i,
                                          add_res.error());
@@ -194,11 +195,11 @@ namespace loader::elf {
         for (const auto &vma : spec.tmm->vmas()) {
             loggers::SUSTCORE::INFO(
                 "  VMA类型: %s, 地址: %p~%p, 大小: %u B",
-                vma.type == VMA::Type::CODE ? "CODE" : "DATA", vma.vstart.addr(),
-                vma.vend.addr(), vma.size());
+                vma.type == VMA::Type::CODE ? "CODE" : "DATA",
+                vma.vstart.addr(), vma.vend.addr(), vma.size());
         }
 
-        auto *origin_tmm = env::inst().tmm();
+        auto *origin_tmm   = env::inst().tmm();
         PhyAddr origin_pgd = env::inst().pgd();
 
         env::inst().tmm(key::elfloader()) = spec.tmm.get();

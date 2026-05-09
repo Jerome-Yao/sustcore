@@ -77,21 +77,19 @@ struct Riscv64Context {
     }
 
     constexpr void setup_regs(bool smode) {
-        this->regs[RA_BASE]      = 0;  // ra设置为0
-        this->sstatus.spp  = smode;  // 代码运行在 S/U-Mode
-        this->sstatus.spie = 1;  // 用户进程应该开启中断
+        this->regs[RA_BASE] = 0;      // ra设置为0
+        this->sstatus.spp   = smode;  // 代码运行在 S/U-Mode
+        this->sstatus.spie  = 1;      // 用户进程应该开启中断
     }
 
-    constexpr void write_ret(const syscall::RetPack &pack)
-    {
-        regs[A0_BASE] = pack.ret0;
+    constexpr void write_ret(const syscall::RetPack &pack) {
+        regs[A0_BASE]     = pack.ret0;
         regs[A0_BASE + 1] = pack.ret1;
     }
 
-    constexpr void read_args(syscall::ArgPack& pack) const
-    {
-        pack.syscall_number = regs[A0_BASE + 7]; // a7: syscall number
-        pack.capidx = regs[A0_BASE + 6];
+    constexpr void read_args(syscall::ArgPack &pack) const {
+        pack.syscall_number = regs[A0_BASE + 7];  // a7: syscall number
+        pack.capidx         = regs[A0_BASE + 6];
 
         pack.args[0] = regs[A0_BASE + 0];
         pack.args[1] = regs[A0_BASE + 1];
@@ -101,8 +99,7 @@ struct Riscv64Context {
     }
 
     [[nodiscard]]
-    constexpr syscall::ArgPack read_args() const
-    {
+    constexpr syscall::ArgPack read_args() const {
         syscall::ArgPack pack{};
         read_args(pack);
         return pack;
@@ -110,7 +107,6 @@ struct Riscv64Context {
 };
 
 static_assert(ContextTrait<Riscv64Context>);
-
 
 struct Riscv64Interrupt {
     /**
@@ -130,6 +126,11 @@ struct Riscv64Interrupt {
      *
      */
     static void cli(void);
+
+    static bool enabled() {
+        csr_sstatus_t sstatus = csr_get_sstatus();
+        return sstatus.sie;
+    }
 };
 
 static_assert(InterruptTrait<Riscv64Interrupt>);

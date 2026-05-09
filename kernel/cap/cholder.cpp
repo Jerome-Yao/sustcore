@@ -75,21 +75,18 @@ namespace cap {
     }
 
     Result<void> CHolder::internal_insert(CapIdx idx, Payload *payload,
-                                          PermissionBits &&perm) {
+                                          b64 permissions) {
         if (!cap::valid(idx)) {
             unexpect_return(ErrCode::TYPE_NOT_MATCHED);
         }
         if (payload == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
-        if (payload->type_id() != perm.type) {
-            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
-        }
         if (_space.get(idx) != nullptr) {
             unexpect_return(ErrCode::SLOT_BUSY);
         }
 
-        auto *cap = new Capability(payload, std::move(perm));
+        auto *cap = new Capability(payload, permissions);
         if (cap == nullptr) {
             unexpect_return(ErrCode::OUT_OF_MEMORY);
         }
@@ -116,12 +113,12 @@ namespace cap {
         propagate(cap_res);
 
         Capability *src_cap = cap_res.value();
-        if (!src_cap->perm().basic_imply(perm::basic::CLONE)) {
+        if (!perm::imply(src_cap->perm(), perm::basic::CLONE)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
         auto *cloned_cap = src_cap->clone();
-        auto set_res = set_slot(target_idx, cloned_cap);
+        auto set_res     = set_slot(target_idx, cloned_cap);
         if (!set_res.has_value()) {
             delete cloned_cap;
             propagate_return(set_res);
@@ -140,7 +137,7 @@ namespace cap {
         propagate(cap_res);
 
         Capability *src_cap = cap_res.value();
-        if (!src_cap->perm().basic_imply(perm::basic::MIGRATE)) {
+        if (!perm::imply(src_cap->perm(), perm::basic::MIGRATE)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
@@ -150,7 +147,7 @@ namespace cap {
     }
 
     Result<void> CHolder::internal_derive(CapIdx target_idx, CapIdx src_idx,
-                                          const PermissionBits &new_perm) {
+                                          b64 new_perm) {
         auto clone_res = internal_clone(target_idx, src_idx);
         propagate(clone_res);
 
@@ -175,11 +172,11 @@ namespace cap {
         propagate(access_res);
 
         Capability *src_cap = access_res.value();
-        if (!src_cap->perm().basic_imply(perm::basic::MIGRATE)) {
+        if (!perm::imply(src_cap->perm(), perm::basic::MIGRATE)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
-        auto chman = env::inst().chman(key::cholder());
+        auto chman             = env::inst().chman(key::cholder());
         auto target_holder_res = chman->get_holder(target_id);
         propagate(target_holder_res);
 
@@ -246,7 +243,7 @@ namespace cap {
             unexpect_return(ErrCode::INVALID_TOKEN);
         }
 
-        const size_t record_idx = token.record_idx;
+        const size_t record_idx   = token.record_idx;
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         _send_records[record_idx] = SendRecord();
         void_return();
@@ -260,7 +257,7 @@ namespace cap {
             unexpect_return(ErrCode::SLOT_BUSY);
         }
 
-        auto *chman = env::inst().chman(key::cholder());
+        auto *chman            = env::inst().chman(key::cholder());
         auto sender_holder_res = chman->get_holder(token.sender_id);
         propagate(sender_holder_res);
 
@@ -273,7 +270,7 @@ namespace cap {
         propagate(moved_cap_res);
 
         Capability *moved_cap = moved_cap_res.value();
-        auto set_res = set_slot(target_idx, moved_cap);
+        auto set_res          = set_slot(target_idx, moved_cap);
         if (!set_res.has_value()) {
             auto rollback_res = sender->set_slot(src_idx, moved_cap);
             assert(rollback_res.has_value());
@@ -315,7 +312,7 @@ namespace cap {
     }
 
     Result<void> CHolder::derive(CapIdx target_idx, CapIdx src_idx,
-                                 const PermissionBits &new_perm) {
+                                 b64 new_perm) {
         return current().and_then([&](CHolder *holder) {
             return holder->internal_derive(target_idx, src_idx, new_perm);
         });
