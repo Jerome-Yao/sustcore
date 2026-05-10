@@ -13,7 +13,7 @@
 #include <arch/riscv64/trait.h>
 #include <arch/trait.h>
 #include <env.h>
-#include <kio.h>
+#include <logger.h>
 #include <sustcore/errcode.h>
 #include <symbols.h>
 #include <algorithm>

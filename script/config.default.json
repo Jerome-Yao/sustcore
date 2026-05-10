@@ -1,0 +1,10 @@
+{
+	"mode": "release",
+	"qemu": {
+	},
+	"features": [
+	],
+	"logger": {
+	},
+	"logger-disable-all": true
+}

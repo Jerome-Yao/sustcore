@@ -9,7 +9,7 @@
  * 
  */
 
-#include <kio.h>
+#include <logger.h>
 #include <arch/description.h>
 #include <sustcore/addr.h>
 

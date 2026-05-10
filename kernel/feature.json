@@ -1,0 +1,8 @@
+{
+    "kernel-tests": {
+        "macro": "__CONF_KERNEL_TESTS",
+        "mode": "debug",
+        "description": "Enables kernel tests.",
+        "dependencies": []
+    }
+}

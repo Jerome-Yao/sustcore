@@ -15,7 +15,7 @@
 #include <elf.h>
 #include <env.h>
 #include <exe/elfloader.h>
-#include <kio.h>
+#include <logger.h>
 #include <mem/kaddr.h>
 #include <mem/vma.h>
 #include <object/vfile.h>

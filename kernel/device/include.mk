@@ -1,2 +1,1 @@
-objects += device/block.o
-deps += device/block.d
+sources += block.cpp

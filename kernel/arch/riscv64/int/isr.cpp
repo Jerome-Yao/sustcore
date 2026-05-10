@@ -14,7 +14,7 @@
 #include <arch/riscv64/int/isr.h>
 #include <arch/riscv64/trait.h>
 #include <env.h>
-#include <kio.h>
+#include <logger.h>
 #include <mem/kaddr.h>
 #include <sbi/sbi.h>
 #include <sus/logger.h>

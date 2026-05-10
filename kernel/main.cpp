@@ -19,7 +19,7 @@
 #include <env.h>
 #include <exe/elfloader.h>
 #include <exe/task.h>
-#include <kio.h>
+#include <logger.h>
 #include <mem/alloc.h>
 #include <mem/gfp.h>
 #include <mem/kaddr.h>

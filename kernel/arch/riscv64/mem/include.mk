@@ -1,2 +1,1 @@
-objects += arch/riscv64/mem/sv39.o
-deps += arch/riscv64/mem/sv39.d
+sources += sv39.cpp

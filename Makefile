@@ -1,4 +1,5 @@
 global-env := ./script/env/global.mk
+config-json := $(firstword $(wildcard config.json) script/config.default.json)
 
 -include ./config.mk
 
@@ -18,46 +19,52 @@ include $(path-script)/util.mk
 include $(path-script)/setup.mk
 include $(path-script)/run.mk
 
-.PHONY: build mount umount image __image stat_code all dbg clean
-.PHONY: build-libsbi build-libbasecpp build-libkmod build-libfdt build-libs
+.PHONY: build mount umount image __image stat_code all dbg clean FORCE
+.PHONY: build-libs build-mods build-kernel make-initrd
 
-path-bin := $(path-e)/build/bin
-path-objects := $(path-e)/build/objects
 build-mode ?= release
 kernel-flags ?=
 
 arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
-	global-env=$(global-env) path-bin=$(path-bin) path-objects=$(path-objects) \
-	kernel-flags="$(kernel-flags)" features="$(features)"
+	global-env=$(global-env) kernel-flags="$(kernel-flags)" features="$(features)"
 
 -include $(path-script)/config.mk
 
-build-libsbi:
-	$(q)$(MAKE) -f $(path-e)/libs/sbi/Makefile $(arg-basic) build
+library-components := sbi basecpp kmod libfdt
+module-components := default init
 
-build-libbasecpp:
-	$(q)$(MAKE) -f $(path-e)/libs/basecpp/Makefile $(arg-basic) build
+library-component-makefile.sbi := $(path-e)/libs/sbi/Makefile
+library-component-makefile.basecpp := $(path-e)/libs/basecpp/Makefile
+library-component-makefile.kmod := $(path-e)/libs/kmod/Makefile
+library-component-makefile.libfdt := $(path-e)/third_party/libs/libfdt/Makefile
 
-build-libkmod:
-	$(q)$(MAKE) -f $(path-e)/libs/kmod/Makefile $(arg-basic) build
+module-component-makefile.default := $(path-e)/module/default/Makefile
+module-component-makefile.init := $(path-e)/module/init/Makefile
 
-build-libfdt:
-	$(q)$(MAKE) -f $(path-e)/third_party/libs/libfdt/Makefile $(arg-basic) build
-
-build-libs: build-libsbi build-libbasecpp build-libkmod build-libfdt
+build-libs:
+	$(q)$(MAKE) -f $(library-component-makefile.sbi) $(arg-basic) build
+	$(q)$(MAKE) -f $(library-component-makefile.basecpp) $(arg-basic) build
+	$(q)$(MAKE) -f $(library-component-makefile.kmod) $(arg-basic) build
+	$(q)$(MAKE) -f $(library-component-makefile.libfdt) $(arg-basic) build
 	$(q)echo "All libraries built successfully."
 
-build-mod-default: build-libs
-	$(q)$(MAKE) -f $(path-e)/module/default/Makefile $(arg-basic) build
+config.mk: FORCE $(config-json) tools/config_gen/config_gen.py
+	$(q)python3 tools/config_gen/config_gen.py $(config-json) config.mk
 
-build-mod-init: build-libs
-	$(q)$(MAKE) -f $(path-e)/module/init/Makefile $(arg-basic) build
+kernel/logger.h: FORCE $(config-json) kernel/logger.json tools/logger_gen/logger_gen.py
+	$(q)python3 tools/logger_gen/logger_gen.py kernel/logger.json kernel/logger.h $(config-json)
 
-build-mods: build-mod-default build-mod-init
+kernel/feature.mk: FORCE $(config-json) kernel/feature.json tools/feature_gen/feature_gen.py
+	$(q)python3 tools/feature_gen/feature_gen.py kernel/feature.json kernel/feature.mk $(config-json)
+
+build-mods: build-libs
+	$(q)$(MAKE) -f $(module-component-makefile.default) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.init) $(arg-basic) build
 	$(q)echo "All modules built successfully."
 
 make-initrd:
 	$(call if_mkdir, $(path-initrd))
+	$(q)$(rm) -rf $(path-initrd)/src
 	$(call if_mkdir, $(path-initrd)/src)
 	cp -r ./include/ $(path-initrd)/src/include/
 	cp -r ./kernel/ $(path-initrd)/src/kernel/
@@ -67,9 +74,11 @@ make-initrd:
 	cp -r ./tools/ $(path-initrd)/src/tools/
 	$(q)echo "initrd path created"
 
-build: make-initrd build-mods
+build-kernel:
 	$(q)$(copy) ./LICENSE $(path-initrd)/license
-	$(q)$(MAKE) -f $(path-e)/kernel/Makefile $(arg-basic) $@
+	$(q)$(MAKE) -f $(path-e)/kernel/Makefile $(arg-basic) build
+
+build: make-initrd build-mods build-kernel
 
 mount:
 	$(q)$(MAKE) -f $(path-script)/image/Makefile.image global-env=$(global-env) loop=$(loop-b) start-image
@@ -86,7 +95,7 @@ __image:
 # 	$(q)$(MAKE) $(imager)=$(path-e)/configs/grub.cfg path=/boot/grub/ do-image
 # 	$(q)$(MAKE) $(imager)=$(path-e)/build/bin/grub/grubld.bin path=/ do-image
 
-	$(q)$(MAKE) $(imager)=$(path-e)/build/bin/kernel/sustcore.bin path=/Sustcore/System/sustcore.bin do-image
+	$(q)$(MAKE) $(imager)=$(path-kernel) path=/Sustcore/System/sustcore.bin do-image
 
 __load_image:
 	$(q)$(MAKE) -f $(path-script)/image/Makefile.image global-env=$(global-env) loop=$(loop-b) start-image
@@ -105,3 +114,5 @@ dbg:
 
 clean:
 	rm -rf $(path-e)/build
+
+build-libs build-mods make-initrd build-kernel build all dbg run run_dbg image __image mount umount: config.mk kernel/logger.h kernel/feature.mk

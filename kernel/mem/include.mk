@@ -1,17 +1,1 @@
-objects += mem/alloc.o
-deps += mem/alloc.d
-
-objects += mem/gfp.o
-deps += mem/gfp.d
-
-objects += mem/kaddr.o
-deps += mem/kaddr.d
-
-objects += mem/buddy.o
-deps += mem/buddy.d
-
-objects += mem/slub.o
-deps += mem/slub.d
-
-objects += mem/vma.o
-deps += mem/vma.d
+sources += alloc.cpp gfp.cpp kaddr.cpp buddy.cpp slub.cpp vma.cpp

@@ -10,7 +10,7 @@
  */
 
 #include <env.h>
-#include <kio.h>
+#include <logger.h>
 #include <mem/alloc.h>
 #include <object/vfile.h>
 #include <symbols.h>

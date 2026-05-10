@@ -2,7 +2,7 @@
 qemu-args-riscv64 ?= -bios default \
  			 -name "Sustcore-rv64" \
 			 -machine virt \
-			 -kernel ./build/bin/kernel/sustcore.bin
+			 -kernel $(path-kernel)
 
 qemu-attached-args-riscv64 ?=
 qemu-attached-args ?=

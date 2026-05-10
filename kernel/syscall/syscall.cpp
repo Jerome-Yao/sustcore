@@ -9,7 +9,7 @@
  *
  */
 
-#include <kio.h>
+#include <logger.h>
 #include <env.h>
 #include <mem/kaddr.h>
 #include <schd/schdbase.h>

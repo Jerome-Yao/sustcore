@@ -9,7 +9,7 @@
  *
  */
 
-#include <kio.h>
+#include <logger.h>
 #include <object/mutex.h>
 
 namespace cap {

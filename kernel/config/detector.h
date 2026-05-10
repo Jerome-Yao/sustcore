@@ -20,12 +20,3 @@
 #error \
     "Exceptions are not supported in the kernel. Please define __SUS_NO_EXCEPTIONS__ to compile."
 #endif
-
-#ifdef __SUS_LOGGER_DISABLE__
-#define __CONF_LOGGER_DISABLE
-#endif
-
-#ifdef __SUS_KERNEL_TESTS__
-#define __CONF_KERNEL_TESTS
-#define DEFAULT_LOG_LEVEL LogLevel::DEBUG
-#endif

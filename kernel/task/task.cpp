@@ -11,7 +11,7 @@
 
 #include <env.h>
 #include <exe/elfloader.h>
-#include <kio.h>
+#include <logger.h>
 #include <mem/alloc.h>
 #include <mem/slub.h>
 #include <mem/vma.h>

@@ -12,7 +12,7 @@
 #include <arch/riscv64/csr.h>
 #include <arch/riscv64/device/fdt_helper.h>
 #include <arch/riscv64/device/misc.h>
-#include <kio.h>
+#include <logger.h>
 #include <sbi/sbi.h>
 #include <sus/logger.h>
 #include <sus/units.h>

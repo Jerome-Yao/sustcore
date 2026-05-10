@@ -10,7 +10,7 @@
  */
 
 #include <env.h>
-#include <kio.h>
+#include <logger.h>
 #include <sustcore/addr.h>
 #include <mem/gfp.h>
 #include <sus/types.h>

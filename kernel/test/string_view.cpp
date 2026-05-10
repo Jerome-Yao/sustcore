@@ -9,7 +9,7 @@
  *
  */
 
-#include <kio.h>
+#include <logger.h>
 #include <test/string_view.h>
 
 #include <cassert>

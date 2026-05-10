@@ -3,7 +3,7 @@
  * @brief FCFS 调度器 1000 时间片调度模拟测试
  */
 
-#include <kio.h>
+#include <logger.h>
 #include <schd/fcfs.h>
 #include <sus/nonnull.h>
 #include <sus/queue.h>

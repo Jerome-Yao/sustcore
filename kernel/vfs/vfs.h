@@ -13,7 +13,7 @@
 
 #include <cap/capability.h>
 #include <device/block.h>
-#include <kio.h>
+#include <logger.h>
 #include <sus/list.h>
 #include <sus/map.h>
 #include <sus/nonnull.h>

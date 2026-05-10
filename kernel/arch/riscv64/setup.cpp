@@ -13,7 +13,7 @@
 #include <arch/riscv64/device/fdt_helper.h>
 #include <arch/riscv64/device/misc.h>
 #include <arch/riscv64/trait.h>
-#include <kio.h>
+#include <logger.h>
 #include <libfdt.h>
 #include <sbi/sbi.h>
 #include <sus/logger.h>

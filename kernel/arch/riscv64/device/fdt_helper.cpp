@@ -10,7 +10,7 @@
  */
 
 #include <arch/riscv64/device/fdt_helper.h>
-#include <kio.h>
+#include <logger.h>
 #include <libfdt.h>
 
 #include <cinttypes>

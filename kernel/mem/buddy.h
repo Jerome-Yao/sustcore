@@ -12,7 +12,7 @@
 #pragma once
 
 #include <arch/trait.h>
-#include <kio.h>
+#include <logger.h>
 #include <sustcore/addr.h>
 #include <mem/gfp_def.h>
 #include <cstddef>

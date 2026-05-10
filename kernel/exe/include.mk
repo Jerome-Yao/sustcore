@@ -1,2 +1,1 @@
-objects += exe/elfloader.o
-deps += exe/elfloader.d
+sources += elfloader.cpp

@@ -12,7 +12,7 @@
 #pragma once
 
 #include <cap/capability.h>
-#include <kio.h>
+#include <logger.h>
 #include <mem/alloc.h>
 #include <mem/slub.h>
 #include <perm/intobj.h>

@@ -13,7 +13,7 @@
 #include <arch/riscv64/int/isr.h>
 #include <arch/riscv64/trait.h>
 #include <env.h>
-#include <kio.h>
+#include <logger.h>
 #include <sus/logger.h>
 #include <sus/types.h>
 #include <new>

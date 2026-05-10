@@ -10,7 +10,7 @@
  */
 
 #include <arch/riscv64/mem/sv39.h>
-#include <kio.h>
+#include <logger.h>
 #include <sustcore/addr.h>
 
 template<>

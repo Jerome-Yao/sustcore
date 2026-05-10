@@ -13,7 +13,7 @@
 
 #include <arch/riscv64/csr.h>
 #include <arch/trait.h>
-#include <kio.h>
+#include <logger.h>
 #include <sustcore/addr.h>
 #include <mem/gfp.h>
 #include <sus/logger.h>

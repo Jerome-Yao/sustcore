@@ -11,7 +11,7 @@
 
 #include <arch/trait.h>
 #include <env.h>
-#include <kio.h>
+#include <logger.h>
 #include <sustcore/addr.h>
 #include <mem/buddy.h>
 #include <sus/list.h>
