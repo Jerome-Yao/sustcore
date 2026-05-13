@@ -129,7 +129,13 @@ private:
     util::IntrusiveList<VMA> vma_list;
     PhyAddr _pgd;
     PageMan _pman;
+    VirAddr _heap_start = VirAddr::null;
+    VirAddr _brk        = VirAddr::null;
 
+    // a fast path to the heap vma
+    // only a fast path
+    // the real vma is stored in vma list
+    VMA *_heap_vma      = nullptr;
 public:
     TaskMemoryManager(PhyAddr _pgd);
     ~TaskMemoryManager();
@@ -140,6 +146,13 @@ public:
     Result<util::nonnull<VMA *>> locate(VirAddr vaddr);
     Result<util::nonnull<VMA *>> locate_range(VirAddr vaddr, size_t size);
     Result<void> remove_vma(VirAddr vma_addr);
+    Result<void> init_heap(VirAddr heap_start);
+    unsigned long set_brk(VirAddr new_brk);
+
+    [[nodiscard]]
+    constexpr VirAddr brk() const {
+        return _brk;
+    }
 
     [[nodiscard]]
     constexpr const util::IntrusiveList<VMA> &vmas() const {

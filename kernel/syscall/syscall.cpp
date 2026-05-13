@@ -122,6 +122,14 @@ namespace syscall {
                                load_res.value()->pid);
     }
 
+    unsigned long sys_brk(unsigned long new_brk) {
+        TaskMemoryManager *tmm = env::inst().tmm();
+        if (tmm == nullptr) {
+            return 0;
+        }
+        return tmm->set_brk(VirAddr(new_brk));
+    }
+
     RetPack entrance(const ArgPack &args) {
         b64 arg0 = args.args[0];
         b64 arg1 = args.args[1];
@@ -146,6 +154,11 @@ namespace syscall {
             case SYS_CREATE_PROCESS: {
                 create_process(UString((VirAddr)arg0, MAX_SYSCALL_PATH));
                 ret0 = ret1 = 0;
+                break;
+            }
+            case SYS_BRK: {
+                ret0 = sys_brk(arg0);
+                ret1 = 0;
                 break;
             }
             default: {

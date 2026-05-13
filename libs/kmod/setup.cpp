@@ -47,6 +47,7 @@ void kmod_main(void);
 
 extern "C" {
 void kwrites(const char *str, size_t len);
+size_t sys_brk(size_t newbrk);
 
 int kputs(const char *str) {
     size_t len = strlen(str);

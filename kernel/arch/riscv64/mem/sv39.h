@@ -500,13 +500,31 @@ public:
     }
 
     void unmap_page(VirAddr vaddr) {
-        // TODO: implement unmap_page
-        loggers::PAGING::ERROR("unmap_page尚未实现");
+        auto query_res = query_page(vaddr);
+        if (!query_res.has_value()) {
+            return;
+        }
+
+        QueryResult qres = query_res.value();
+        if (qres.size != PageSize::_4K) {
+            loggers::PAGING::ERROR("unmap_page暂不支持解除大页映射: vaddr=%p",
+                                   vaddr.addr());
+            return;
+        }
+
+        PhyAddr paddr = get_physical_address(*qres.pte);
+        qres.pte->value = 0;
+        GFP::template put_page<Stage>(paddr, 1);
     }
 
     void unmap_range(VirAddr vstart, size_t size) {
-        // TODO: implement unmap_range
-        loggers::PAGING::ERROR("unmap_range尚未实现");
+        const VirAddr _vs  = vstart.page_align_down();
+        const size_t _size = page_align_up(size);
+        const size_t _cnt  = _size / PAGESIZE;
+
+        for (size_t i = 0; i < _cnt; ++i) {
+            unmap_page(_vs + i * PAGESIZE);
+        }
     }
 
     static constexpr umb_t to_rwx_mask(ModifyMask mask) {

@@ -82,6 +82,67 @@ Result<void> TaskMemoryManager::remove_vma(VirAddr vma_addr) {
     void_return();
 }
 
+Result<void> TaskMemoryManager::init_heap(VirAddr heap_start) {
+    if (_heap_vma != nullptr) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+    if (!is_user_vaddr(heap_start)) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    VirAddr heap_vstart = heap_start.page_align_up();
+    auto add_res = add_vma(VMA::Type::HEAP, heap_vstart, heap_vstart);
+    if (!add_res.has_value()) {
+        propagate_return(add_res);
+    }
+
+    _heap_start = heap_start;
+    _brk        = heap_start;
+    _heap_vma   = add_res.value();
+    void_return();
+}
+
+unsigned long TaskMemoryManager::set_brk(VirAddr new_brk) {
+    if (_heap_vma == nullptr) {
+        return 0;
+    }
+    if (new_brk == VirAddr::null) {
+        return _brk.arith();
+    }
+    if (new_brk < _heap_start || !is_user_vaddr(new_brk)) {
+        return _brk.arith();
+    }
+    if (new_brk.arith() > MAX_ADDR - (PAGESIZE - 1)) {
+        return _brk.arith();
+    }
+
+    VirAddr new_vend = new_brk.page_align_up();
+    if (new_vend < _heap_vma->vstart) {
+        new_vend = _heap_vma->vstart;
+    }
+
+    Range<VirAddr> heap_range(_heap_vma->vstart, new_vend);
+    for (auto &vma : vma_list) {
+        if (&vma == _heap_vma) {
+            continue;
+        }
+        Range<VirAddr> vma_range(vma.vstart, vma.vend);
+        if (is_intersecting(vma_range, heap_range)) {
+            return _brk.arith();
+        }
+    }
+
+    VirAddr old_vend = _heap_vma->vend;
+    if (new_vend < old_vend) {
+        _pman.unmap_range(new_vend, old_vend - new_vend);
+        _pman.flush_tlb();
+    }
+
+    _heap_vma->vend = new_vend;
+    _brk            = new_brk;
+    return _brk.arith();
+}
+
 bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
     loggers::PAGING::DEBUG(
         "TM::on_np: access_address=%p, tm_pgd=%p, pman_root=%p",

@@ -17,3 +17,10 @@ create_process:
     li a7, 0xFFC00002
     ecall
     ret
+
+    .global sys_brk
+    .type sys_brk, @function
+sys_brk:
+    li a7, 0xFFC00003
+    ecall
+    ret

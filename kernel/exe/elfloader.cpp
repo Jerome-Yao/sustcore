@@ -150,6 +150,8 @@ namespace loader::elf {
 
         spec.entrypoint = VirAddr(ehdr.e_entry);
 
+        addr_t max_pload_end = 0;
+
         // 解析程序头表并为TM添加相应的VMA
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
@@ -173,30 +175,42 @@ namespace loader::elf {
             }
 
             VirAddr segvaddr(phdr.p_vaddr);
+            VirAddr segvend(phdr.p_vaddr + phdr.p_memsz);
 
             // 确认该空间地址是用户空间地址
-            if (!is_user_vaddr(segvaddr)) {
+            if (!is_user_vaddr(segvaddr) || !is_user_vaddr(segvend)) {
                 unexpect_return(ErrCode::INVALID_PARAM);
             }
 
             // 为该段在TM中添加一个VMA
             VMA::Type vma_type = phdr_to_vma_type(phdr.p_flags);
-            auto add_res =
-                spec.tmm->add_vma(vma_type, segvaddr, segvaddr + phdr.p_memsz);
+            auto add_res = spec.tmm->add_vma(vma_type, segvaddr, segvend);
             if (!add_res.has_value()) {
                 loggers::SUSTCORE::ERROR("无法为段%d添加VMA: %d", i,
                                          add_res.error());
                 while (true);
             }
             add_res->get()->loading = true;  // 标记该VMA正在加载
+
+            if (segvend.arith() > max_pload_end) {
+                max_pload_end = segvend.arith();
+            }
         }
+
+        VirAddr heap_start = VirAddr(max_pload_end).page_align_up();
+        auto heap_res = spec.tmm->init_heap(heap_start);
+        if (!heap_res.has_value()) {
+            loggers::SUSTCORE::ERROR("无法初始化堆VMA: %d", heap_res.error());
+            propagate_return(heap_res);
+        }
+
         // 输出TM中的VMA信息以供调试
         loggers::SUSTCORE::INFO("ELF加载完成，TM中的VMA列表:");
         for (const auto &vma : spec.tmm->vmas()) {
             loggers::SUSTCORE::INFO(
                 "  VMA类型: %s, 地址: %p~%p, 大小: %u B",
-                vma.type == VMA::Type::CODE ? "CODE" : "DATA",
-                vma.vstart.addr(), vma.vend.addr(), vma.size());
+                to_string(vma.type), vma.vstart.addr(), vma.vend.addr(),
+                vma.size());
         }
 
         auto *origin_tmm   = env::inst().tmm();
@@ -237,8 +251,7 @@ namespace loader::elf {
 
             loggers::SUSTCORE::INFO(
                 "  VMA类型: %s, 起始地址: %p",
-                vma.type == VMA::Type::CODE ? "CODE" : "DATA",
-                vma.vstart.addr());
+                to_string(vma.type), vma.vstart.addr());
 
             const size_t dump_size = vma.size() < 16 ? vma.size() : 16;
             const unsigned char *data =
