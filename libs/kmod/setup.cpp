@@ -11,9 +11,9 @@
 
 // cpp setup入口点
 
-#include <cassert>
+#include <prm.h>
+
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 
 extern "C" void _init(void);
@@ -24,6 +24,9 @@ typedef void (*_fini_func)(void);
 
 extern _init_func __init_array_start[0], __init_array_end[0];
 extern _fini_func __fini_array_start[0], __fini_array_end[0];
+
+size_t __heap_base;
+size_t __current_brk;
 
 namespace kmod {
     void init(void) {
@@ -46,60 +49,11 @@ namespace kmod {
 
 void kmod_main(void);
 
-extern "C" {
-void kwrites(const char *str, size_t len);
-size_t sys_grow_vma(size_t heap_base, size_t newbrk);
-
-static size_t heap_base;
-static size_t current_brk;
-
-int kputs(const char *str) {
-    size_t len = strlen(str);
-    kwrites(str, len);
-    return len;
-}
-
-size_t brk(size_t newbrk) {
-    if (newbrk == 0) {
-        return current_brk;
-    }
-
-    size_t actual_brk = sys_grow_vma(heap_base, newbrk);
-    current_brk       = actual_brk;
-    return current_brk;
-}
-
-void *sbrk(ptrdiff_t increment) {
-    size_t old_brk = current_brk;
-    size_t newbrk  = old_brk;
-
-    if (increment >= 0) {
-        size_t inc = static_cast<size_t>(increment);
-        if (SIZE_MAX - old_brk < inc) {
-            return reinterpret_cast<void *>(-1);
-        }
-        newbrk = old_brk + inc;
-    } else {
-        size_t dec = size_t(0) - static_cast<size_t>(increment);
-        if (old_brk < dec) {
-            return reinterpret_cast<void *>(-1);
-        }
-        newbrk = old_brk - dec;
-    }
-
-    size_t actual_brk = brk(newbrk);
-    if (actual_brk != newbrk) {
-        return reinterpret_cast<void *>(-1);
-    }
-    return reinterpret_cast<void *>(old_brk);
-}
-
-void _cpp_setup(size_t heap_vaddr) {
-    heap_base   = heap_vaddr;
-    current_brk = heap_vaddr;
+extern "C" void _cpp_setup(size_t heap_vaddr) {
+    __heap_base   = heap_vaddr;
+    __current_brk = heap_vaddr;
 
     kmod::init();
     kmod_main();
     while (true);
-}
 }

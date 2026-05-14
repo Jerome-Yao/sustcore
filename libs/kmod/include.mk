@@ -1,1 +1,1 @@
-sources += setup.cpp syscall.S
+sources += setup.cpp asm_syscall.S syscall.cpp printf.cpp

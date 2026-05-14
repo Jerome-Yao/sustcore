@@ -12,15 +12,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <sus/baseio.h>
-
-extern "C"
-int kputs(const char *str);
-
-extern "C"
-size_t brk(size_t newbrk);
-
-extern "C"
-void *sbrk(ptrdiff_t increment);
+#include <kmod/syscall.h>
 
 class Test {
 public:
@@ -35,9 +27,7 @@ int kmod_main(void) {
     kputs("Hello from kmod_main!\n");
     size_t heap_base = brk(0);
 
-    char buf[256];
-    sprintf(buf, "Current brk: %p\n", (void *)heap_base);
-    kputs(buf);
+    printf("Current brk: %p\n", (void *)heap_base);
 
     // Will causes an error
     // auto ptr = reinterpret_cast<char *>(heap_base);
@@ -45,8 +35,7 @@ int kmod_main(void) {
 
     auto ptr = reinterpret_cast<char *>(sbrk(28));
     size_t brk2 = brk(0);
-    sprintf(buf, "Current brk: %p\n", (void *)brk2);
-    kputs(buf);
+    printf("Current brk: %p\n", (void *)brk2);
 
     for (int i = 0 ; i < 26 ; i ++)
     {
@@ -66,7 +55,7 @@ int kmod_main(void) {
     auto ptr3 = reinterpret_cast<char *>(heap_base + 4096);
     *ptr3 = 'c';
 
-    kputs("This message shouldn't be displayed\n");
+    printf("This message shouldn't be displayed\n");
 
     while (true);
     return 0;
