@@ -32,6 +32,7 @@
 #define SYS_CAP_DERIVE    (SYSCALL_BASE + 0x10)
 #define SYS_LOOKUP_CAP    (SYSCALL_BASE + 0x11)
 #define SYS_CAP_REMOVE    (SYSCALL_BASE + 0x12)
+#define SYS_EXECVE        (SYSCALL_BASE + 0x13)
 
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE  (0xFFC0'0000)

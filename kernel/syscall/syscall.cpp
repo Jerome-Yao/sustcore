@@ -78,6 +78,21 @@ namespace syscall {
                 ret1          = fork_ret.child_pid;
                 break;
             }
+            case SYS_EXECVE: {
+                bool ok = execve(UString((VirAddr)arg0, MAX_SYSCALL_PATH),
+                                 VirAddr(arg1), arg2);
+                if (ok) {
+                    auto *ctx = env::inst().trap_context();
+                    assert(ctx != nullptr);
+                    ret0 = ctx->regs[Context::A0_BASE];
+                    ret1 = ctx->regs[Context::A0_BASE + 1];
+                    ctx->sepc -= 4;
+                } else {
+                    ret0 = false;
+                    ret1 = 0;
+                }
+                break;
+            }
             case SYS_EXIT: {
                 exit();
                 ret0 = ret1 = 0;

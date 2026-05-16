@@ -36,6 +36,17 @@ sys_fork:
     ecall
     ret
 
+    .global sys_execve
+    .type   sys_execve, @function
+    .global execve
+    .type   execve, @function
+sys_execve:
+execve:
+    /* a0 = path, a1 = reserved caps, a2 = reserved caps size */
+    li a7, 0xFFFF0013
+    ecall
+    ret
+
     .global sys_grow_vma
     .type sys_grow_vma, @function
 sys_grow_vma:

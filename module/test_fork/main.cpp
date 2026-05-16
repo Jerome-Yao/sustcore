@@ -8,6 +8,10 @@ static volatile size_t global_value = 0;
 
 constexpr size_t kScanGroups = 1;
 constexpr size_t kScanSlots  = 32;
+constexpr CapIdx kExecNotifCap = cap::make(0, 3);
+constexpr size_t kSignalSyn    = 0;
+constexpr size_t kSignalSynAck = 1;
+constexpr size_t kSignalAck    = 2;
 
 static const char *cap_type_name(PayloadType type) {
     return to_string(type);
@@ -44,6 +48,12 @@ static char *alloc_page_string(const char *str) {
 int kmod_main() {
     printf("test_fork: 启动时PID=%u pcb_cap=%p\n", sys_getpid(__pcb_cap),
            (void *)__pcb_cap);
+
+    if (!sys_create_notification(kExecNotifCap)) {
+        printf("test_fork: create exec notification failed\n");
+        while (true) {
+        }
+    }
 
     global_value     = 114514;
     char *shared_buf = alloc_page_string("全体目光向我看齐");
@@ -85,6 +95,29 @@ int kmod_main() {
     printf("test_fork: %s private buf=%s\n", tag, private_buf);
 
     dump_caps(is_child ? "子进程" : "父进程");
+
+    if (is_child) {
+        CapIdx reserved_caps[] = {kExecNotifCap};
+        printf("test_fork: child exec test_execve\n");
+        if (!execve("/initrd/test_execve.mod", reserved_caps, 1)) {
+            printf("test_fork: child exec failed\n");
+            while (true) {
+            }
+        }
+        while (true) {
+        }
+    }
+
+    printf("test_fork: parent SYN\n");
+    sys_signal_notification(kExecNotifCap, kSignalSyn);
+
+    sys_wait_notification(kExecNotifCap, kSignalSynAck);
+    printf("test_fork: parent SYN-ACK received\n");
+    sys_unsignal_notification(kExecNotifCap, kSignalSynAck);
+
+    printf("test_fork: parent ACK\n");
+    sys_signal_notification(kExecNotifCap, kSignalAck);
+
     printf("test_fork: %s exit\n", tag);
     sys_exit();
 

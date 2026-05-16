@@ -107,6 +107,25 @@ namespace syscall {
         return {fork_res.value().child_pcb_cap, fork_res.value().child_pid};
     }
 
+    bool execve(const UString &path, VirAddr reserved_uaddr,
+                size_t reserved_sz) {
+        UBuffer reserved_buf(reserved_uaddr, reserved_sz * sizeof(CapIdx));
+        CapIdx *reserved = nullptr;
+        if (reserved_sz != 0) {
+            reserved_buf.sync_from_user();
+            reserved = reinterpret_cast<CapIdx *>(reserved_buf.kbuf());
+        }
+
+        auto exec_res = task::TaskManager::inst().exec_current(
+            path.kbuf(), reserved, reserved_sz);
+        if (!exec_res.has_value()) {
+            loggers::SYSCALL::ERROR("execve失败: path=%s err=%d", path.kbuf(),
+                                    exec_res.error());
+            return false;
+        }
+        return true;
+    }
+
     void exit() {
         auto exit_res = task::TaskManager::inst().exit_current();
         if (!exit_res.has_value()) {

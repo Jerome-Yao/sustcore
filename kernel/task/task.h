@@ -67,7 +67,7 @@ namespace task {
          *
          * @param tcb 要初始化的 TCB, 必须为非空指针.
          * @param task 所属的 PCB, 必须为非空指针.
-         * @return Result<void> 成功返回 Ok, 失败返回相应错误码.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
          * @note 调用者需保证在适当的锁或上下文中调用本函数, 并且在 TCB 被调度前完成初始化.
          */
         Result<void> init_tcb(util::nonnull<TCB *> tcb,
@@ -78,7 +78,7 @@ namespace task {
          * @param tcb 目标 TCB, 必须为非空指针.
          * @param entrypoint 线程入口地址.
          * @param stack_top 线程栈顶地址.
-         * @return Result<void> 成功返回 Ok, 失败返回相应错误码.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
          * @note entrypoint 与 stack_top 必须满足架构对对齐和可访问性的要求.
          */
         Result<void> init_ctx(util::nonnull<TCB *> tcb, void *entrypoint,
@@ -88,7 +88,7 @@ namespace task {
          *
          * @param pcb 要初始化的 PCB, 必须为非空指针.
          * @param spec 任务规格, 包含可执行路径、权限、资源限制等信息.
-         * @return Result<void> 成功返回 Ok, 失败返回相应错误码.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
          * @note 本函数可能分配内存与能力(capability), 如果失败调用者应清理部分已分配的资源.
          */
         Result<void> init_pcb(util::nonnull<PCB *> pcb,
@@ -121,10 +121,23 @@ namespace task {
             task::StartupInfo startup_info);
 
         /**
+         * @brief 根据 TaskSpec 使用传入的PCB构造一个完整的任务.
+         * 
+         * @param pcb 目标 PCB, 必须为非空指针, 用于承载新任务的状态与资源.
+         * @param spec 任务规格, 包含可执行路径、权限、资源限制等信息.
+         * @param schd_class 调度器类别, 用于选择调度策略.
+         * @param reuse_main_tcb 可选的 TCB 指针, 如果非空则重用该 TCB 作为主线程, 否则新分配一个 TCB.
+         * @return Result<util::nonnull<TCB *>> 
+         */
+        Result<util::nonnull<TCB *>> populate_task(
+            util::nonnull<PCB *> pcb, TaskSpec spec,
+            schd::ClassType schd_class, TCB *reuse_main_tcb = nullptr);
+
+        /**
          * @brief 终止并清理指定的 TCB, 包括释放与其相关的内核资源.
          *
          * @param tcb 要终止的 TCB, 必须为非空指针.
-         * @return Result<void> 成功返回 Ok, 失败返回相应错误码.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
          * @note 调用方需保证该 TCB 当前未被运行或已从调度器中移除, 并处理并发访问场景.
          */
         Result<void> terminate_tcb(util::nonnull<TCB *> tcb);
@@ -132,7 +145,7 @@ namespace task {
          * @brief 终止并清理指定的 PCB, 包括其所有线程和占用的资源.
          *
          * @param pcb 要终止的 PCB, 必须为非空指针.
-         * @return Result<void> 成功返回 Ok, 失败返回相应错误码.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
          * @note 本操作会尝试终止所有线程并释放资源, 调用者应当确保不会在后续继续访问该 PCB.
          */
         Result<void> terminate_pcb(util::nonnull<PCB *> pcb);
@@ -143,10 +156,22 @@ namespace task {
          * @param path 可执行文件路径, 以 NUL 结尾的字符串.
          * @param spec 输出的 TaskSpec, 将被填充所需信息.
          * @param prm 输出的 LoadPrm, 包含加载时的参数.
-         * @return Result<void> 成功返回 Ok, 失败返回错误码.
-         * @note 本函数不会启动任务, 但可能分配临时内存, 调用者在失败时应清理相关资源.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回错误码.
+         * @return Image File 的能力索引, 成功返回该索引, 失败返回相应错误码.
          */
-        Result<void> preload(const char *path, TaskSpec &spec, LoadPrm &prm);
+        Result<CapIdx> preload(const char *path, TaskSpec &spec, LoadPrm &prm);
+
+        /**
+         * @brief 预加载可执行文件相关信息到指定的 TaskSpec, LoadPrm 与 holder
+         * 
+         * @param path 可执行文件路径, 以 NUL 结尾的字符串.
+         * @param holder 能力持有者, 用于执行能力移除操作.
+         * @param spec 输出的 TaskSpec, 将被填充所需信息.
+         * @param prm 输出的 LoadPrm, 包含加载时的参数.
+         * @return Image File 的能力索引, 成功返回该索引, 失败返回相应错误码.
+         */
+        Result<CapIdx> preload_into(const char *path, cap::CHolder *holder,
+                                  TaskSpec &spec, LoadPrm &prm);
 
     public:
         /**
@@ -197,9 +222,19 @@ namespace task {
          */
         Result<ForkResult> fork_current();
         /**
+         * @brief 用指定ELF替换当前进程镜像, 并保留指定能力。
+         *
+         * @param path 新程序路径。
+         * @param reserved_caps 需要保留的能力槽位列表, 可为空。
+         * @param reserved_count reserved_caps 中的元素数量。
+         * @return Result<void> 成功不返回旧用户镜像, 失败保持当前进程不变。
+         */
+        Result<void> exec_current(const char *path, const CapIdx *reserved_caps,
+                                  size_t reserved_count);
+        /**
          * @brief 终止当前进程, 并在必要时回收其资源或加入回收队列.
          *
-         * @return Result<void> 成功返回 Ok, 失败返回错误码.
+         * @return Result<void> 成功返回 SUCCESS, 失败返回错误码.
          * @note 本函数可能不会立即释放所有资源, 某些清理工作会异步进行或由 `reap_recycled` 完成.
          */
         Result<void> exit_current();

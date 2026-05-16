@@ -28,6 +28,8 @@ size_t sys_grow_vma(size_t heap_base, size_t newbrk);
 CapIdx sys_create_process(const char *path, CapIdx *caps, size_t caps_sz);
 CapIdx create_process(const char *path, CapIdx *caps, size_t caps_sz);
 ForkRet sys_fork();
+bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz);
+bool execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz);
 
 bool sys_cap_clone(CapIdx src, CapIdx target);
 bool sys_cap_downgrade(CapIdx idx, uint64_t new_perm);

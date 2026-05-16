@@ -26,6 +26,8 @@ namespace syscall {
     CapIdx create_process(const UString &path, VirAddr caps_uaddr,
                           size_t caps_sz);
     ForkRet fork();
+    bool execve(const UString &path, VirAddr reserved_uaddr,
+                size_t reserved_sz);
     void exit();
     size_t get_pid(CapIdx pcb_cap);
 }  // namespace syscall

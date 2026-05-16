@@ -21,6 +21,8 @@ namespace schd {
     using task::PCB;
     using task::TCB;
 
+    void switch_pgd(TaskMemoryManager *tmm);
+
     class Scheduler {
     private:
         RQ _rq;
