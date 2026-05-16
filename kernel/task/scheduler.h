@@ -134,6 +134,9 @@ namespace schd {
         Result<void> dequeue(util::nonnull<TCB *> tcb);
 
         Result<void> block_current(WaitReasonId reason);
+        Result<void> block_current(WaitReasonId reason,
+                                   task::wait::WakePostAction action,
+                                   void *ctx);
         bool wakeup_waiting(TCB *tcb);
 
         // 唤醒新创建的任务并检查是否需要抢占当前任务

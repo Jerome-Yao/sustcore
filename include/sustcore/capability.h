@@ -27,6 +27,7 @@ enum class PayloadType : b64 {
     MUTEX           = 0x005,
     PCB             = 0x006,
     TCB             = 0x007,
+    ENDPOINT        = 0x008,
 };
 
 constexpr bool operator&(PayloadType a, PayloadType b) {
@@ -43,9 +44,13 @@ constexpr const char *to_string(PayloadType type) {
         case PayloadType::MUTEX:           return "MUTEX";
         case PayloadType::PCB:             return "PCB";
         case PayloadType::TCB:             return "TCB";
+        case PayloadType::ENDPOINT:        return "ENDPOINT";
         default:                           return "UNKNOWN";
     }
 }
+
+constexpr size_t MAX_MSG_SIZE = 128;
+constexpr size_t MAX_MSG_CAPS = 4;
 
 using CapIdx  = b64;
 using RecvIdx = b64;

@@ -201,6 +201,12 @@ namespace schd {
     }
 
     Result<void> Scheduler::block_current(WaitReasonId reason) {
+        return block_current(reason, nullptr, nullptr);
+    }
+
+    Result<void> Scheduler::block_current(WaitReasonId reason,
+                                          task::wait::WakePostAction action,
+                                          void *ctx) {
         if (_curtcb == nullptr) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -209,7 +215,8 @@ namespace schd {
         }
 
         auto enqueue_res =
-            task::wait::WaitReasonManager::inst().enqueue(reason, _curtcb);
+            task::wait::WaitReasonManager::inst().enqueue(reason, _curtcb,
+                                                          action, ctx);
         propagate(enqueue_res);
 
         _curtcb->basic_entity

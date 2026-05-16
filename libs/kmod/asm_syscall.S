@@ -171,3 +171,64 @@ sys_create_notification:
     li a7, 0xFFFF000D
     ecall
     ret
+
+    .global sys_create_endpoint
+    .type sys_create_endpoint, @function
+sys_create_endpoint:
+    /* a0 = target cap slot */
+    mv a6, a0
+    li a7, 0xFFFF0014
+    ecall
+    ret
+
+    .global sys_send_msg
+    .type sys_send_msg, @function
+sys_send_msg:
+    /* a0 = endpoint, a1 = msgbuf, a2 = msgsz, a3 = caplist, a4 = capsz */
+    mv a6, a0
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF0015
+    ecall
+    ret
+
+    .global sys_recv_msg
+    .type sys_recv_msg, @function
+sys_recv_msg:
+    /* a0 = endpoint, a1 = msgbuf, a2 = msgsz, a3 = caplist, a4 = capsz */
+    mv a6, a0
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF0016
+    ecall
+    ret
+
+    .global sys_try_send_msg
+    .type sys_try_send_msg, @function
+sys_try_send_msg:
+    /* a0 = endpoint, a1 = msgbuf, a2 = msgsz, a3 = caplist, a4 = capsz */
+    mv a6, a0
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF0017
+    ecall
+    ret
+
+    .global sys_try_recv_msg
+    .type sys_try_recv_msg, @function
+sys_try_recv_msg:
+    /* a0 = endpoint, a1 = msgbuf, a2 = msgsz, a3 = caplist, a4 = capsz */
+    mv a6, a0
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF0018
+    ecall
+    ret

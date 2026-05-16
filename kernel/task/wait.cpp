@@ -9,10 +9,21 @@
  *
  */
 
+#include <env.h>
+#include <mem/vma.h>
 #include <task/scheduler.h>
 #include <task/wait.h>
 
+#include <cassert>
+
 namespace task::wait {
+    namespace key {
+        struct wait : public env::key::tmm {
+        public:
+            wait() = default;
+        };
+    }  // namespace key
+
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static WaitReasonManager inst_wait_reason_manager;
 
@@ -64,6 +75,12 @@ namespace task::wait {
     }
 
     Result<void> WaitReasonManager::enqueue(WaitReasonId id, TCB *tcb) {
+        return enqueue(id, tcb, nullptr, nullptr);
+    }
+
+    Result<void> WaitReasonManager::enqueue(WaitReasonId id, TCB *tcb,
+                                            WakePostAction action,
+                                            void *ctx) {
         if (tcb == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -71,6 +88,8 @@ namespace task::wait {
         propagate(qres);
 
         tcb->wait_reason        = id;
+        tcb->wait_post_action     = action;
+        tcb->wait_post_action_ctx = ctx;
         tcb->basic_entity.state = ThreadState::WAITING;
         qres.value()->threads.push_back(*tcb);
         void_return();
@@ -87,34 +106,122 @@ namespace task::wait {
 
         TCB *tcb = &queue->threads.front();
         queue->threads.pop_front();
-        tcb->wait_reason = 0;
+        tcb->wait_reason        = 0;
+        tcb->wait_post_action     = nullptr;
+        tcb->wait_post_action_ctx = nullptr;
         tcb->wait_head.clear();
         return tcb;
     }
 
-    Result<size_t> WaitReasonManager::wake_one(WaitReasonId id) {
-        auto pop_res = pop_one(id);
-        propagate(pop_res);
-
-        TCB *tcb = pop_res.value();
+    static bool run_post_action(TCB *tcb) {
         if (tcb == nullptr) {
+            return false;
+        }
+        if (tcb->wait_post_action == nullptr) {
+            return true;
+        }
+
+        auto *origin_tmm = env::inst().tmm();
+        PhyAddr origin_pgd = env::inst().pgd();
+        auto *target_tmm = tcb->task == nullptr ? nullptr : tcb->task->tmm;
+
+        if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
+            target_tmm->pgd() != origin_pgd) {
+            env::inst().tmm(key::wait()) = target_tmm;
+            PageMan(target_tmm->pgd()).switch_root();
+            PageMan::flush_tlb();
+        }
+
+        bool should_wake =
+            tcb->wait_post_action(tcb, tcb->wait_post_action_ctx);
+
+        if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
+            target_tmm->pgd() != origin_pgd) {
+            env::inst().tmm(key::wait()) = origin_tmm;
+            PageMan(origin_pgd).switch_root();
+            PageMan::flush_tlb();
+        }
+
+        return should_wake;
+    }
+
+    static void clear_wait_metadata(TCB *tcb) {
+        assert(tcb != nullptr);
+        tcb->wait_reason        = 0;
+        tcb->wait_post_action     = nullptr;
+        tcb->wait_post_action_ctx = nullptr;
+        tcb->wait_head.clear();
+    }
+
+    Result<size_t> WaitReasonManager::wake_one(WaitReasonId id) {
+        auto qres = queue_if_exists(id);
+        propagate(qres);
+
+        WaitQueue *queue = qres.value();
+        if (queue == nullptr || queue->threads.empty()) {
             return size_t(0);
         }
 
-        return schd::Scheduler::inst().wakeup_waiting(tcb) ? size_t(1)
-                                                           : size_t(0);
+        TCB *first_rejected = nullptr;
+        while (!queue->threads.empty()) {
+            TCB *tcb = &queue->threads.front();
+            queue->threads.pop_front();
+
+            if (tcb == first_rejected) {
+                queue->threads.push_back(*tcb);
+                return size_t(0);
+            }
+
+            if (run_post_action(tcb)) {
+                clear_wait_metadata(tcb);
+                return schd::Scheduler::inst().wakeup_waiting(tcb) ? size_t(1)
+                                                                   : size_t(0);
+            }
+
+            if (first_rejected == nullptr) {
+                first_rejected = tcb;
+            }
+            queue->threads.push_back(*tcb);
+        }
+
+        return size_t(0);
     }
 
     Result<size_t> WaitReasonManager::wake_all(WaitReasonId id) {
         size_t count = 0;
-        while (true) {
-            auto wake_res = wake_one(id);
-            propagate(wake_res);
-            if (wake_res.value() == 0) {
-                return count;
-            }
-            count += wake_res.value();
+        auto qres = queue_if_exists(id);
+        propagate(qres);
+
+        WaitQueue *queue = qres.value();
+        if (queue == nullptr || queue->threads.empty()) {
+            return count;
         }
+
+        size_t scan_count = queue->threads.size();
+        for (size_t i = 0; i < scan_count; ++i) {
+            TCB *tcb = &queue->threads.front();
+            queue->threads.pop_front();
+
+            if (!run_post_action(tcb)) {
+                queue->threads.push_back(*tcb);
+                continue;
+            }
+
+            clear_wait_metadata(tcb);
+            if (schd::Scheduler::inst().wakeup_waiting(tcb)) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    bool WaitReasonManager::has_waiting(WaitReasonId id) {
+        auto qres = queue_if_exists(id);
+        if (!qres.has_value()) {
+            return false;
+        }
+        WaitQueue *queue = qres.value();
+        return queue != nullptr && !queue->threads.empty();
     }
 
     WaitReasonId alloc_reason() {
@@ -125,11 +232,20 @@ namespace task::wait {
         return schd::Scheduler::inst().block_current(id);
     }
 
+    Result<void> wait_current(WaitReasonId id, WakePostAction action,
+                              void *ctx) {
+        return schd::Scheduler::inst().block_current(id, action, ctx);
+    }
+
     Result<size_t> wake_one(WaitReasonId id) {
         return WaitReasonManager::inst().wake_one(id);
     }
 
     Result<size_t> wake_all(WaitReasonId id) {
         return WaitReasonManager::inst().wake_all(id);
+    }
+
+    bool has_waiting(WaitReasonId id) {
+        return WaitReasonManager::inst().has_waiting(id);
     }
 }  // namespace task::wait

@@ -10,6 +10,7 @@
 目标三元组分别为riscv64-unknown-elf与loongarch64-unknown-elf.
 
 输入 `make build` 即可编译
+请勿使用 `make setup_workspace` 等命令, 这是为了把内核写到磁盘映像里的, 但是我们现在可以直接使用 `qemu` 的 `-kernel` 参数来加载内核.
 
 ## 运行
 

@@ -11,6 +11,7 @@
 
 #include <arch/riscv64/csr.h>
 #include <arch/riscv64/description.h>
+#include <arch/riscv64/device/fdt_helper.h>
 #include <arch/riscv64/mem/sv39.h>
 #include <arch/trait.h>
 #include <cap/capability.h>
@@ -256,6 +257,8 @@ void pre_init() {
     EarlyPageMan::init();
 
     kernel_paging_setup();
+
+    // FDTHelper::print_device_tree_detailed();
 
     // 进入 post-init 阶段
     // 此阶段内, 内核的所有代码和数据均已映射到内核虚拟地址空间

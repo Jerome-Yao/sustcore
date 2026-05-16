@@ -30,6 +30,10 @@ namespace task {
     struct TCB;
     struct PCB;
 
+    namespace wait {
+        using WakePostAction = bool (*)(TCB *tcb, void *ctx);
+    }
+
     // Make sure that TCB is has standard layout,
     // so that we can use offsetof to get the TCB pointer from the SU pointer.
     // TCB are arranged as a linked list
@@ -58,6 +62,8 @@ namespace task {
 
         // wait data
         WaitReasonId wait_reason;
+        wait::WakePostAction wait_post_action;
+        void *wait_post_action_ctx;
         util::ListHead<TCB> wait_head;
 
         void *operator new(size_t size);

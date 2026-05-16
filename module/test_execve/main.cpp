@@ -27,7 +27,7 @@ static CapIdx find_unique_notification_cap() {
     }
 
     if (count != 1) {
-        printf("test_execve: expected one notification cap, found %u\n",
+        printf("test_execve: 预期找到一个 notification capability, 但是找到了 %u 个\n",
                count);
         while (true) {
         }
@@ -36,24 +36,24 @@ static CapIdx find_unique_notification_cap() {
 }
 
 int kmod_main() {
-    printf("test_execve: start pid=%u pcb_cap=%p\n", sys_getpid(__pcb_cap),
+    printf("test_execve: pid=%u pcb_cap=%p\n", sys_getpid(__pcb_cap),
            (void *)__pcb_cap);
 
     CapIdx notif_cap = find_unique_notification_cap();
     printf("test_execve: notification cap=%p\n", (void *)notif_cap);
 
     sys_wait_notification(notif_cap, kSignalSyn);
-    printf("test_execve: SYN received\n");
+    printf("test_execve: 接收 SYN\n");
     sys_unsignal_notification(notif_cap, kSignalSyn);
 
     sys_signal_notification(notif_cap, kSignalSynAck);
-    printf("test_execve: SYN-ACK sent\n");
+    printf("test_execve: 发送 SYN-ACK\n");
 
     sys_wait_notification(notif_cap, kSignalAck);
-    printf("test_execve: ACK received\n");
+    printf("test_execve: 接收 ACK\n");
     sys_unsignal_notification(notif_cap, kSignalAck);
 
-    printf("test_execve: handshake done\n");
+    printf("test_execve: 握手完成!\n");
     sys_exit();
     while (true) {
     }

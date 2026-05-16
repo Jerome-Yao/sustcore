@@ -110,14 +110,14 @@ int kmod_main() {
         }
     }
 
-    printf("test_fork: parent SYN\n");
+    printf("test_fork: 发送 SYN\n");
     sys_signal_notification(kExecNotifCap, kSignalSyn);
 
     sys_wait_notification(kExecNotifCap, kSignalSynAck);
-    printf("test_fork: parent SYN-ACK received\n");
+    printf("test_fork: 接收 SYN-ACK\n");
     sys_unsignal_notification(kExecNotifCap, kSignalSynAck);
 
-    printf("test_fork: parent ACK\n");
+    printf("test_fork: 发送 ACK\n");
     sys_signal_notification(kExecNotifCap, kSignalAck);
 
     sys_signal_notification(kCompletionNotifCap, kCompletionSignal);

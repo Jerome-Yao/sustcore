@@ -20,25 +20,29 @@ constexpr CapIdx kForkDoneCap = cap::make(0, 3);
 constexpr size_t kForkDoneSignal = 0;
 
 int kmod_main() {
-    printf("Here is init module!\n");
+    printf("进入 init 模块!\n");
     if (!sys_create_notification(kForkDoneCap)) {
-        printf("init: create fork completion notification failed\n");
+        printf("init: 创建fork完成通知失败\n");
         while (true) {
         }
     }
 
     CapIdx initial_caps[] = {kForkDoneCap};
     CapIdx modidx = sys_create_process("/initrd/test_fork.mod", (CapIdx *)initial_caps, 1, 3);
-    printf("remove test_fork module capability %p\n", modidx);
+    printf("移除test_fork模块能力 %p\n", modidx);
     // don't hold its capability index.
     sys_cap_remove(modidx);
 
     sys_wait_notification(kForkDoneCap, kForkDoneSignal);
     sys_unsignal_notification(kForkDoneCap, kForkDoneSignal);
-    printf("init: test_fork completion received\n");
+    printf("init: 收到test_fork完成通知\n");
 
     modidx = sys_create_process("/initrd/test_thread.mod", nullptr, 0, 3);
-    printf("remove test_thread module capability %p\n", modidx);
+    printf("移除test_thread模块能力 %p\n", modidx);
+    sys_cap_remove(modidx);
+
+    modidx = sys_create_process("/initrd/test1.mod", nullptr, 0, 3);
+    printf("移除test1模块能力 %p\n", modidx);
     sys_cap_remove(modidx);
 
     printf("进入 cpu_idle()!\n");

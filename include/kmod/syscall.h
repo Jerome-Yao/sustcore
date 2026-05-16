@@ -49,6 +49,16 @@ bool sys_signal_notification(CapIdx capidx, size_t idx);
 bool sys_unsignal_notification(CapIdx capidx, size_t idx);
 bool sys_check_notification(CapIdx capidx, size_t idx);
 bool sys_wait_notification(CapIdx capidx, size_t idx);
+
+bool sys_create_endpoint(CapIdx target);
+void sys_send_msg(CapIdx endpoint, const void *msgbuf, size_t msgsz,
+                  const CapIdx *caplist, size_t capsz);
+void sys_recv_msg(CapIdx endpoint, void *msgbuf, size_t *msgsz,
+                  CapIdx *caplist, size_t *capsz);
+bool sys_try_send_msg(CapIdx endpoint, const void *msgbuf, size_t msgsz,
+                      const CapIdx *caplist, size_t capsz);
+bool sys_try_recv_msg(CapIdx endpoint, void *msgbuf, size_t *msgsz,
+                      CapIdx *caplist, size_t *capsz);
 }
 
 extern "C" {

@@ -66,7 +66,7 @@ static void thread_b() {
 static void *alloc_stack() {
     void *stack = sbrk(kStackSize);
     if (stack == reinterpret_cast<void *>(-1)) {
-        printf("test_thread: stack allocation failed\n");
+        printf("test_thread: 分配线程栈失败!\n");
         while (true) {
         }
     }
@@ -76,7 +76,7 @@ static void *alloc_stack() {
 int kmod_main() {
     printf("test_thread: start pid=%u\n", sys_getpid(__pcb_cap));
     if (!sys_create_notification(kThreadNotifCap)) {
-        printf("test_thread: create notification failed\n");
+        printf("test_thread: 创建通知失败!\n");
         while (true) {
         }
     }
@@ -88,7 +88,7 @@ int kmod_main() {
     CapIdx tcb_b = sys_create_thread(thread_b, stack_b, kStackSize);
     printf("test_thread: created A=%p B=%p\n", (void *)tcb_a, (void *)tcb_b);
     if (tcb_a == cap::error || tcb_b == cap::error) {
-        printf("test_thread: create_thread failed\n");
+        printf("test_thread: 创建线程失败!\n");
         while (true) {
         }
     }

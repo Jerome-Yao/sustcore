@@ -34,6 +34,12 @@
 #define SYS_CAP_REMOVE    (SYSCALL_BASE + 0x12)
 #define SYS_EXECVE        (SYSCALL_BASE + 0x13)
 
+#define SYS_CREATE_ENDPOINT (SYSCALL_BASE + 0x14)
+#define SYS_SEND_MSG        (SYSCALL_BASE + 0x15)
+#define SYS_RECV_MSG        (SYSCALL_BASE + 0x16)
+#define SYS_TRY_SEND_MSG    (SYSCALL_BASE + 0x17)
+#define SYS_TRY_RECV_MSG    (SYSCALL_BASE + 0x18)
+
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE  (0xFFC0'0000)
 #define SYS_WRITE_SERIAL   (SYS_UNSTABLE_BASE + 0x01)

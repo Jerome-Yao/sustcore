@@ -44,12 +44,16 @@ namespace task::wait {
         WaitReasonId alloc_reason();
         // 将当前线程加入等待队列
         Result<void> enqueue(WaitReasonId id, TCB *tcb);
+        Result<void> enqueue(WaitReasonId id, TCB *tcb,
+                             WakePostAction action, void *ctx);
         // 从等待队列中弹出一个线程
         Result<TCB *> pop_one(WaitReasonId id);
         // 从等待队列中唤醒一个线程, 返回被唤醒线程的数量(0或1)
         Result<size_t> wake_one(WaitReasonId id);
         // 从等待队列中唤醒所有线程, 返回被唤醒线程的数量
         Result<size_t> wake_all(WaitReasonId id);
+        // 判断是否有线程在等待队列中
+        bool has_waiting(WaitReasonId id);
 
         // 初始化等待原因管理器的单例实例
         static void init();
@@ -59,6 +63,9 @@ namespace task::wait {
 
     WaitReasonId alloc_reason();
     Result<void> wait_current(WaitReasonId id);
+    Result<void> wait_current(WaitReasonId id, WakePostAction action,
+                              void *ctx);
     Result<size_t> wake_one(WaitReasonId id);
     Result<size_t> wake_all(WaitReasonId id);
+    bool has_waiting(WaitReasonId id);
 }  // namespace task::wait

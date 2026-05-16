@@ -14,6 +14,7 @@
 #include <sustcore/addr.h>
 #include <sustcore/syscall.h>
 #include <syscall/cap.h>
+#include <syscall/endpoint.h>
 #include <syscall/notif.h>
 #include <syscall/syscall.h>
 #include <syscall/task.h>
@@ -168,6 +169,35 @@ namespace syscall {
             }
             case SYS_CAP_REMOVE: {
                 ret0 = cap_remove(capidx);
+                ret1 = 0;
+                break;
+            }
+            case SYS_CREATE_ENDPOINT: {
+                ret0 = create_endpoint(capidx);
+                ret1 = 0;
+                break;
+            }
+            case SYS_SEND_MSG: {
+                ret0 = send_msg(capidx, VirAddr(arg0), arg1, VirAddr(arg2),
+                                arg3, true);
+                ret1 = 0;
+                break;
+            }
+            case SYS_RECV_MSG: {
+                ret0 = recv_msg_sync(capidx, VirAddr(arg0), VirAddr(arg1),
+                                     VirAddr(arg2), VirAddr(arg3));
+                ret1 = 0;
+                break;
+            }
+            case SYS_TRY_SEND_MSG: {
+                ret0 = send_msg(capidx, VirAddr(arg0), arg1, VirAddr(arg2),
+                                arg3, false);
+                ret1 = 0;
+                break;
+            }
+            case SYS_TRY_RECV_MSG: {
+                ret0 = recv_msg_async(capidx, VirAddr(arg0), VirAddr(arg1),
+                                      VirAddr(arg2), VirAddr(arg3));
                 ret1 = 0;
                 break;
             }

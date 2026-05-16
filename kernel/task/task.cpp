@@ -146,6 +146,8 @@ namespace task {
         tcb->task        = task;
         tcb->list_head   = {};
         tcb->wait_reason = 0;
+        tcb->wait_post_action = nullptr;
+        tcb->wait_post_action_ctx = nullptr;
         tcb->wait_head   = {};
 
         // ask for a kstack for this thread
