@@ -1,6 +1,6 @@
 component-kind := module
-component-name := test2
-module-output := test2.mod
+component-name := test_call_service
+module-output := test_call_service.mod
 module-libc := kmod
 module-libraries := basecpp kmod
 

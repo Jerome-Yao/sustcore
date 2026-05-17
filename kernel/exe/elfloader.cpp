@@ -203,12 +203,9 @@ namespace loader::elf {
         }
 
         VirAddr heap_start = VirAddr(max_pload_end).page_align_up();
-        auto heap_slot_res = spec.holder->internal_lookup_freeslot();
-        propagate(heap_slot_res);
         auto *heap_mem =
             new cap::MemoryPayload(0, false, false, VMA::Growth::FLEXUP);
-        auto heap_cap_res =
-            spec.holder->internal_insert(heap_slot_res.value(), heap_mem);
+        auto heap_cap_res = spec.holder->internal_insert_to_free(heap_mem);
         if (!heap_cap_res.has_value()) {
             delete heap_mem;
             propagate_return(heap_cap_res);
@@ -221,7 +218,7 @@ namespace loader::elf {
             propagate_return(heap_res);
         }
         spec.heap_vaddr   = heap_start;
-        spec.heap_mem_cap = heap_slot_res.value();
+        spec.heap_mem_cap = heap_cap_res.value();
 
         // 输出TM中的VMA信息以供调试
         loggers::SUSTCORE::INFO("ELF加载完成, TM中的VMA列表:");

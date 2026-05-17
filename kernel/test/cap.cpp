@@ -179,6 +179,48 @@ namespace test::cap {
         }
     };
 
+    class CaseMigrateOnce : public TestCase {
+    public:
+        CaseMigrateOnce() : TestCase("migrate_once 迁移后自动取消权限") {}
+
+        void _run(void *env [[maybe_unused]]) const noexcept override {
+            auto holder_res = new_holder();
+            tassert(holder_res.has_value(), "创建 CHolder");
+            auto *holder = holder_res.value();
+
+            auto src_res = holder->internal_lookup_freeslot();
+            tassert(src_res.has_value(), "分配源槽位");
+            CapIdx src = src_res.value();
+            auto create_res =
+                holder->internal_create<kcap::IntPayload>(src, 22);
+            tassert(create_res.has_value(), "创建源能力");
+
+            auto downgrade_res =
+                holder->internal_downgrade(src, perm::basic::MIGRATE_ONCE);
+            tassert(downgrade_res.has_value(), "降级为 MIGRATE_ONCE");
+
+            auto dst_res = holder->internal_lookup_freeslot();
+            tassert(dst_res.has_value(), "分配目标槽位");
+            CapIdx dst       = dst_res.value();
+            auto migrate_res = holder->internal_migrate(dst, src);
+            tassert(migrate_res.has_value(), "migrate_once 成功");
+
+            auto moved_cap = holder->internal_lookup(dst);
+            tassert(moved_cap.has_value(), "目标槽位存在");
+            tassert(!moved_cap.value()->imply(perm::basic::MIGRATE_ONCE),
+                    "MIGRATE_ONCE 被自动取消");
+
+            auto next_dst_res = holder->internal_lookup_freeslot();
+            tassert(next_dst_res.has_value(), "分配第二目标槽位");
+            auto second_migrate =
+                holder->internal_migrate(next_dst_res.value(), dst);
+            tassert(!second_migrate.has_value() &&
+                        second_migrate.error() ==
+                            ErrCode::INSUFFICIENT_PERMISSIONS,
+                    "不能二次迁移");
+        }
+    };
+
     class CasePayloadDestruct : public TestCase {
     public:
         CasePayloadDestruct() : TestCase("payload 最后引用释放时 destruct") {}
@@ -218,6 +260,7 @@ namespace test::cap {
         cases.push_back(new CaseSharedPayloadClone());
         cases.push_back(new CaseDowngradeAndDerive());
         cases.push_back(new CaseMigrate());
+        cases.push_back(new CaseMigrateOnce());
         cases.push_back(new CasePayloadDestruct());
 
         framework.add_category(

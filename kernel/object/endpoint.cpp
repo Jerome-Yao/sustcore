@@ -77,6 +77,14 @@ namespace cap {
         }
     }
 
+    ReplyPayload::ReplyPayload()
+        : recv_wait_reason(task::wait::alloc_reason()) {}
+
+    ReplyPayload::~ReplyPayload() {
+        delete message;
+        message = nullptr;
+    }
+
     static Result<void> check_msg_bounds(size_t msgsz, size_t capsz) {
         if (msgsz > MAX_MSG_SIZE || capsz > MAX_MSG_CAPS) {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
@@ -86,7 +94,8 @@ namespace cap {
 
     Result<bool> EndpointObject::send(pid_t sender_pid, const char *msgbuf,
                                       size_t msgsz, Capability **caps,
-                                      size_t capsz, bool blocking) {
+                                      size_t capsz, bool blocking,
+                                      const bool *migrate_caps) {
         propagate(check_msg_bounds(msgsz, capsz));
         if (!imply(perm::endpoint::WRITE)) {
             loggers::CAPABILITY::ERROR("Endpoint WRITE权限不足");
@@ -111,10 +120,27 @@ namespace cap {
             memcpy(msg->msgbuf, msgbuf, msgsz);
         }
         for (size_t i = 0; i < capsz; ++i) {
-            if (caps[i] == nullptr || !caps[i]->imply(perm::basic::CLONE)) {
+            bool migrate_cap =
+                migrate_caps != nullptr && migrate_caps[i];
+            if (caps[i] == nullptr) {
                 unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
             }
-            msg->caps[i] = caps[i]->clone();
+            if (migrate_cap) {
+                bool can_migrate = caps[i]->imply(perm::basic::MIGRATE);
+                bool can_migrate_once =
+                    caps[i]->imply(perm::basic::MIGRATE_ONCE);
+                if (!can_migrate && !can_migrate_once) {
+                    unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+                }
+                b64 moved_perm =
+                    caps[i]->perm() & ~perm::basic::MIGRATE_ONCE;
+                msg->caps[i] = new Capability(caps[i]->payload(), moved_perm);
+            } else {
+                if (!caps[i]->imply(perm::basic::CLONE)) {
+                    unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+                }
+                msg->caps[i] = caps[i]->clone();
+            }
             if (msg->caps[i] == nullptr) {
                 unexpect_return(ErrCode::OUT_OF_MEMORY);
             }
@@ -209,6 +235,120 @@ namespace cap {
     Result<EndpointObject::RecvAwaiter> EndpointObject::recv_sync() {
         if (!imply(perm::endpoint::READ)) {
             loggers::CAPABILITY::ERROR("Endpoint READ权限不足");
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        return RecvAwaiter(_obj);
+    }
+
+    Result<bool> ReplyObject::send_reply(pid_t sender_pid, const char *msgbuf,
+                                         size_t msgsz, Capability **caps,
+                                         size_t capsz) {
+        propagate(check_msg_bounds(msgsz, capsz));
+        if (!imply(perm::reply::REPLIER)) {
+            loggers::CAPABILITY::ERROR("Reply REPLIER权限不足");
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+
+        util::owner<EndpointMessage *> msg = util::owner(new EndpointMessage());
+        auto msg_guard                     = util::Guard([&]() { delete msg; });
+        if (msg == nullptr) {
+            unexpect_return(ErrCode::OUT_OF_MEMORY);
+        }
+
+        msg->sender_pid = sender_pid;
+        msg->msgsz      = msgsz;
+        msg->capsz      = capsz;
+        if (msgsz != 0) {
+            memcpy(msg->msgbuf, msgbuf, msgsz);
+        }
+        for (size_t i = 0; i < capsz; ++i) {
+            if (caps[i] == nullptr || !caps[i]->imply(perm::basic::CLONE)) {
+                unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+            }
+            msg->caps[i] = caps[i]->clone();
+            if (msg->caps[i] == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+        }
+
+        task::TCB *receiver = nullptr;
+        WaitReasonId recv_wait_reason = _obj->recv_wait_reason;
+
+        {
+            InterruptGuard guard;
+            guard.enter();
+
+            if (_obj->message != nullptr) {
+                return false;
+            }
+
+            _obj->message = msg;
+            msg_guard.release();
+            auto recv_res = task::wait::peek_one(recv_wait_reason);
+            if (recv_res.has_value()) {
+                receiver = recv_res.value();
+            }
+        }
+
+        if (receiver != nullptr) {
+            resume_recv(receiver);
+        }
+        auto wake_res = task::wait::wake_one(recv_wait_reason);
+        return wake_res.transform(always(true));
+    }
+
+    Result<EndpointMessage *> ReplyObject::recv_async() {
+        if (!imply(perm::reply::CALLER)) {
+            loggers::CAPABILITY::ERROR("Reply CALLER权限不足");
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+
+        InterruptGuard guard;
+        guard.enter();
+
+        EndpointMessage *msg = _obj->message;
+        _obj->message        = nullptr;
+        return msg;
+    }
+
+    bool ReplyObject::RecvAwaiter::await_suspend(
+        std::coroutine_handle<> handle) {
+        if (_payload == nullptr) {
+            return false;
+        }
+
+        InterruptGuard guard;
+        guard.enter();
+
+        if (_payload->message != nullptr) {
+            return false;
+        }
+
+        auto *receiver = schd::Scheduler::inst().current_tcb();
+        if (receiver != nullptr) {
+            receiver->coroutines.ipc_handle = handle;
+        }
+        auto wait_res = task::wait::wait_current(
+            _payload->recv_wait_reason, [](task::TCB *tcb) {
+                return tcb != nullptr && (!tcb->coroutines.syscall_pending ||
+                                          tcb->coroutines.syscall_done);
+            });
+        if (!wait_res.has_value()) {
+            if (receiver != nullptr) {
+                receiver->coroutines.ipc_handle = nullptr;
+            }
+            loggers::CAPABILITY::ERROR("Reply接收等待失败: err=%d",
+                                       wait_res.error());
+            return false;
+        }
+        assert(receiver == nullptr ||
+               receiver->coroutines.ipc_handle == handle);
+        return true;
+    }
+
+    Result<ReplyObject::RecvAwaiter> ReplyObject::recv_sync() {
+        if (!imply(perm::reply::CALLER)) {
+            loggers::CAPABILITY::ERROR("Reply CALLER权限不足");
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
         return RecvAwaiter(_obj);

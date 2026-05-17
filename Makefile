@@ -22,6 +22,8 @@ include $(path-script)/run.mk
 .PHONY: build mount umount image __image stat_code all dbg clean FORCE
 .PHONY: build-libs build-mods build-kernel make-initrd
 
+DEFAULT_GOAL := all
+
 build-mode ?= release
 kernel-flags ?=
 
@@ -31,7 +33,8 @@ arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 -include $(path-script)/config.mk
 
 library-components := sbi basecpp kmod libfdt
-module-components := default init test1 test2 test_fork test_execve test_thread
+module-components := default init test_endpoint_master test_endpoint_slave test_call_service test_call_user \
+	test_fork test_execve test_thread
 
 library-component-makefile.sbi := $(path-e)/libs/sbi/Makefile
 library-component-makefile.basecpp := $(path-e)/libs/basecpp/Makefile
@@ -40,8 +43,10 @@ library-component-makefile.libfdt := $(path-e)/third_party/libs/libfdt/Makefile
 
 module-component-makefile.default := $(path-e)/module/default/Makefile
 module-component-makefile.init := $(path-e)/module/init/Makefile
-module-component-makefile.test1 := $(path-e)/module/test1/Makefile
-module-component-makefile.test2 := $(path-e)/module/test2/Makefile
+module-component-makefile.test_endpoint_master := $(path-e)/module/test_endpoint_master/Makefile
+module-component-makefile.test_endpoint_slave := $(path-e)/module/test_endpoint_slave/Makefile
+module-component-makefile.test_call_service := $(path-e)/module/test_call_service/Makefile
+module-component-makefile.test_call_user := $(path-e)/module/test_call_user/Makefile
 module-component-makefile.test_fork := $(path-e)/module/test_fork/Makefile
 module-component-makefile.test_execve := $(path-e)/module/test_execve/Makefile
 module-component-makefile.test_thread := $(path-e)/module/test_thread/Makefile
@@ -65,8 +70,10 @@ kernel/feature.mk: FORCE $(config-json) kernel/feature.json tools/feature_gen/fe
 build-mods: build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.default) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.init) $(arg-basic) build
-	$(q)$(MAKE) -f $(module-component-makefile.test1) $(arg-basic) build
-	$(q)$(MAKE) -f $(module-component-makefile.test2) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_master) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_slave) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_call_service) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_call_user) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_fork) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_execve) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_thread) $(arg-basic) build

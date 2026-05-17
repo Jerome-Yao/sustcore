@@ -196,14 +196,8 @@ namespace syscall {
         }
 
         // 4) 返回子进程 PCB 能力给调用方
-        auto ret_slot_res = current_holder->internal_lookup_freeslot();
-        if (!ret_slot_res.has_value()) {
-            loggers::SYSCALL::ERROR("创建进程失败: 调用者无空闲能力槽 err=%d",
-                                    ret_slot_res.error());
-            return cap::error;
-        }
-        auto ret_insert_res = current_holder->internal_insert(
-            ret_slot_res.value(), child_pcb_cap_res.value()->payload(),
+        auto ret_insert_res = current_holder->internal_insert_to_free(
+            child_pcb_cap_res.value()->payload(),
             child_pcb_cap_res.value()->perm());
         if (!ret_insert_res.has_value()) {
             loggers::SYSCALL::ERROR("创建进程失败: 返回PCB能力插入失败 err=%d",
@@ -214,7 +208,7 @@ namespace syscall {
         loggers::SYSCALL::INFO("创建进程成功: path=%s, pid=%d", path.kbuf(),
                                pcb->pid);
         pcb_guard.release();
-        return ret_slot_res.value();
+        return ret_insert_res.value();
     }
 
     CapIdx create_thread(VirAddr entry, VirAddr stack_addr, size_t stack_size) {

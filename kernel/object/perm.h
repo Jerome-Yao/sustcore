@@ -15,10 +15,15 @@
 
 namespace perm::basic {
     // permissions
-    constexpr b64 UNWRAP  = 0x0001;
-    constexpr b64 CLONE   = 0x0002;
-    constexpr b64 MIGRATE = 0x0004;
-    constexpr b64 SPLIT   = 0x0008;
+    constexpr b64 CLONE        = 0x0002;
+    constexpr b64 MIGRATE      = 0x0004;
+    /**
+     * @brief 一次性迁移权限.
+     *
+     * 允许执行一次MIGRATE语义的转移; 转移完成后目标cap会自动清除此位,
+     * 避免被接收方继续二次分发.
+     */
+    constexpr b64 MIGRATE_ONCE = 0x0008;
 }  // namespace perm::basic
 
 namespace perm::endpoint {
@@ -26,6 +31,13 @@ namespace perm::endpoint {
     constexpr b64 READ  = 0x02'0000;
     constexpr b64 WRITE = 0x04'0000;
 }  // namespace perm::endpoint
+
+namespace perm::reply {
+    /// 允许从ReplyObject读取回复消息.
+    constexpr b64 CALLER  = 0x01'0000;
+    /// 允许向ReplyObject写入回复消息.
+    constexpr b64 REPLIER = 0x02'0000;
+}  // namespace perm::reply
 
 namespace perm::intobj {
     // IntObjectect的权限定义

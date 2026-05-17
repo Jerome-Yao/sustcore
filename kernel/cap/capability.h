@@ -127,6 +127,13 @@ namespace cap {
             return _perm;
         }
 
+        /**
+         * @brief 清除指定权限位.
+         */
+        void clear_perm(b64 permissions) {
+            _perm &= ~permissions;
+        }
+
         [[nodiscard]]
         Capability *clone() const {
             return new Capability(*this);

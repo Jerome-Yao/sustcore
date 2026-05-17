@@ -49,12 +49,16 @@ namespace task {
         if (pcb == nullptr || pcb->cholder == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
-        auto slot_res = pcb->cholder->internal_lookup_freeslot();
-        propagate(slot_res);
-        auto create_res = pcb->cholder->internal_create<cap::PCBPayload>(
-            slot_res.value(), pcb);
-        propagate(create_res);
-        return slot_res.value();
+        auto *payload = new cap::PCBPayload(pcb);
+        if (payload == nullptr) {
+            unexpect_return(ErrCode::OUT_OF_MEMORY);
+        }
+        auto insert_res = pcb->cholder->internal_insert_to_free(payload);
+        if (!insert_res.has_value()) {
+            delete payload;
+            propagate_return(insert_res);
+        }
+        return insert_res.value();
     }
 
     /**
@@ -225,12 +229,9 @@ namespace task {
         task::StartupInfo startup_info) {
         // 为主线程分配初始栈空间, 并将其加入Task Memory的VMA中
         // 此处无需通过GFP分配物理页, 由缺页中断自动处理即可
-        auto stack_slot_res = pcb->cholder->internal_lookup_freeslot();
-        propagate(stack_slot_res);
         auto *stack_mem = new cap::MemoryPayload(MAX_INITIAL_STACK_SIZE, false,
                                                  false, VMA::Growth::GROW_DOWN);
-        auto stack_cap_res =
-            pcb->cholder->internal_insert(stack_slot_res.value(), stack_mem);
+        auto stack_cap_res = pcb->cholder->internal_insert_to_free(stack_mem);
         if (!stack_cap_res.has_value()) {
             delete stack_mem;
             propagate_return(stack_cap_res);
@@ -256,7 +257,7 @@ namespace task {
         pcb->main_tcb_cap          = tcb_cap_slot_res.value();
         startup_info.pcb_cap       = pcb->pcb_cap;
         startup_info.main_tcb_cap  = pcb->main_tcb_cap;
-        startup_info.stack_mem_cap = stack_slot_res.value();
+        startup_info.stack_mem_cap = stack_cap_res.value();
         tcb->context()->write_startup(startup_info);
 
         tcb_guard.release();
@@ -297,12 +298,9 @@ namespace task {
             return construct_main_thread(pcb, schd_class, startup_info);
         }
 
-        auto stack_slot_res = pcb->cholder->internal_lookup_freeslot();
-        propagate(stack_slot_res);
         auto *stack_mem = new cap::MemoryPayload(MAX_INITIAL_STACK_SIZE, false,
                                                  false, VMA::Growth::GROW_DOWN);
-        auto stack_cap_res =
-            pcb->cholder->internal_insert(stack_slot_res.value(), stack_mem);
+        auto stack_cap_res = pcb->cholder->internal_insert_to_free(stack_mem);
         if (!stack_cap_res.has_value()) {
             delete stack_mem;
             propagate_return(stack_cap_res);
@@ -328,7 +326,7 @@ namespace task {
 
         pcb->main_tcb_cap          = tcb_cap_slot_res.value();
         startup_info.main_tcb_cap  = pcb->main_tcb_cap;
-        startup_info.stack_mem_cap = stack_slot_res.value();
+        startup_info.stack_mem_cap = stack_cap_res.value();
         tcb->context()->write_startup(startup_info);
         pcb->threads.push_back(*tcb);
         return tcb;
@@ -502,12 +500,7 @@ namespace task {
         VFile *file = open_res.value();
 
         // 加载到CHolder中
-        auto slot_res = holder->internal_lookup_freeslot();
-        if (!slot_res.has_value()) {
-            file->destruct();
-            propagate_return(slot_res);
-        }
-        auto insert_res = holder->internal_insert(slot_res.value(), file);
+        auto insert_res = holder->internal_insert_to_free(file);
         if (!insert_res.has_value()) {
             file->destruct();
             propagate_return(insert_res);
@@ -519,8 +512,8 @@ namespace task {
 
         // 设置prm参数
         prm.src_path       = path;
-        prm.image_file_cap = slot_res.value();
-        return slot_res.value();
+        prm.image_file_cap = insert_res.value();
+        return insert_res.value();
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_elf(

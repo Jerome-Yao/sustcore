@@ -43,8 +43,12 @@ int kmod_main() {
     printf("移除test_thread模块能力 %p\n", modidx);
     sys_cap_remove(modidx);
 
-    modidx = sys_create_process("/initrd/test1.mod", nullptr, 0, 3);
-    printf("移除test1模块能力 %p\n", modidx);
+    modidx = sys_create_process("/initrd/test_endpoint_master.mod", nullptr, 0, 3);
+    printf("移除test-endpoint-master模块能力 %p\n", modidx);
+    sys_cap_remove(modidx);
+
+    modidx = sys_create_process("/initrd/test_call_service.mod", nullptr, 0, 3);
+    printf("移除test_call_service模块能力 %p\n", modidx);
     sys_cap_remove(modidx);
 
     printf("进入 cpu_idle()!\n");

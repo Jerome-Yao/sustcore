@@ -68,6 +68,24 @@ namespace cap {
         [[nodiscard]]
         Result<void> internal_insert(CapIdx idx, Payload *payload, b64 perm);
 
+        /**
+         * @brief 将payload插入当前CHolder中的第一个空闲槽位.
+         *
+         * @return 插入成功时返回新cap所在槽位.
+         */
+        [[nodiscard]]
+        Result<CapIdx> internal_insert_to_free(Payload *payload) {
+            return internal_insert_to_free(payload, perm::allperm());
+        }
+
+        /**
+         * @brief 将payload以指定权限插入当前CHolder中的第一个空闲槽位.
+         *
+         * @return 插入成功时返回新cap所在槽位.
+         */
+        [[nodiscard]]
+        Result<CapIdx> internal_insert_to_free(Payload *payload, b64 perm);
+
         template <typename PayloadType, typename... Args>
         [[nodiscard]]
         Result<void> internal_create(CapIdx idx, Args &&...args) {
@@ -118,6 +136,18 @@ namespace cap {
 
         [[nodiscard]]
         static Result<CapIdx> get_free_slot();
+
+        /**
+         * @brief 将payload插入当前任务CSpace的第一个空闲槽位.
+         */
+        [[nodiscard]]
+        static Result<CapIdx> insert_to_free(Payload *payload);
+
+        /**
+         * @brief 将payload以指定权限插入当前任务CSpace的第一个空闲槽位.
+         */
+        [[nodiscard]]
+        static Result<CapIdx> insert_to_free(Payload *payload, b64 perm);
 
         [[nodiscard]]
         static Result<Capability *> lookup(CapIdx idx);

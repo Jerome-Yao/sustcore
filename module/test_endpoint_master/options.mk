@@ -1,6 +1,6 @@
 component-kind := module
-component-name := test1
-module-output := test1.mod
+component-name := test_endpoint_master
+module-output := test_endpoint_master.mod
 module-libc := kmod
 module-libraries := basecpp kmod
 

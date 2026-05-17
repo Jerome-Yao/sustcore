@@ -55,14 +55,36 @@ bool sys_check_notification(CapIdx capidx, size_t idx);
 bool sys_wait_notification(CapIdx capidx, size_t idx);
 
 bool sys_create_endpoint(CapIdx target);
-void sys_send_msg(CapIdx endpoint, const void *msgbuf, size_t msgsz,
-                  const CapIdx *caplist, size_t capsz);
-void sys_recv_msg(CapIdx endpoint, void *msgbuf, size_t *msgsz,
-                  CapIdx *caplist, size_t *capsz);
-bool sys_try_send_msg(CapIdx endpoint, const void *msgbuf, size_t msgsz,
-                      const CapIdx *caplist, size_t capsz);
-bool sys_try_recv_msg(CapIdx endpoint, void *msgbuf, size_t *msgsz,
-                      CapIdx *caplist, size_t *capsz);
+/**
+ * @brief 阻塞地向endpoint发送一条MsgPacket描述的消息.
+ */
+void sys_send_msg(CapIdx endpoint, MsgPacket *packet);
+/**
+ * @brief 阻塞地从endpoint接收一条消息并写回MsgPacket描述的缓冲区.
+ */
+void sys_recv_msg(CapIdx endpoint, MsgPacket *packet);
+/**
+ * @brief 非阻塞地向endpoint发送一条消息.
+ */
+bool sys_try_send_msg(CapIdx endpoint, MsgPacket *packet);
+/**
+ * @brief 非阻塞地从endpoint接收一条消息.
+ */
+bool sys_try_recv_msg(CapIdx endpoint, MsgPacket *packet);
+/**
+ * @brief 发起一次同步endpoint调用, 自动携带一次性Reply Capability.
+ *
+ * @param endpoint 目标endpoint capability.
+ * @param sendmsg 请求消息.
+ * @param replymsg 用于接收回复消息的缓冲区描述符.
+ */
+void endpoint_call(CapIdx endpoint, MsgPacket *sendmsg, MsgPacket *replymsg);
+/**
+ * @brief 使用Reply Capability回复一次endpoint_call.
+ *
+ * 成功回复后, reply_cap 会从当前CSpace中移除.
+ */
+void endpoint_reply(CapIdx reply_cap, MsgPacket *replymsg);
 
 bool sys_mem_create(CapIdx idx, size_t memsz, bool shared, bool continuity,
                     uint64_t growth);

@@ -1,4 +1,5 @@
 # 设置环境
+# 这些构建选项目前而言没有任何用处
 .PHONY: setup-workspace
 setup-workspace:
 	$(q)$(call if_sudo_mkdir, $(path-mount))

@@ -104,6 +104,16 @@ namespace cap {
         return set_res;
     }
 
+    Result<CapIdx> CHolder::internal_insert_to_free(Payload *payload,
+                                                    b64 permissions) {
+        auto slot_res = internal_lookup_freeslot();
+        propagate(slot_res);
+        auto insert_res =
+            internal_insert(slot_res.value(), payload, permissions);
+        propagate(insert_res);
+        return slot_res.value();
+    }
+
     Result<void> CHolder::internal_remove(CapIdx idx) {
         auto cap_res = internal_lookup(idx);
         propagate(cap_res);
@@ -160,12 +170,21 @@ namespace cap {
         propagate(cap_res);
 
         Capability *src_cap = cap_res.value();
-        if (!perm::imply(src_cap->perm(), perm::basic::MIGRATE)) {
+        bool can_migrate =
+            perm::imply(src_cap->perm(), perm::basic::MIGRATE);
+        bool can_migrate_once =
+            perm::imply(src_cap->perm(), perm::basic::MIGRATE_ONCE);
+        if (!can_migrate && !can_migrate_once) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
         auto move_res = _space.move(target_idx, src_idx);
         propagate(move_res);
+        if (can_migrate_once) {
+            auto moved_res = internal_lookup(target_idx);
+            propagate(moved_res);
+            moved_res.value()->clear_perm(perm::basic::MIGRATE_ONCE);
+        }
         void_return();
     }
 
@@ -216,6 +235,16 @@ namespace cap {
     Result<CapIdx> CHolder::get_free_slot() {
         return current().and_then(
             [](CHolder *holder) { return holder->internal_lookup_freeslot(); });
+    }
+
+    Result<CapIdx> CHolder::insert_to_free(Payload *payload) {
+        return insert_to_free(payload, perm::allperm());
+    }
+
+    Result<CapIdx> CHolder::insert_to_free(Payload *payload, b64 perm) {
+        return current().and_then([=](CHolder *holder) {
+            return holder->internal_insert_to_free(payload, perm);
+        });
     }
 
     Result<Capability *> CHolder::lookup(CapIdx idx) {

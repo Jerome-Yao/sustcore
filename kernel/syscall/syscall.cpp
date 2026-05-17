@@ -166,27 +166,22 @@ namespace syscall {
                 break;
             }
             case SYS_SEND_MSG: {
-                ret0 = send_msg(capidx, VirAddr(arg0), arg1, VirAddr(arg2),
-                                arg3, true);
+                ret0 = send_msg(capidx, VirAddr(arg0), true);
                 ret1 = 0;
                 break;
             }
             case SYS_RECV_MSG: {
-                auto recv_task =
-                    recv_msg_sync(capidx, VirAddr(arg0), VirAddr(arg1),
-                                  VirAddr(arg2), VirAddr(arg3));
+                auto recv_task = recv_msg_sync(capidx, VirAddr(arg0));
                 RetPack ret = co_await recv_task;
                 co_return finish_syscall(ctx, tcb, ret);
             }
             case SYS_TRY_SEND_MSG: {
-                ret0 = send_msg(capidx, VirAddr(arg0), arg1, VirAddr(arg2),
-                                arg3, false);
+                ret0 = send_msg(capidx, VirAddr(arg0), false);
                 ret1 = 0;
                 break;
             }
             case SYS_TRY_RECV_MSG: {
-                ret0 = recv_msg_async(capidx, VirAddr(arg0), VirAddr(arg1),
-                                      VirAddr(arg2), VirAddr(arg3));
+                ret0 = recv_msg_async(capidx, VirAddr(arg0));
                 ret1 = 0;
                 break;
             }
@@ -217,6 +212,17 @@ namespace syscall {
                 auto query = mem_query(capidx);
                 ret0       = query.memsz;
                 ret1       = query.allocated;
+                break;
+            }
+            case SYS_ENDPOINT_CALL: {
+                auto call_task =
+                    endpoint_call(capidx, VirAddr(arg0), VirAddr(arg1));
+                RetPack ret = co_await call_task;
+                co_return finish_syscall(ctx, tcb, ret);
+            }
+            case SYS_ENDPOINT_REPLY: {
+                ret0 = endpoint_reply(capidx, VirAddr(arg0));
+                ret1 = 0;
                 break;
             }
             default: {
