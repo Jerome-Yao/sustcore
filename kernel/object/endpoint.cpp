@@ -1,6 +1,12 @@
 /**
  * @file endpoint.cpp
- * @brief Endpoint capability object
+ * @author theflysong (song_of_the_fly@163.com)
+ * @brief IPC端点对象
+ * @version alpha-1.0.0
+ * @date 2026-05-17
+ *
+ * @copyright Copyright (c) 2026
+ *
  */
 
 #include <device/int.h>
@@ -8,7 +14,7 @@
 #include <logger.h>
 #include <mem/vma.h>
 #include <object/endpoint.h>
-#include <perm/perm.h>
+#include <object/perm.h>
 #include <task/scheduler.h>
 #include <task/wait.h>
 
@@ -28,12 +34,13 @@ namespace cap {
             return;
         }
 
-        auto *origin_tmm = env::inst().tmm();
+        auto *origin_tmm   = env::inst().tmm();
         PhyAddr origin_pgd = env::inst().pgd();
-        auto *target_tmm = tcb->task == nullptr ? nullptr : tcb->task->tmm;
+        auto *target_tmm   = tcb->task == nullptr ? nullptr : tcb->task->tmm;
 
         if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
-            target_tmm->pgd() != origin_pgd) {
+            target_tmm->pgd() != origin_pgd)
+        {
             env::inst().tmm(key::endpoint()) = target_tmm;
             PageMan(target_tmm->pgd()).switch_root();
             PageMan::flush_tlb();
@@ -42,7 +49,8 @@ namespace cap {
         tcb->coroutines.ipc_handle.resume();
 
         if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
-            target_tmm->pgd() != origin_pgd) {
+            target_tmm->pgd() != origin_pgd)
+        {
             env::inst().tmm(key::endpoint()) = origin_tmm;
             PageMan(origin_pgd).switch_root();
             PageMan::flush_tlb();
@@ -58,10 +66,8 @@ namespace cap {
     }
 
     EndpointPayload::EndpointPayload()
-        :
-          send_wait_reason(task::wait::alloc_reason()),
-          recv_wait_reason(task::wait::alloc_reason())
-          {}
+        : send_wait_reason(task::wait::alloc_reason()),
+          recv_wait_reason(task::wait::alloc_reason()) {}
 
     EndpointPayload::~EndpointPayload() {
         while (!messages.empty()) {
@@ -91,8 +97,8 @@ namespace cap {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
-        util::owner<EndpointMessage*> msg = util::owner(new EndpointMessage());
-        auto msg_guard = util::Guard([&]() { delete msg; });
+        util::owner<EndpointMessage *> msg = util::owner(new EndpointMessage());
+        auto msg_guard                     = util::Guard([&]() { delete msg; });
 
         if (msg == nullptr) {
             unexpect_return(ErrCode::OUT_OF_MEMORY);
@@ -105,8 +111,7 @@ namespace cap {
             memcpy(msg->msgbuf, msgbuf, msgsz);
         }
         for (size_t i = 0; i < capsz; ++i) {
-            if (caps[i] == nullptr ||
-                !caps[i]->imply(perm::basic::CLONE)) {
+            if (caps[i] == nullptr || !caps[i]->imply(perm::basic::CLONE)) {
                 unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
             }
             msg->caps[i] = caps[i]->clone();
@@ -184,11 +189,9 @@ namespace cap {
             receiver->coroutines.ipc_handle = handle;
         }
         auto wait_res = task::wait::wait_current(
-            _payload->recv_wait_reason,
-            [](task::TCB *tcb) {
-                return tcb != nullptr &&
-                       (!tcb->coroutines.syscall_pending ||
-                        tcb->coroutines.syscall_done);
+            _payload->recv_wait_reason, [](task::TCB *tcb) {
+                return tcb != nullptr && (!tcb->coroutines.syscall_pending ||
+                                          tcb->coroutines.syscall_done);
             });
         if (!wait_res.has_value()) {
             if (receiver != nullptr) {

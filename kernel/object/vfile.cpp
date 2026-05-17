@@ -9,8 +9,8 @@
  *
  */
 
+#include <object/perm.h>
 #include <object/vfile.h>
-#include <perm/vfile.h>
 #include <vfs/vfs.h>
 
 namespace cap {

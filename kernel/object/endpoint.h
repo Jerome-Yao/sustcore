@@ -1,12 +1,18 @@
 /**
  * @file endpoint.h
- * @brief Endpoint capability object
+ * @author theflysong (song_of_the_fly@163.com)
+ * @brief IPC端点对象
+ * @version alpha-1.0.0
+ * @date 2026-05-17
+ *
+ * @copyright Copyright (c) 2026
+ *
  */
 
 #pragma once
 
 #include <cap/capability.h>
-#include <perm/endpoint.h>
+#include <object/perm.h>
 #include <sus/list.h>
 #include <sustcore/capability.h>
 #include <task/task_struct.h>
@@ -28,7 +34,8 @@ namespace cap {
     };
 
     struct EndpointPayload : public _PayloadHelper<PayloadType::ENDPOINT> {
-        util::IntrusiveList<EndpointMessage, &EndpointMessage::list_head> messages = {};
+        util::IntrusiveList<EndpointMessage, &EndpointMessage::list_head>
+            messages = {};
         WaitReasonId send_wait_reason;
         WaitReasonId recv_wait_reason;
 
@@ -40,7 +47,7 @@ namespace cap {
     public:
         /**
          * @brief Endpoint消息接收的协程等待器
-         * 
+         *
          */
         class RecvAwaiter {
         private:

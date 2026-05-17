@@ -13,7 +13,7 @@
 
 #include <arch/riscv64/description.h>
 #include <cap/capability.h>
-#include <perm/mutex.h>
+#include <object/perm.h>
 
 namespace cap {
     struct MutexPayload : public _PayloadHelper<PayloadType::MUTEX> {

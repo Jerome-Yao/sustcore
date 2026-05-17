@@ -64,15 +64,24 @@ constexpr const char *to_cstring(ErrCode err) {
         case ErrCode::INVALID_PARAM:      return "INVALID_PARAM";
         case ErrCode::OUT_OF_BOUNDARY:    return "OUT_OF_BOUNDARY";
         case ErrCode::NOT_SUPPORTED:      return "NOT_SUPPORTED";
+        case ErrCode::BUSY:               return "BUSY";
+        case ErrCode::OUT_OF_MEMORY:      return "OUT_OF_MEMORY";
+        case ErrCode::NULLPTR:            return "NULLPTR";
         case ErrCode::INVALID_CAPABILITY: return "INVALID_CAPABILITY";
         case ErrCode::INSUFFICIENT_PERMISSIONS:
             return "INSUFFICIENT_PERMISSIONS";
-        case ErrCode::TYPE_NOT_MATCHED: return "TYPE_NOT_MATCHED";
-        case ErrCode::PAYLOAD_ERROR:    return "PAYLOAD_ERROR";
-        case ErrCode::CREATION_FAILED:  return "CREATION_FAILED";
-        case ErrCode::ENTRY_NOT_FOUND:  return "ENTRY_NOT_FOUND";
-        case ErrCode::IO_ERROR:         return "IO_ERROR";
-        default:                        return "UNKNOWN_ERROR";
+        case ErrCode::TYPE_NOT_MATCHED:   return "TYPE_NOT_MATCHED";
+        case ErrCode::PAYLOAD_ERROR:      return "PAYLOAD_ERROR";
+        case ErrCode::CREATION_FAILED:    return "CREATION_FAILED";
+        case ErrCode::INVALID_TOKEN:      return "INVALID_TOKEN";
+        case ErrCode::NO_FREE_SLOT:       return "NO_FREE_SLOT";
+        case ErrCode::ENTRY_NOT_FOUND:    return "ENTRY_NOT_FOUND";
+        case ErrCode::NO_RUNNABLE_THREAD: return "NO_RUNNABLE_THREAD";
+        case ErrCode::NO_MESSAGE:         return "NO_MESSAGE";
+        case ErrCode::PAGE_NOT_PRESENT:   return "PAGE_NOT_PRESENT";
+        case ErrCode::INVALID_PTE:        return "INVALID_PTE";
+        case ErrCode::FDT_ERROR:          return "FDT_ERROR";
+        default:                          return "UNKNOWN_ERROR";
     }
 }
 

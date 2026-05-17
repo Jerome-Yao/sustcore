@@ -10,7 +10,12 @@
  */
 
 #include <cap/cholder.h>
+#include <env.h>
 #include <logger.h>
+#include <mem/gfp.h>
+#include <mem/vma.h>
+#include <object/memory.h>
+#include <object/perm.h>
 #include <object/task.h>
 #include <schd/schdbase.h>
 #include <sus/nonnull.h>
@@ -18,9 +23,101 @@
 #include <sustcore/capability.h>
 #include <syscall/task.h>
 #include <syscall/uaccess.h>
+#include <task/scheduler.h>
 #include <task/task.h>
 
+#include <cassert>
+
 namespace syscall {
+    /**
+     * @brief 查找当前进程 capability 空间中的 PCB payload。
+     */
+    static Result<cap::PCBPayload *> lookup_pcb(CapIdx idx,
+                                                cap::Capability **out_cap) {
+        auto cap_res = cap::CHolder::lookup(idx);
+        propagate(cap_res);
+        if (out_cap != nullptr) {
+            *out_cap = cap_res.value();
+        }
+        auto *pcb = cap_res.value()->payload_as<cap::PCBPayload>();
+        if (pcb == nullptr || pcb->pcb == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return pcb;
+    }
+
+    /**
+     * @brief 查找当前进程 capability 空间中的 Memory payload。
+     */
+    static Result<cap::MemoryPayload *> lookup_memory(
+        CapIdx idx, cap::Capability **out_cap) {
+        auto cap_res = cap::CHolder::lookup(idx);
+        propagate(cap_res);
+        if (out_cap != nullptr) {
+            *out_cap = cap_res.value();
+        }
+        auto *memory = cap_res.value()->payload_as<cap::MemoryPayload>();
+        if (memory == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return memory;
+    }
+
+    /**
+     * @brief 将父进程指定 capability 按相同 CapIdx 复制到子 CHolder。
+     *
+     * 该函数只处理 capability transfer 的 CLONE 语义；对象自身权限检查
+     * 仍由对应 CapObj 方法完成。
+     */
+    static Result<void> copy_initial_caps_in_place(cap::CHolder *src_holder,
+                                                   cap::CHolder *dst_holder,
+                                                   VirAddr caps_uaddr,
+                                                   size_t caps_sz) {
+        if (src_holder == nullptr || dst_holder == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if (caps_sz == 0) {
+            void_return();
+        }
+
+        UBuffer caps_buf(caps_uaddr, caps_sz * sizeof(CapIdx));
+        caps_buf.sync_from_user();
+        auto *caps = reinterpret_cast<CapIdx *>(caps_buf.kbuf());
+        for (size_t i = 0; i < caps_sz; ++i) {
+            CapIdx idx   = caps[i];
+            auto src_res = src_holder->internal_lookup(idx);
+            propagate(src_res);
+            cap::Capability *src_cap = src_res.value();
+            if (!src_cap->imply(perm::basic::CLONE)) {
+                unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+            }
+
+            cap::Payload *src_payload = src_cap->payload();
+            cap::Payload *payload     = src_payload->clone_payload();
+            auto insert_res =
+                dst_holder->internal_insert(idx, payload, src_cap->perm());
+            if (!insert_res.has_value()) {
+                if (payload != src_payload) {
+                    payload->destruct();
+                }
+                propagate_return(insert_res);
+            }
+
+            auto *memory = src_cap->payload_as<cap::MemoryPayload>();
+            if (memory != nullptr && !memory->shared &&
+                env::inst().tmm() != nullptr)
+            {
+                auto cow_res = env::inst().tmm()->protect_memory_cow(memory);
+                if (!cow_res.has_value()) {
+                    auto remove_res = dst_holder->internal_remove(idx);
+                    assert(remove_res.has_value());
+                    propagate_return(cow_res);
+                }
+            }
+        }
+        void_return();
+    }
+
     static Result<schd::ClassType> parse_user_sched_class(size_t value) {
         switch (static_cast<schd::ClassType>(value)) {
             case schd::ClassType::RR:
@@ -33,13 +130,13 @@ namespace syscall {
 
     CapIdx create_process(const UString &path, VirAddr caps_uaddr,
                           size_t caps_sz, size_t sched_class) {
-        loggers::SYSCALL::INFO("创建进程: path=%s, caps_uaddr=%p, caps_sz=%u, sched_class=%u",
-                               path.kbuf(), caps_uaddr.addr(), caps_sz, sched_class);
+        loggers::SYSCALL::INFO(
+            "创建进程: path=%s, caps_uaddr=%p, caps_sz=%u, sched_class=%u",
+            path.kbuf(), caps_uaddr.addr(), caps_sz, sched_class);
 
         auto sched_res = parse_user_sched_class(sched_class);
         if (!sched_res.has_value()) {
-            loggers::SYSCALL::ERROR("创建进程失败: 无效调度类=%u",
-                                    sched_class);
+            loggers::SYSCALL::ERROR("创建进程失败: 无效调度类=%u", sched_class);
             return cap::error;
         }
 
@@ -51,14 +148,36 @@ namespace syscall {
         }
         cap::CHolder *current_holder = current_holder_res.value();
 
-        // 2) 加载子进程 ELF，并设置失败清理守卫
-        auto load_res =
-            task::TaskManager::inst().load_elf(path.kbuf(), sched_res.value());
+        auto child_holder_res = cap::CHolderManager::inst().create_holder();
+        if (!child_holder_res.has_value()) {
+            loggers::SYSCALL::ERROR("创建进程失败: 创建子CHolder失败 err=%d",
+                                    child_holder_res.error());
+            return cap::error;
+        }
+        cap::CHolder *child_holder = child_holder_res.value();
+        auto holder_guard          = util::Guard([child_holder]() {
+            auto rm_res =
+                cap::CHolderManager::inst().remove_holder(child_holder->id());
+            assert(rm_res.has_value());
+        });
+
+        auto copy_res = copy_initial_caps_in_place(current_holder, child_holder,
+                                                   caps_uaddr, caps_sz);
+        if (!copy_res.has_value()) {
+            loggers::SYSCALL::ERROR("创建进程失败: 初始能力原位复制失败 err=%d",
+                                    copy_res.error());
+            return cap::error;
+        }
+
+        // 2) 使用已预配置的 CHolder 加载子进程 ELF
+        auto load_res = task::TaskManager::inst().load_elf_into(
+            path.kbuf(), child_holder, sched_res.value());
         if (!load_res.has_value()) {
             loggers::SYSCALL::ERROR("创建进程失败: path=%s, 错误码: %s",
                                     path.kbuf(), to_cstring(load_res.error()));
             return cap::error;
         }
+        holder_guard.release();
         auto pcb_guard = util::Guard([&]() {
             if (load_res.has_value()) {
                 auto pcb = load_res.value();
@@ -68,32 +187,12 @@ namespace syscall {
             }
         });
 
-        auto pcb = load_res.value();
+        auto pcb               = load_res.value();
         auto child_pcb_cap_res = pcb->cholder->internal_lookup(pcb->pcb_cap);
         if (!child_pcb_cap_res.has_value()) {
             loggers::SYSCALL::ERROR("创建进程失败: 子进程PCB能力不可用 err=%d",
                                     child_pcb_cap_res.error());
             return cap::error;
-        }
-
-        cap::PCBObject child_pcb_obj(
-            util::nnullforce(child_pcb_cap_res.value()));
-
-        // 3) 将调用方传入的初始能力集合注入子进程
-        if (caps_sz != 0) {
-            UBuffer caps_buf(caps_uaddr, caps_sz * sizeof(CapIdx));
-            caps_buf.sync_from_user();
-            auto *caps = reinterpret_cast<CapIdx *>(caps_buf.kbuf());
-            for (size_t i = 0; i < caps_sz; ++i) {
-                auto insert_res =
-                    child_pcb_obj.cap_insert(caps[i], *current_holder);
-                if (!insert_res.has_value()) {
-                    loggers::SYSCALL::ERROR(
-                        "创建进程失败: 初始能力插入失败 idx=%d err=%d", i,
-                        insert_res.error());
-                    return cap::error;
-                }
-            }
         }
 
         // 4) 返回子进程 PCB 能力给调用方
@@ -118,14 +217,13 @@ namespace syscall {
         return ret_slot_res.value();
     }
 
-    CapIdx create_thread(VirAddr entry, VirAddr stack_addr,
-                         size_t stack_size) {
+    CapIdx create_thread(VirAddr entry, VirAddr stack_addr, size_t stack_size) {
         auto thread_res = task::TaskManager::inst().create_thread_current(
             entry, stack_addr, stack_size);
         if (!thread_res.has_value()) {
-            loggers::SYSCALL::ERROR("创建线程失败: entry=%p stack=%p size=%u err=%d",
-                                    entry.addr(), stack_addr.addr(),
-                                    stack_size, thread_res.error());
+            loggers::SYSCALL::ERROR(
+                "创建线程失败: entry=%p stack=%p size=%u err=%d", entry.addr(),
+                stack_addr.addr(), stack_size, thread_res.error());
             return cap::error;
         }
         return thread_res.value();
@@ -138,6 +236,42 @@ namespace syscall {
             return {cap::error, 0};
         }
         return {fork_res.value().child_pcb_cap, fork_res.value().child_pid};
+    }
+
+    bool pcb_kill(CapIdx pcb_cap, int exit_code) {
+        cap::Capability *cap = nullptr;
+        auto pcb_res         = lookup_pcb(pcb_cap, &cap);
+        if (!pcb_res.has_value()) {
+            loggers::SYSCALL::ERROR("pcb_kill lookup失败: err=%d",
+                                    pcb_res.error());
+            return false;
+        }
+        cap::PCBObject obj(util::nnullforce(cap));
+        auto kill_res = obj.kill(exit_code);
+        return kill_res.has_value();
+    }
+
+    bool pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
+                 PageMan::RWX rwx, cap::MemoryGrowth growth) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        if (!pcb_res.has_value()) {
+            loggers::SYSCALL::ERROR("pcb_map PCB lookup失败: err=%d",
+                                    pcb_res.error());
+            return false;
+        }
+
+        cap::Capability *mem_cap_obj = nullptr;
+        auto memory_res              = lookup_memory(mem_cap, &mem_cap_obj);
+        if (!memory_res.has_value()) {
+            loggers::SYSCALL::ERROR("pcb_map Memory lookup失败: err=%d",
+                                    memory_res.error());
+            return false;
+        }
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        cap::MemoryObject mem_obj(util::nnullforce(mem_cap_obj));
+        auto map_res = pcb_obj.map(mem_obj, vaddr, rwx, growth);
+        return map_res.has_value();
     }
 
     bool execve(const UString &path, VirAddr reserved_uaddr,
@@ -157,13 +291,6 @@ namespace syscall {
             return false;
         }
         return true;
-    }
-
-    void exit() {
-        auto exit_res = task::TaskManager::inst().exit_current();
-        if (!exit_res.has_value()) {
-            loggers::SYSCALL::ERROR("exit失败: err=%d", exit_res.error());
-        }
     }
 
     size_t get_pid(CapIdx pcb_cap) {

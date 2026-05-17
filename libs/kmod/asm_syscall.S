@@ -12,10 +12,23 @@ kwrites:
     .global sys_exit
     .type sys_exit, @function
 sys_exit:
+    li a0, 0
+    la t0, __pcb_cap
+    ld a6, 0(t0)
     li a7, 0xFFFF0001
     ecall
 1:
     j 1b
+
+    .global sys_pcb_kill
+    .type sys_pcb_kill, @function
+sys_pcb_kill:
+    /* a0 = pcb cap slot, a1 = exit code */
+    mv a6, a0
+    mv a0, a1
+    li a7, 0xFFFF0001
+    ecall
+    ret
 
     .global sys_create_process
     .type   sys_create_process, @function
@@ -50,18 +63,6 @@ execve:
     /* a0 = path, a1 = reserved caps, a2 = reserved caps size */
     li a7, 0xFFFF0013
     ecall
-    ret
-
-    .global sys_grow_vma
-    .type sys_grow_vma, @function
-sys_grow_vma:
-    /* a0 = heap_base, a1 = new_brk */
-    mv a2, a1
-    mv a1, a0
-    li a7, 0xFFC00003
-    ecall
-    /* kernel returns a0 = area.begin, a1 = area.end */
-    mv a0, a1
     ret
 
     .global sys_wait_notification
@@ -230,5 +231,78 @@ sys_try_recv_msg:
     mv a2, a3
     mv a3, a4
     li a7, 0xFFFF0018
+    ecall
+    ret
+
+    .global sys_mem_create
+    .type sys_mem_create, @function
+sys_mem_create:
+    /* a0 = cap slot, a1 = memsz, a2 = shared, a3 = continuity, a4 = growth */
+    mv a6, a0
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF0019
+    ecall
+    ret
+
+    .global sys_mem_map
+    .type sys_mem_map, @function
+sys_mem_map:
+    /* a0 = cap slot, a1 = vaddr, a2 = rwx, a3 = growth */
+    mv a4, a3
+    mv a3, a2
+    mv a2, a1
+    mv a1, a0
+    la t0, __pcb_cap
+    ld a6, 0(t0)
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF001A
+    ecall
+    ret
+
+    .global sys_pcb_map
+    .type sys_pcb_map, @function
+sys_pcb_map:
+    /* a0 = pcb cap slot, a1 = mem cap slot, a2 = vaddr, a3 = rwx, a4 = growth */
+    mv a6, a0
+    mv a0, a1
+    mv a1, a2
+    mv a2, a3
+    mv a3, a4
+    li a7, 0xFFFF001A
+    ecall
+    ret
+
+    .global sys_mem_unmap
+    .type sys_mem_unmap, @function
+sys_mem_unmap:
+    /* a0 = cap slot, a1 = vaddr */
+    mv a6, a0
+    mv a0, a1
+    li a7, 0xFFFF001B
+    ecall
+    ret
+
+    .global sys_mem_resize
+    .type sys_mem_resize, @function
+sys_mem_resize:
+    /* a0 = cap slot, a1 = newsz */
+    mv a6, a0
+    mv a0, a1
+    li a7, 0xFFFF001C
+    ecall
+    ret
+
+    .global sys_mem_query
+    .type sys_mem_query, @function
+sys_mem_query:
+    /* a0 = cap slot */
+    mv a6, a0
+    li a7, 0xFFFF001D
     ecall
     ret

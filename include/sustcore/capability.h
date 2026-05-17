@@ -18,16 +18,17 @@
 
 // 载荷类型
 enum class PayloadType : b64 {
-    NONE            = 0,
+    NONE     = 0,
     // object
-    INTOBJ          = 0x001,
-    SINTOBJ         = 0x002,
-    VFILE           = 0x003,
-    NOTIF           = 0x004,
-    MUTEX           = 0x005,
-    PCB             = 0x006,
-    TCB             = 0x007,
-    ENDPOINT        = 0x008,
+    INTOBJ   = 0x001,
+    SINTOBJ  = 0x002,
+    VFILE    = 0x003,
+    NOTIF    = 0x004,
+    MUTEX    = 0x005,
+    PCB      = 0x006,
+    TCB      = 0x007,
+    ENDPOINT = 0x008,
+    MEMORY   = 0x009,
 };
 
 constexpr bool operator&(PayloadType a, PayloadType b) {
@@ -36,16 +37,17 @@ constexpr bool operator&(PayloadType a, PayloadType b) {
 
 constexpr const char *to_string(PayloadType type) {
     switch (type) {
-        case PayloadType::NONE:            return "NONE";
-        case PayloadType::INTOBJ:          return "INTOBJ";
-        case PayloadType::SINTOBJ:         return "SINTOBJ";
-        case PayloadType::VFILE:           return "VFILE";
-        case PayloadType::NOTIF:           return "NOTIF";
-        case PayloadType::MUTEX:           return "MUTEX";
-        case PayloadType::PCB:             return "PCB";
-        case PayloadType::TCB:             return "TCB";
-        case PayloadType::ENDPOINT:        return "ENDPOINT";
-        default:                           return "UNKNOWN";
+        case PayloadType::NONE:     return "NONE";
+        case PayloadType::INTOBJ:   return "INTOBJ";
+        case PayloadType::SINTOBJ:  return "SINTOBJ";
+        case PayloadType::VFILE:    return "VFILE";
+        case PayloadType::NOTIF:    return "NOTIF";
+        case PayloadType::MUTEX:    return "MUTEX";
+        case PayloadType::PCB:      return "PCB";
+        case PayloadType::TCB:      return "TCB";
+        case PayloadType::ENDPOINT: return "ENDPOINT";
+        case PayloadType::MEMORY:   return "MEMORY";
+        default:                    return "UNKNOWN";
     }
 }
 

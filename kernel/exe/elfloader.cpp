@@ -184,9 +184,13 @@ namespace loader::elf {
 
             // 为该段在TM中添加一个VMA
             VMA::Type vma_type = phdr_to_vma_type(phdr.p_flags);
+            auto *segment_mem  = new cap::MemoryPayload(
+                phdr.p_memsz, false, false, VMA::Growth::FIXED);
             auto add_res = spec.tmm->add_vma(
-                vma_type, VMA::Growth::FIXED, VirArea(segvaddr, segvend));
+                vma_type, VMA::Growth::FIXED, VirArea(segvaddr, segvend),
+                segment_mem, VMA::seg2rwx(vma_type));
             if (!add_res.has_value()) {
+                delete segment_mem;
                 loggers::SUSTCORE::ERROR("无法为段%d添加VMA: %d", i,
                                          add_res.error());
                 while (true);
@@ -199,21 +203,32 @@ namespace loader::elf {
         }
 
         VirAddr heap_start = VirAddr(max_pload_end).page_align_up();
+        auto heap_slot_res = spec.holder->internal_lookup_freeslot();
+        propagate(heap_slot_res);
+        auto *heap_mem =
+            new cap::MemoryPayload(0, false, false, VMA::Growth::FLEXUP);
+        auto heap_cap_res =
+            spec.holder->internal_insert(heap_slot_res.value(), heap_mem);
+        if (!heap_cap_res.has_value()) {
+            delete heap_mem;
+            propagate_return(heap_cap_res);
+        }
         auto heap_res = spec.tmm->add_vma(VMA::Type::HEAP, VMA::Growth::FLEXUP,
-                                          VirArea(heap_start, heap_start));
+                                          VirArea(heap_start, heap_start),
+                                          heap_mem, PageMan::RWX::RW);
         if (!heap_res.has_value()) {
             loggers::SUSTCORE::ERROR("无法初始化堆VMA: %d", heap_res.error());
             propagate_return(heap_res);
         }
-        spec.heap_vaddr = heap_start;
+        spec.heap_vaddr   = heap_start;
+        spec.heap_mem_cap = heap_slot_res.value();
 
         // 输出TM中的VMA信息以供调试
         loggers::SUSTCORE::INFO("ELF加载完成，TM中的VMA列表:");
         for (const auto &vma : spec.tmm->vmas()) {
-            loggers::SUSTCORE::INFO(
-                "  VMA类型: %s, 地址: %p~%p, 大小: %u B",
-                to_string(vma.type), vma.varea.begin.addr(),
-                vma.varea.end.addr(), vma.size());
+            loggers::SUSTCORE::INFO("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
+                                    to_string(vma.type), vma.varea.begin.addr(),
+                                    vma.varea.end.addr(), vma.size());
         }
 
         auto *origin_tmm   = env::inst().tmm();
@@ -256,9 +271,9 @@ namespace loader::elf {
             ker_paddr::SumGuard sum_guard;
             sum_guard.open();
 
-            loggers::SUSTCORE::INFO(
-                "  VMA类型: %s, 起始地址: %p",
-                to_string(vma.type), vma.varea.begin.addr());
+            loggers::SUSTCORE::INFO("  VMA类型: %s, 起始地址: %p",
+                                    to_string(vma.type),
+                                    vma.varea.begin.addr());
 
             const size_t dump_size = vma.size() < 16 ? vma.size() : 16;
             const unsigned char *data =

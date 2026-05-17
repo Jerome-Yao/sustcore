@@ -4,19 +4,20 @@
  * @brief 主文件
  * @version alpha-1.0.0
  * @date 2026-04-28
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #include <kmod/syscall.h>
+
 #include <cstdio>
 
 extern "C" {
 void cpu_idle();
 }
 
-constexpr CapIdx kForkDoneCap = cap::make(0, 3);
+constexpr CapIdx kForkDoneCap    = cap::make(1, 3);
 constexpr size_t kForkDoneSignal = 0;
 
 int kmod_main() {
@@ -28,7 +29,8 @@ int kmod_main() {
     }
 
     CapIdx initial_caps[] = {kForkDoneCap};
-    CapIdx modidx = sys_create_process("/initrd/test_fork.mod", (CapIdx *)initial_caps, 1, 3);
+    CapIdx modidx         = sys_create_process("/initrd/test_fork.mod",
+                                               (CapIdx *)initial_caps, 1, 3);
     printf("移除test_fork模块能力 %p\n", modidx);
     // don't hold its capability index.
     sys_cap_remove(modidx);

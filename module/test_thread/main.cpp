@@ -3,15 +3,15 @@
 #include <cstddef>
 #include <cstdio>
 
-constexpr CapIdx kThreadNotifCap = cap::make(0, 3);
-constexpr size_t kSignalA = 0;
-constexpr size_t kSignalB = 1;
-constexpr size_t kSignalDone = 2;
-constexpr size_t kStackSize = 16 * 1024;
+constexpr CapIdx kThreadNotifCap = cap::make(1, 3);
+constexpr size_t kSignalA        = 0;
+constexpr size_t kSignalB        = 1;
+constexpr size_t kSignalDone     = 2;
+constexpr size_t kStackSize      = 16 * 1024;
 
-static volatile size_t x = 27;
+static volatile size_t x      = 27;
 static volatile size_t rounds = 0;
-static volatile bool done = false;
+static volatile bool done     = false;
 
 static void finish_once(const char *who) {
     if (!done) {
@@ -29,7 +29,7 @@ static void thread_a() {
             continue;
         }
 
-        x = x * 3 + 1;
+        x      = x * 3 + 1;
         rounds = rounds + 1;
         printf("test_thread: A x=%u rounds=%u\n", x, rounds);
 
@@ -50,8 +50,8 @@ static void thread_b() {
         }
 
         while ((x % 2) == 0 && x != 1) {
-            x /= 2;
-            rounds = rounds + 1;
+            x      /= 2;
+            rounds  = rounds + 1;
             printf("test_thread: B x=%u rounds=%u\n", x, rounds);
         }
 

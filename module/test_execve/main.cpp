@@ -1,11 +1,12 @@
+#include <kmod/syscall.h>
+
 #include <cstddef>
 #include <cstdio>
-#include <kmod/syscall.h>
 
 constexpr size_t kSignalSyn    = 0;
 constexpr size_t kSignalSynAck = 1;
 constexpr size_t kSignalAck    = 2;
-constexpr size_t kScanGroups   = 1;
+constexpr size_t kScanGroups   = 2;
 constexpr size_t kScanSlots    = 32;
 
 static CapIdx find_unique_notification_cap() {
@@ -27,8 +28,10 @@ static CapIdx find_unique_notification_cap() {
     }
 
     if (count != 1) {
-        printf("test_execve: 预期找到一个 notification capability, 但是找到了 %u 个\n",
-               count);
+        printf(
+            "test_execve: 预期找到一个 notification capability, 但是找到了 %u "
+            "个\n",
+            count);
         while (true) {
         }
     }

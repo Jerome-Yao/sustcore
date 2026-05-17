@@ -110,6 +110,8 @@ struct Riscv64Context {
         regs[A0_BASE]     = info.heap_vaddr.arith();
         regs[A0_BASE + 1] = info.pcb_cap;
         regs[A0_BASE + 2] = info.main_tcb_cap;
+        regs[A0_BASE + 3] = info.heap_mem_cap;
+        regs[A0_BASE + 4] = info.stack_mem_cap;
     }
 };
 

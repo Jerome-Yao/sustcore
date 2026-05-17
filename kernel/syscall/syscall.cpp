@@ -15,6 +15,7 @@
 #include <sustcore/syscall.h>
 #include <syscall/cap.h>
 #include <syscall/endpoint.h>
+#include <syscall/memory.h>
 #include <syscall/notif.h>
 #include <syscall/syscall.h>
 #include <syscall/task.h>
@@ -30,30 +31,12 @@ namespace syscall {
 
     constexpr size_t MAX_SYSCALL_PATH = 256;
 
-    VirArea sys_grow_vma(VirAddr vaddr, VirArea new_area) {
-        // 定位当前 VMA 并尝试增长到新的范围
-        auto tmm        = env::inst().tmm();
-        auto locate_res = tmm->locate(vaddr);
-        if (!locate_res.has_value()) {
-            loggers::SYSCALL::ERROR("无法找到包含地址 %p 的 VMA: err=%d",
-                                    vaddr.addr(), locate_res.error());
-            return {};
-        }
-        auto vma      = locate_res.value();
-        auto grow_res = tmm->grow_vma(vma, new_area);
-        if (!grow_res.has_value()) {
-            loggers::SYSCALL::ERROR("无法增长 VMA: err=%d", grow_res.error());
-            return vma->varea;
-        }
-        return grow_res.value();
-    }
-
     static RetPack finish_syscall(const util::nonnull<Riscv64Context *> &ctx,
                                   const util::nonnull<task::TCB *> &tcb,
                                   RetPack ret) {
         ctx->write_ret(ret);
-        ctx->sepc += 4;
-        tcb->coroutines.syscall_done = true;
+        ctx->sepc                    += 4;
+        tcb->coroutines.syscall_done  = true;
         return ret;
     }
 
@@ -104,8 +87,8 @@ namespace syscall {
                 bool ok = execve(UString((VirAddr)arg0, MAX_SYSCALL_PATH),
                                  VirAddr(arg1), arg2);
                 if (ok) {
-                    ret0 = ctx->regs[Context::A0_BASE];
-                    ret1 = ctx->regs[Context::A0_BASE + 1];
+                    ret0       = ctx->regs[Context::A0_BASE];
+                    ret1       = ctx->regs[Context::A0_BASE + 1];
                     ctx->sepc -= 4;
                 } else {
                     ret0 = false;
@@ -113,17 +96,9 @@ namespace syscall {
                 }
                 break;
             }
-            case SYS_EXIT: {
-                exit();
-                ret0 = ret1 = 0;
-                break;
-            }
-            case SYS_GROW_VMA: {
-                auto vaddr    = (VirAddr)arg0;
-                auto new_area = VirArea((VirAddr)arg1, (VirAddr)arg2);
-                auto ret_area = sys_grow_vma(vaddr, new_area);
-                ret0          = ret_area.begin.arith();
-                ret1          = ret_area.end.arith();
+            case SYS_PCB_KILL: {
+                ret0 = pcb_kill(capidx, static_cast<int>(arg0));
+                ret1 = 0;
                 break;
             }
             case SYS_GETPID: {
@@ -213,6 +188,35 @@ namespace syscall {
                 ret0 = recv_msg_async(capidx, VirAddr(arg0), VirAddr(arg1),
                                       VirAddr(arg2), VirAddr(arg3));
                 ret1 = 0;
+                break;
+            }
+            case SYS_MEM_CREATE: {
+                ret0 = mem_create(capidx, arg0, arg1, arg2,
+                                  static_cast<cap::MemoryGrowth>(arg3));
+                ret1 = 0;
+                break;
+            }
+            case SYS_PCB_MAP: {
+                ret0 = pcb_map(capidx, static_cast<CapIdx>(arg0), VirAddr(arg1),
+                               static_cast<PageMan::RWX>(arg2),
+                               static_cast<cap::MemoryGrowth>(arg3));
+                ret1 = 0;
+                break;
+            }
+            case SYS_MEM_UNMAP: {
+                ret0 = mem_unmap(capidx, VirAddr(arg0));
+                ret1 = 0;
+                break;
+            }
+            case SYS_MEM_RESIZE: {
+                ret0 = mem_resize(capidx, arg0);
+                ret1 = 0;
+                break;
+            }
+            case SYS_MEM_QUERY: {
+                auto query = mem_query(capidx);
+                ret0       = query.memsz;
+                ret1       = query.allocated;
                 break;
             }
             default: {

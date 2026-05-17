@@ -6,14 +6,14 @@
 
 static volatile size_t global_value = 0;
 
-constexpr size_t kScanGroups = 1;
-constexpr size_t kScanSlots  = 32;
-constexpr CapIdx kCompletionNotifCap = cap::make(0, 3);
-constexpr CapIdx kExecNotifCap = cap::make(0, 4);
-constexpr size_t kSignalSyn    = 0;
-constexpr size_t kSignalSynAck = 1;
-constexpr size_t kSignalAck    = 2;
-constexpr size_t kCompletionSignal = 0;
+constexpr size_t kScanGroups         = 1;
+constexpr size_t kScanSlots          = 32;
+constexpr CapIdx kCompletionNotifCap = cap::make(1, 3);
+constexpr CapIdx kExecNotifCap       = cap::make(1, 4);
+constexpr size_t kSignalSyn          = 0;
+constexpr size_t kSignalSynAck       = 1;
+constexpr size_t kSignalAck          = 2;
+constexpr size_t kCompletionSignal   = 0;
 
 static const char *cap_type_name(PayloadType type) {
     return to_string(type);
@@ -120,6 +120,7 @@ int kmod_main() {
     printf("test_fork: 发送 ACK\n");
     sys_signal_notification(kExecNotifCap, kSignalAck);
 
+    printf("test_fork: 发送 completion signal\n");
     sys_signal_notification(kCompletionNotifCap, kCompletionSignal);
     printf("test_fork: completion signaled\n");
 

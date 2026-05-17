@@ -1,1 +1,1 @@
-sources += intobj.cpp vfile.cpp notif.cpp task.cpp endpoint.cpp
+sources += intobj.cpp vfile.cpp notif.cpp task.cpp endpoint.cpp memory.cpp

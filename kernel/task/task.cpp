@@ -10,14 +10,15 @@
  */
 
 #include <cap/cholder.h>
+#include <cap/permission.h>
 #include <env.h>
 #include <exe/elfloader.h>
 #include <logger.h>
 #include <mem/alloc.h>
 #include <mem/slub.h>
 #include <mem/vma.h>
+#include <object/memory.h>
 #include <object/task.h>
-#include <perm/permission.h>
 #include <schd/rr.h>
 #include <schd/schdbase.h>
 #include <sus/nonnull.h>
@@ -142,13 +143,13 @@ namespace task {
     Result<void> TaskManager::init_tcb(
         util::nonnull<TCB *> tcb, util::nonnull<PCB *> task /* ... args*/) {
         // 初始化 TCB 基本信息
-        tcb->tid         = alloc_tid();
-        tcb->task        = task;
-        tcb->list_head   = {};
-        tcb->wait_reason = 0;
+        tcb->tid            = alloc_tid();
+        tcb->task           = task;
+        tcb->list_head      = {};
+        tcb->wait_reason    = 0;
         tcb->wait_predicate = {};
-        tcb->wait_head   = {};
-        tcb->coroutines  = {};
+        tcb->wait_head      = {};
+        tcb->coroutines     = {};
 
         // ask for a kstack for this thread
         Result<PhyAddr> gfp_res = GFP::get_free_page(TCB::KSTACK_PAGES);
@@ -178,6 +179,7 @@ namespace task {
     Result<void> TaskManager::init_pcb(util::nonnull<PCB *> pcb,
                                        TaskSpec spec /* ... args*/) {
         pcb->pid            = alloc_pid();
+        pcb->exit_code      = 0;
         pcb->threads        = {};
         pcb->exiting        = false;
         pcb->recycle_queued = false;
@@ -196,7 +198,7 @@ namespace task {
         schd::ClassType schd_class) {
         util::nonnull<TCB *> tcb = alloc_tcb();
         auto tcb_guard = util::Guard([this, tcb]() { (void)recycle_tcb(tcb); });
-        auto init_res            = init_tcb(tcb, pcb);
+        auto init_res  = init_tcb(tcb, pcb);
         if (!init_res.has_value()) {
             loggers::SUSTCORE::ERROR("初始化TCB失败! 错误码: %s",
                                      to_cstring(init_res.error()));
@@ -223,9 +225,20 @@ namespace task {
         task::StartupInfo startup_info) {
         // 为主线程分配初始栈空间, 并将其加入Task Memory的VMA中
         // 此处无需通过GFP分配物理页, 由缺页中断自动处理即可
+        auto stack_slot_res = pcb->cholder->internal_lookup_freeslot();
+        propagate(stack_slot_res);
+        auto *stack_mem = new cap::MemoryPayload(MAX_INITIAL_STACK_SIZE, false,
+                                                 false, VMA::Growth::GROW_DOWN);
+        auto stack_cap_res =
+            pcb->cholder->internal_insert(stack_slot_res.value(), stack_mem);
+        if (!stack_cap_res.has_value()) {
+            delete stack_mem;
+            propagate_return(stack_cap_res);
+        }
         auto vma_res =
             pcb->tmm->add_vma(VMA::Type::STACK, VMA::Growth::GROW_DOWN,
-                              VirArea(USER_STACK_BOTTOM, USER_STACK_TOP));
+                              VirArea(USER_STACK_BOTTOM, USER_STACK_TOP),
+                              stack_mem, PageMan::RWX::RW);
         propagate(vma_res);
 
         auto con_res = construct_thread(pcb, pcb->entrypoint.addr(),
@@ -240,9 +253,10 @@ namespace task {
             tcb_cap_slot_res.value(), tcb.get());
         propagate(tcb_cap_res);
 
-        pcb->main_tcb_cap         = tcb_cap_slot_res.value();
-        startup_info.pcb_cap      = pcb->pcb_cap;
-        startup_info.main_tcb_cap = pcb->main_tcb_cap;
+        pcb->main_tcb_cap          = tcb_cap_slot_res.value();
+        startup_info.pcb_cap       = pcb->pcb_cap;
+        startup_info.main_tcb_cap  = pcb->main_tcb_cap;
+        startup_info.stack_mem_cap = stack_slot_res.value();
         tcb->context()->write_startup(startup_info);
 
         tcb_guard.release();
@@ -270,20 +284,33 @@ namespace task {
         }
 
         task::StartupInfo startup_info{
-            .heap_vaddr   = spec.heap_vaddr,
-            .stack_vaddr  = USER_STACK_BOTTOM,
-            .entrypoint   = spec.entrypoint,
-            .pcb_cap      = pcb->pcb_cap,
-            .main_tcb_cap = cap::null,
+            .heap_vaddr    = spec.heap_vaddr,
+            .stack_vaddr   = USER_STACK_BOTTOM,
+            .entrypoint    = spec.entrypoint,
+            .pcb_cap       = pcb->pcb_cap,
+            .main_tcb_cap  = cap::null,
+            .heap_mem_cap  = spec.heap_mem_cap,
+            .stack_mem_cap = cap::null,
         };
 
         if (reuse_main_tcb == nullptr) {
             return construct_main_thread(pcb, schd_class, startup_info);
         }
 
+        auto stack_slot_res = pcb->cholder->internal_lookup_freeslot();
+        propagate(stack_slot_res);
+        auto *stack_mem = new cap::MemoryPayload(MAX_INITIAL_STACK_SIZE, false,
+                                                 false, VMA::Growth::GROW_DOWN);
+        auto stack_cap_res =
+            pcb->cholder->internal_insert(stack_slot_res.value(), stack_mem);
+        if (!stack_cap_res.has_value()) {
+            delete stack_mem;
+            propagate_return(stack_cap_res);
+        }
         auto vma_res =
             pcb->tmm->add_vma(VMA::Type::STACK, VMA::Growth::GROW_DOWN,
-                              VirArea(USER_STACK_BOTTOM, USER_STACK_TOP));
+                              VirArea(USER_STACK_BOTTOM, USER_STACK_TOP),
+                              stack_mem, PageMan::RWX::RW);
         propagate(vma_res);
 
         auto tcb = util::nnullforce(reuse_main_tcb);
@@ -299,8 +326,9 @@ namespace task {
             tcb_cap_slot_res.value(), tcb.get());
         propagate(tcb_cap_res);
 
-        pcb->main_tcb_cap         = tcb_cap_slot_res.value();
-        startup_info.main_tcb_cap = pcb->main_tcb_cap;
+        pcb->main_tcb_cap          = tcb_cap_slot_res.value();
+        startup_info.main_tcb_cap  = pcb->main_tcb_cap;
+        startup_info.stack_mem_cap = stack_slot_res.value();
         tcb->context()->write_startup(startup_info);
         pcb->threads.push_back(*tcb);
         return tcb;
@@ -308,7 +336,7 @@ namespace task {
 
     Result<void> TaskManager::recycle_tcb(util::nonnull<TCB *> tcb) {
         loggers::TASK::INFO("回收线程 %d (PID: %d)", tcb->tid,
-                                  tcb->task != nullptr ? tcb->task->pid : -1);
+                            tcb->task != nullptr ? tcb->task->pid : -1);
         PCB *pcb = tcb->task;
         if (pcb != nullptr) {
             pcb->threads.remove(*tcb);
@@ -336,8 +364,8 @@ namespace task {
             tid_t tid     = tcb->tid;
             auto term_res = terminate_tcb(util::nnullforce(tcb));
             if (!term_res.has_value()) {
-                loggers::SUSTCORE::ERROR("终止线程 %d 失败! 错误码: %s",
-                                         tid, to_cstring(term_res.error()));
+                loggers::SUSTCORE::ERROR("终止线程 %d 失败! 错误码: %s", tid,
+                                         to_cstring(term_res.error()));
                 propagate_return(term_res);
             }
         }
@@ -355,43 +383,6 @@ namespace task {
 
         delete pcb.get();
 
-        void_return();
-    }
-
-    Result<void> TaskManager::exit_current() {
-        TCB *current_tcb = schd::Scheduler::inst().current_tcb();
-        if (current_tcb == nullptr || current_tcb->task == nullptr) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-        PCB *pcb = current_tcb->task;
-        if (pcb->exiting) {
-            void_return();
-        }
-        pcb->exiting = true;
-
-        if (pcb->cholder != nullptr) {
-            pcb->cholder->internal_clear();
-        }
-
-        for (auto &tcb : pcb->threads) {
-            if (&tcb != current_tcb &&
-                tcb.basic_entity.state == ThreadState::READY)
-            {
-                auto dequeue_res =
-                    schd::Scheduler::inst().dequeue(util::nnullforce(&tcb));
-                if (!dequeue_res.has_value()) {
-                    loggers::SUSTCORE::ERROR(
-                        "退出进程时移除线程 %d 失败! 错误码: %s", tcb.tid,
-                        to_cstring(dequeue_res.error()));
-                }
-            }
-            tcb.basic_entity.state = ThreadState::WAITING;
-        }
-
-        current_tcb->basic_entity.state = ThreadState::WAITING;
-        current_tcb->basic_entity
-            .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
-        schd::Scheduler::inst().schedule();
         void_return();
     }
 
@@ -555,6 +546,40 @@ namespace task {
         return create_task(spec, schd_class);
     }
 
+    Result<util::nonnull<PCB *>> TaskManager::load_elf_into(
+        const char *path, cap::CHolder *holder, schd::ClassType schd_class) {
+        TaskSpec spec{util::owner<TaskMemoryManager *>(nullptr), nullptr,
+                      VirAddr(static_cast<addr_t>(0))};
+        LoadPrm load_prm{};
+        auto preload_res = preload_into(path, holder, spec, load_prm);
+        if (!preload_res.has_value()) {
+            loggers::SUSTCORE::ERROR("预加载程序资源失败! 错误码: %s",
+                                     to_cstring(preload_res.error()));
+            propagate_return(preload_res);
+        }
+        bool spec_owned = true;
+        auto spec_guard = util::Guard([&]() {
+            if (!spec_owned || spec.tmm.get() == nullptr) {
+                return;
+            }
+            PhyAddr pgd = spec.tmm->pgd();
+            delete spec.tmm;
+            GFP::put_page(pgd, 1);
+        });
+
+        auto load_res = loader::elf::load(spec, load_prm);
+        if (!load_res.has_value()) {
+            loggers::SUSTCORE::ERROR("加载ELF程序失败! 错误码: %s",
+                                     to_cstring(load_res.error()));
+            unexpect_return(ErrCode::CREATION_FAILED);
+        }
+
+        auto task_res = create_task(spec, schd_class);
+        propagate(task_res);
+        spec_owned = false;
+        return task_res.value();
+    }
+
     Result<util::nonnull<PCB *>> TaskManager::load_init(const char *path) {
         TaskSpec spec{util::owner<TaskMemoryManager *>(nullptr), nullptr,
                       VirAddr(static_cast<addr_t>(0))};
@@ -624,12 +649,33 @@ namespace task {
             propagate_return(clone_mem_res);
         }
 
-        auto clone_caps_res =
-            parent_pcb->cholder->internal_copy_all_to(*child_holder);
-        if (!clone_caps_res.has_value()) {
+        ErrCode clone_caps_err = ErrCode::SUCCESS;
+        parent_pcb->cholder->space().foreach ([&](CapIdx idx,
+                                                  cap::Capability *parent_cap) {
+            if (clone_caps_err != ErrCode::SUCCESS) {
+                return;
+            }
+            cap::Payload *payload = parent_cap->payload();
+            auto *memory = parent_cap->payload_as<cap::MemoryPayload>();
+            if (memory != nullptr) {
+                auto child_memory_res =
+                    parent_pcb->tmm->cloned_memory_for(memory, *child_tmm);
+                if (child_memory_res.has_value()) {
+                    payload = child_memory_res.value();
+                } else {
+                    payload = memory->clone_payload();
+                }
+            }
+            auto insert_res =
+                child_holder->internal_insert(idx, payload, parent_cap->perm());
+            if (!insert_res.has_value()) {
+                clone_caps_err = insert_res.error();
+            }
+        });
+        if (clone_caps_err != ErrCode::SUCCESS) {
             delete child_tmm;
             cap::CHolderManager::inst().remove_holder(child_holder->id());
-            propagate_return(clone_caps_res);
+            unexpect_return(clone_caps_err);
         }
 
         util::nonnull<PCB *> child_pcb = alloc_pcb();
@@ -715,9 +761,9 @@ namespace task {
         auto range_res = pcb->tmm->locate_range(stack_area);
         propagate(range_res);
 
-        auto con_res = construct_thread(util::nnullforce(pcb), entry.addr(),
-                                        stack_top.addr(),
-                                        current_tcb->schd_class);
+        auto con_res =
+            construct_thread(util::nnullforce(pcb), entry.addr(),
+                             stack_top.addr(), current_tcb->schd_class);
         propagate(con_res);
         util::nonnull<TCB *> tcb = con_res.value();
         auto tcb_guard = util::Guard([this, tcb]() { (void)recycle_tcb(tcb); });

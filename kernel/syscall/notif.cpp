@@ -37,21 +37,21 @@ namespace syscall {
         auto notif_res = notif_object(capidx).and_then(
             [idx](cap::NotificationObject obj) { return obj.wait(idx); });
         if (!notif_res.has_value()) {
-            loggers::SYSCALL::ERROR("等待notification失败: err=%d",
-                                    notif_res.error());
+            loggers::SYSCALL::ERROR("等待notification失败: err=%s",
+                                    to_cstring(notif_res.error()));
             return false;
         }
         return notif_res.value();
     }
 
     bool signal_notification(CapIdx capidx, size_t idx, bool state) {
-        auto set_res = notif_object(capidx).and_then([idx, state](
-                                                         cap::NotificationObject obj) {
-            return obj.set(idx, state);
-        });
+        auto set_res = notif_object(capidx).and_then(
+            [idx, state](cap::NotificationObject obj) {
+                return obj.set(idx, state);
+            });
         if (!set_res.has_value()) {
-            loggers::SYSCALL::ERROR("设置notification失败: err=%d",
-                                    set_res.error());
+            loggers::SYSCALL::ERROR("设置notification失败: err=%s",
+                                    to_cstring(set_res.error()));
             return false;
         }
         return set_res.value();
@@ -69,10 +69,11 @@ namespace syscall {
     }
 
     bool create_notification(CapIdx capidx) {
-        auto create_res = cap::CHolder::create<cap::NotificationPayload>(capidx);
+        auto create_res =
+            cap::CHolder::create<cap::NotificationPayload>(capidx);
         if (!create_res.has_value()) {
-            loggers::SYSCALL::ERROR("创建notification失败: err=%d",
-                                    create_res.error());
+            loggers::SYSCALL::ERROR("创建notification失败: err=%s",
+                                    to_cstring(create_res.error()));
             return false;
         }
         return true;

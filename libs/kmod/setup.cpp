@@ -30,6 +30,8 @@ size_t __heap_base;
 size_t __current_brk;
 CapIdx __pcb_cap;
 CapIdx __main_tcb_cap;
+CapIdx __heap_mem_cap;
+CapIdx __stack_mem_cap;
 
 namespace kmod {
     void init(void) {
@@ -53,11 +55,14 @@ namespace kmod {
 void kmod_main(void);
 
 extern "C" void _cpp_setup(size_t heap_vaddr, CapIdx pcb_cap,
-                           CapIdx main_tcb_cap) {
-    __heap_base   = heap_vaddr;
-    __current_brk = heap_vaddr;
-    __pcb_cap     = pcb_cap;
-    __main_tcb_cap = main_tcb_cap;
+                           CapIdx main_tcb_cap, CapIdx heap_mem_cap,
+                           CapIdx stack_mem_cap) {
+    __heap_base     = heap_vaddr;
+    __current_brk   = heap_vaddr;
+    __pcb_cap       = pcb_cap;
+    __main_tcb_cap  = main_tcb_cap;
+    __heap_mem_cap  = heap_mem_cap;
+    __stack_mem_cap = stack_mem_cap;
 
     kmod::init();
     kmod_main();

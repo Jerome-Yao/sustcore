@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <perm/perm.h>
+#include <object/perm.h>
 #include <sus/types.h>
 
 namespace perm {

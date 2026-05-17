@@ -4,8 +4,9 @@
  */
 
 #include <logger.h>
+#include <object/perm.h>
 #include <object/task.h>
-#include <perm/perm.h>
+#include <task/scheduler.h>
 #include <task/task.h>
 #include <task/task_struct.h>
 
@@ -27,31 +28,57 @@ namespace cap {
         return _obj->pcb->pid;
     }
 
-    Result<CapIdx> PCBObject::cap_insert(CapIdx src, CHolder &from) const {
-        if (!imply(perm::pcb::CAP_INSERT)) {
+    Result<void> PCBObject::kill(int exit_code) const {
+        if (!imply(perm::pcb::KILL)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
-        if (_obj->pcb == nullptr || _obj->pcb->exiting ||
-            _obj->pcb->cholder == nullptr)
-        {
+        if (_obj->pcb == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
 
-        auto src_res = from.internal_lookup(src);
-        propagate(src_res);
-        Capability *src_cap = src_res.value();
-        if (!src_cap->imply(perm::basic::CLONE)) {
+        task::PCB *pcb    = _obj->pcb;
+        auto *current_tcb = schd::Scheduler::inst().current_tcb();
+        bool killing_current =
+            current_tcb != nullptr && current_tcb->task == pcb;
+
+        pcb->exit_code = exit_code;
+        if (pcb->exiting) {
+            void_return();
+        }
+        pcb->exiting = true;
+        if (pcb->cholder != nullptr) {
+            pcb->cholder->internal_clear();
+        }
+        for (auto &tcb : pcb->threads) {
+            if (&tcb != current_tcb &&
+                tcb.basic_entity.state == ThreadState::READY)
+            {
+                auto dequeue_res =
+                    schd::Scheduler::inst().dequeue(util::nnullforce(&tcb));
+                if (!dequeue_res.has_value()) {
+                    loggers::TASK::ERROR("pcb kill移除线程失败: tid=%d err=%d",
+                                         tcb.tid, dequeue_res.error());
+                }
+            }
+            tcb.basic_entity.state = ThreadState::WAITING;
+        }
+        if (killing_current) {
+            current_tcb->basic_entity.state = ThreadState::WAITING;
+            current_tcb->basic_entity
+                .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+            schd::Scheduler::inst().schedule();
+        }
+        void_return();
+    }
+
+    Result<void> PCBObject::map(MemoryObject &memory, VirAddr vaddr,
+                                PageMan::RWX rwx, MemoryGrowth growth) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
-
-        CHolder *target = _obj->pcb->cholder;
-        auto slot_res   = target->internal_lookup_freeslot();
-        propagate(slot_res);
-        CapIdx target_idx = slot_res.value();
-
-        auto insert_res =
-            target->internal_insert(target_idx, src_cap->payload(), src_cap->perm());
-        propagate(insert_res);
-        return target_idx;
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        return memory.map_into(*_obj->pcb->tmm, vaddr, rwx, growth);
     }
 }  // namespace cap

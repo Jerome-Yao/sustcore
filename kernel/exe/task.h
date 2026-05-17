@@ -4,26 +4,27 @@
  * @brief 进程相关结构
  * @version alpha-1.0.0
  * @date 2026-04-14
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #pragma once
 
-#include <string_view>
 #include <cap/cholder.h>
 #include <mem/vma.h>
 #include <sustcore/addr.h>
 
+#include <string_view>
+
 /**
  * @brief Load Parameter
  *
- * 用于标记加载参数, 需要注意的是, 诸如Task Memory, Image File等资源类数据存放在TaskSpec中
+ * 用于标记加载参数, 需要注意的是, 诸如Task Memory, Image
+ * File等资源类数据存放在TaskSpec中
  *
  */
-struct LoadPrm
-{
+struct LoadPrm {
     // 进程文件的能力索引
     CapIdx image_file_cap;
     // 进程文件的路径
@@ -39,15 +40,15 @@ struct LoadPrm
  * 所有的资源均由Task Manager构造
  *
  */
-struct TaskSpec
-{
+struct TaskSpec {
     // 进程内存管理
     util::owner<TaskMemoryManager *> tmm;
     // 进程Capability Holder
     // 进程文件能力已经存放在该CHolder中了
-    cap::CHolder * holder;
+    cap::CHolder *holder;
     // 入口点
     VirAddr entrypoint;
     // 堆的起始地址
     VirAddr heap_vaddr;
+    CapIdx heap_mem_cap = cap::null;
 };

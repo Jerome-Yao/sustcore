@@ -10,10 +10,12 @@
  */
 
 #include <cap/cholder.h>
-#include <perm/perm.h>
+#include <env.h>
+#include <object/memory.h>
+#include <object/perm.h>
 #include <sustcore/capability.h>
-#include <task/task_struct.h>
 #include <task/scheduler.h>
+#include <task/task_struct.h>
 
 namespace {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
@@ -22,7 +24,8 @@ namespace {
 
 namespace cap {
     void CHolderManager::init() {
-        // call the constructor explicitly to ensure the instance is initialized before use
+        // call the constructor explicitly to ensure the instance is initialized
+        // before use
         new (&inst_cholder_manager) CHolderManager();
     }
 
@@ -132,6 +135,17 @@ namespace cap {
             delete cloned_cap;
             propagate_return(set_res);
         }
+        auto *memory = src_cap->payload_as<MemoryPayload>();
+        if (memory != nullptr && !memory->shared &&
+            env::inst().tmm() != nullptr)
+        {
+            auto cow_res = env::inst().tmm()->protect_memory_cow(memory);
+            if (!cow_res.has_value()) {
+                auto remove_res = set_slot(target_idx, nullptr);
+                assert(remove_res.has_value());
+                propagate_return(cow_res);
+            }
+        }
         void_return();
     }
 
@@ -183,11 +197,12 @@ namespace cap {
 
     Result<void> CHolder::internal_copy_all_to(CHolder &dst) const {
         ErrCode err = ErrCode::SUCCESS;
-        _space.foreach([&](CapIdx idx, Capability *cap) {
+        _space.foreach ([&](CapIdx idx, Capability *cap) {
             if (err != ErrCode::SUCCESS) {
                 return;
             }
-            auto insert_res = dst.internal_insert(idx, cap->payload(), cap->perm());
+            auto insert_res =
+                dst.internal_insert(idx, cap->payload(), cap->perm());
             if (!insert_res.has_value()) {
                 err = insert_res.error();
             }

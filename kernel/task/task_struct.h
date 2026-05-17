@@ -66,16 +66,17 @@ namespace task {
         struct SystemCoroutines {
             // Endpoint IPC recv 协程句柄, 只由 endpoint recv/send 路径使用。
             std::coroutine_handle<> ipc_handle = nullptr;
-            // syscall 协程状态。pending 表示线程正在等待一个尚未返回用户态的 syscall;
-            // done 表示返回值已经写入上下文并且可以重新进入用户态。
-            bool syscall_pending = false;
-            bool syscall_done    = true;
+            // syscall 协程状态。pending 表示线程正在等待一个尚未返回用户态的
+            // syscall; done 表示返回值已经写入上下文并且可以重新进入用户态。
+            bool syscall_pending               = false;
+            bool syscall_done                  = true;
         };
 
         // wait data
         util::ListHead<TCB> wait_head;
         WaitReasonId wait_reason;
-        // 等待谓词, 由等待的线程在进入等待时设置, 由被等待的事件在满足条件时检查, 决定是否可以唤醒线程
+        // 等待谓词, 由等待的线程在进入等待时设置,
+        // 由被等待的事件在满足条件时检查, 决定是否可以唤醒线程
         wait::WaitPredicate wait_predicate;
         SystemCoroutines coroutines;
 
@@ -87,6 +88,7 @@ namespace task {
     struct PCB : public util::tree_base::TreeBase<PCB> {
         // process info
         pid_t pid;
+        int exit_code;
         bool exiting;
         // 是否已被加入回收队列
         bool recycle_queued;

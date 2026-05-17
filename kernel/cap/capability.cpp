@@ -10,8 +10,8 @@
  */
 
 #include <cap/capability.h>
+#include <cap/permission.h>
 #include <logger.h>
-#include <perm/permission.h>
 #include <sus/list.h>
 #include <sus/queue.h>
 #include <sustcore/capability.h>

@@ -4,16 +4,16 @@
  * @brief notification对象
  * @version alpha-1.0.0
  * @date 2026-05-14
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #pragma once
 
 #include <arch/riscv64/description.h>
 #include <cap/capability.h>
-#include <perm/notif.h>
+#include <object/perm.h>
 #include <task/task_struct.h>
 
 namespace cap {
@@ -78,5 +78,4 @@ namespace cap {
         Result<bool> wait(size_t idx);
     };
 
-    
 }  // namespace cap

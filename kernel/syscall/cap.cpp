@@ -10,7 +10,9 @@
  */
 
 #include <cap/cholder.h>
+#include <env.h>
 #include <logger.h>
+#include <object/memory.h>
 #include <sustcore/addr.h>
 #include <sustcore/capability.h>
 #include <syscall/cap.h>
@@ -74,6 +76,20 @@ namespace syscall {
     }
 
     bool cap_remove(CapIdx idx) {
+        auto cap_res = cap::CHolder::lookup(idx);
+        if (!cap_res.has_value()) {
+            loggers::SYSCALL::ERROR("cap_remove lookup失败: idx=%p err=%d", idx,
+                                    cap_res.error());
+            return false;
+        }
+        auto *memory = cap_res.value()->payload_as<cap::MemoryPayload>();
+        auto *tmm    = env::inst().tmm();
+        if (memory != nullptr && tmm != nullptr &&
+            tmm->has_memory_mapping(memory))
+        {
+            loggers::SYSCALL::ERROR("cap_remove失败: Memory 仍被 VMA 使用");
+            return false;
+        }
         auto remove_res = cap::CHolder::remove(idx);
         if (!remove_res.has_value()) {
             loggers::SYSCALL::ERROR("cap_remove失败: idx=%p err=%d", idx,

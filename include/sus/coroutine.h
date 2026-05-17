@@ -4,9 +4,9 @@
  * @brief 协程辅助函数/类定义
  * @version alpha-1.0.0
  * @date 2026-05-17
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #pragma once
@@ -20,7 +20,7 @@ namespace util {
 
     /**
      * @brief 协程的 promise 类型定义
-     * 
+     *
      * @tparam T 协程返回值类型
      */
     template <typename T>
@@ -28,7 +28,7 @@ namespace util {
         using handle_type = std::coroutine_handle<promise<T>>;
 
         T value{};
-        bool detached = false;
+        bool detached                        = false;
         std::coroutine_handle<> continuation = nullptr;
 
         cotask<T> get_return_object();
@@ -73,18 +73,18 @@ namespace util {
 
     /**
      * @brief 协程类型定义
-     * 
+     *
      * @tparam T 协程返回值类型
      */
     template <typename T>
     class cotask {
     public:
         using promise_type = promise<T>;
-        using handle_type = typename promise_type::handle_type;
+        using handle_type  = typename promise_type::handle_type;
 
         explicit cotask(handle_type handle) : _handle(handle) {}
 
-        cotask(const cotask &) = delete;
+        cotask(const cotask &)            = delete;
         cotask &operator=(const cotask &) = delete;
 
         cotask(cotask &&other) noexcept : _handle(other._handle) {
@@ -94,7 +94,7 @@ namespace util {
         cotask &operator=(cotask &&other) noexcept {
             if (this != &other) {
                 reset();
-                _handle = other._handle;
+                _handle       = other._handle;
                 other._handle = nullptr;
             }
             return *this;
@@ -132,7 +132,7 @@ namespace util {
                 return;
             }
             _handle.promise().detached = true;
-            _handle = nullptr;
+            _handle                    = nullptr;
         }
 
         struct awaiter {
@@ -142,8 +142,8 @@ namespace util {
                 return handle == nullptr || handle.done();
             }
 
-            bool await_suspend(std::coroutine_handle<> continuation) const
-                noexcept {
+            bool await_suspend(
+                std::coroutine_handle<> continuation) const noexcept {
                 if (handle == nullptr || handle.done()) {
                     return false;
                 }

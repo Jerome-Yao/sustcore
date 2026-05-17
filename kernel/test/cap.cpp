@@ -12,8 +12,7 @@
 #include <cap/capability.h>
 #include <cap/cholder.h>
 #include <object/intobj.h>
-#include <perm/intobj.h>
-#include <perm/perm.h>
+#include <object/perm.h>
 #include <test/cap.h>
 
 namespace test::cap {
@@ -34,7 +33,7 @@ namespace test::cap {
     size_t CountingPayload::destruct_count = 0;
 
     static Result<kcap::CHolder *> new_holder() {
-        auto &chman = kcap::CHolderManager::inst();
+        auto &chman     = kcap::CHolderManager::inst();
         auto holder_res = chman.create_holder();
         propagate(holder_res);
         return holder_res.value();

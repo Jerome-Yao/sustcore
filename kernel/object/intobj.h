@@ -15,7 +15,7 @@
 #include <logger.h>
 #include <mem/alloc.h>
 #include <mem/slub.h>
-#include <perm/intobj.h>
+#include <object/perm.h>
 #include <sustcore/capability.h>
 
 namespace cap {

@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include <cap/permission.h>
 #include <mem/alloc.h>
-#include <perm/permission.h>
 #include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/raii.h>
@@ -49,6 +49,10 @@ namespace cap {
 
         virtual void destruct() {
             delete this;
+        }
+
+        virtual Payload *clone_payload() {
+            return this;
         }
 
         void keep() {
@@ -94,7 +98,7 @@ namespace cap {
         }
 
         Capability(const Capability &other)
-            : _payload(other._payload), _perm(other._perm) {
+            : _payload(other._payload->clone_payload()), _perm(other._perm) {
             assert(_payload != nullptr);
             _payload->keep();
         }
@@ -315,7 +319,7 @@ namespace cap {
         }
 
         template <typename _Fp>
-        void foreach(_Fp f) const {
+        void foreach (_Fp f) const {
             for (size_t i = 0; i < CSPACE_SIZE; i++) {
                 if (groups[i] == nullptr) {
                     continue;

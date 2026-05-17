@@ -13,7 +13,7 @@
 
 #define SYSCALL_BASE (0xFFFF'0000)
 
-#define SYS_EXIT          (SYSCALL_BASE + 0x01)
+#define SYS_PCB_KILL      (SYSCALL_BASE + 0x01)
 #define SYS_YIELD         (SYSCALL_BASE + 0x02)
 #define SYS_LOG           (SYSCALL_BASE + 0x03)
 #define SYS_FORK          (SYSCALL_BASE + 0x04)
@@ -40,8 +40,13 @@
 #define SYS_TRY_SEND_MSG    (SYSCALL_BASE + 0x17)
 #define SYS_TRY_RECV_MSG    (SYSCALL_BASE + 0x18)
 
+#define SYS_MEM_CREATE (SYSCALL_BASE + 0x19)
+#define SYS_PCB_MAP    (SYSCALL_BASE + 0x1A)
+#define SYS_MEM_UNMAP  (SYSCALL_BASE + 0x1B)
+#define SYS_MEM_RESIZE (SYSCALL_BASE + 0x1C)
+#define SYS_MEM_QUERY  (SYSCALL_BASE + 0x1D)
+
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE  (0xFFC0'0000)
 #define SYS_WRITE_SERIAL   (SYS_UNSTABLE_BASE + 0x01)
 #define SYS_CREATE_PROCESS (SYS_UNSTABLE_BASE + 0x02)
-#define SYS_GROW_VMA       (SYS_UNSTABLE_BASE + 0x03)

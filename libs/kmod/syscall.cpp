@@ -11,6 +11,7 @@
 
 #include <kmod/syscall.h>
 #include <prm.h>
+
 #include <cstring>
 
 extern "C" {
@@ -19,8 +20,14 @@ size_t brk(size_t newbrk) {
         return __current_brk;
     }
 
-    size_t actual_brk = sys_grow_vma(__heap_base, newbrk);
-    __current_brk       = actual_brk;
+    if (newbrk < __heap_base) {
+        return __current_brk;
+    }
+    if (!sys_mem_resize(__heap_mem_cap, newbrk - __heap_base)) {
+        return __current_brk;
+    }
+    size_t actual_brk = newbrk;
+    __current_brk     = actual_brk;
     return __current_brk;
 }
 

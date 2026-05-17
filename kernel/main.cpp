@@ -16,6 +16,7 @@
 #include <arch/trait.h>
 #include <cap/capability.h>
 #include <cap/cholder.h>
+#include <cap/permission.h>
 #include <device/block.h>
 #include <env.h>
 #include <exe/elfloader.h>
@@ -26,7 +27,6 @@
 #include <mem/kaddr.h>
 #include <mem/slub.h>
 #include <mem/vma.h>
-#include <perm/permission.h>
 #include <sus/baseio.h>
 #include <sus/logger.h>
 #include <sus/nonnull.h>
