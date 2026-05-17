@@ -391,10 +391,25 @@ namespace Handlers {
         switch (scause.cause) {
             case Exceptions::ECALL_U: {
                 env::inst().trap_context(env::key::trap_context()) = ctx;
-                syscall::RetPack ret = syscall::entrance(ctx->read_args());
-                ctx->write_ret(ret);
-                processed = ret.processed;
-                ctx->sepc += 4;  // 跳过 ecall 指令
+                auto *current_tcb = schd::Scheduler::inst().current_tcb();
+                assert(current_tcb != nullptr);
+                current_tcb->coroutines.syscall_pending = false;
+                current_tcb->coroutines.syscall_done    = false;
+                auto task = syscall::entrance(*ctx, *current_tcb);
+                // 如果系统调用处理完成, 返回值已由 entrance 写入; 否则说明需要等待,
+                // 则暂不返回, 等待任务完成后再返回
+                if (task.done()) {
+                    syscall::RetPack ret = task.result();
+                    assert(current_tcb->coroutines.syscall_done);
+                    current_tcb->coroutines.syscall_pending = false;
+                    processed = ret.processed;
+                } else {
+                    assert(current_tcb->basic_entity.state ==
+                           ThreadState::WAITING);
+                    processed = true;
+                    current_tcb->coroutines.syscall_pending = true;
+                    task.detach();
+                }
                 env::inst().trap_context(env::key::trap_context()) = nullptr;
                 break;
             }

@@ -205,7 +205,7 @@ namespace schd {
     }
 
     Result<void> Scheduler::block_current(WaitReasonId reason,
-                                          task::wait::WakePostAction action) {
+                                          task::wait::WaitPredicate predicate) {
         if (_curtcb == nullptr) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -215,7 +215,7 @@ namespace schd {
 
         auto enqueue_res =
             task::wait::WaitReasonManager::inst().enqueue(reason, _curtcb,
-                                                          std::move(action));
+                                                          std::move(predicate));
         propagate(enqueue_res);
 
         _curtcb->basic_entity
@@ -226,6 +226,10 @@ namespace schd {
 
     bool Scheduler::wakeup_waiting(TCB *tcb) {
         if (tcb == nullptr || tcb->basic_entity.state != ThreadState::WAITING) {
+            return false;
+        }
+        if (tcb->coroutines.syscall_pending &&
+            !tcb->coroutines.syscall_done) {
             return false;
         }
         tcb->basic_entity.state = ThreadState::EMPTY;

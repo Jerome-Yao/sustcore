@@ -47,7 +47,7 @@ extern "C" void isr_entry(void);
 void Riscv64Interrupt::init(void) {
     // 重置 sscratch 寄存器
     csr_set_sscratch(0);
-    csr_stvec_t stvec;
+    csr_stvec_t stvec = {};
     stvec.ivt_addr = (umb_t)isr_entry;
     // 采用direct模式
     stvec.mode     = 0b00;
@@ -61,13 +61,13 @@ void Riscv64Interrupt::init(void) {
     csr_set_stvec(stvec);
 }
 
-void Riscv64Interrupt::sti(void) {
+void Riscv64Interrupt::sti() {
     csr_sstatus_t sstatus = csr_get_sstatus();
     sstatus.sie           = 1;
     csr_set_sstatus(sstatus);
 }
 
-void Riscv64Interrupt::cli(void) {
+void Riscv64Interrupt::cli() {
     csr_sstatus_t sstatus = csr_get_sstatus();
     sstatus.sie           = 0;
     csr_set_sstatus(sstatus);

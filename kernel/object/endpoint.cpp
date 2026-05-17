@@ -4,14 +4,51 @@
  */
 
 #include <device/int.h>
+#include <env.h>
 #include <logger.h>
+#include <mem/vma.h>
 #include <object/endpoint.h>
 #include <perm/perm.h>
+#include <task/scheduler.h>
 #include <task/wait.h>
 
+#include <cassert>
 #include <cstring>
 
 namespace cap {
+    namespace key {
+        struct endpoint : public env::key::tmm {
+        public:
+            endpoint() = default;
+        };
+    }  // namespace key
+
+    static void resume_recv(task::TCB *tcb) {
+        if (tcb == nullptr || !tcb->coroutines.ipc_handle) {
+            return;
+        }
+
+        auto *origin_tmm = env::inst().tmm();
+        PhyAddr origin_pgd = env::inst().pgd();
+        auto *target_tmm = tcb->task == nullptr ? nullptr : tcb->task->tmm;
+
+        if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
+            target_tmm->pgd() != origin_pgd) {
+            env::inst().tmm(key::endpoint()) = target_tmm;
+            PageMan(target_tmm->pgd()).switch_root();
+            PageMan::flush_tlb();
+        }
+
+        tcb->coroutines.ipc_handle.resume();
+
+        if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
+            target_tmm->pgd() != origin_pgd) {
+            env::inst().tmm(key::endpoint()) = origin_tmm;
+            PageMan(origin_pgd).switch_root();
+            PageMan::flush_tlb();
+        }
+    }
+
     EndpointMessage::~EndpointMessage() {
         for (size_t i = 0; i < capsz; ++i) {
             delete caps[i];
@@ -84,6 +121,10 @@ namespace cap {
         if (task::wait::has_waiting(_obj->recv_wait_reason)) {
             _obj->messages.push_back(*msg);
             msg_guard.release();
+            auto recv_res = task::wait::peek_one(_obj->recv_wait_reason);
+            if (recv_res.has_value() && recv_res.value() != nullptr) {
+                resume_recv(recv_res.value());
+            }
             auto wake_res = task::wait::wake_one(_obj->recv_wait_reason);
             return wake_res.transform(always(true));
         }
@@ -123,30 +164,50 @@ namespace cap {
         return msg;
     }
 
-    Result<bool> EndpointObject::recv_sync(task::wait::WakePostAction action) {
-        if (!imply(perm::endpoint::READ)) {
-            loggers::CAPABILITY::ERROR("Endpoint READ权限不足");
-            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
-        }
-        if (!action) {
-            unexpect_return(ErrCode::INVALID_PARAM);
+    bool EndpointObject::RecvAwaiter::await_suspend(
+        std::coroutine_handle<> handle) {
+        if (_payload == nullptr) {
+            return false;
         }
 
         InterruptGuard guard;
         guard.enter();
 
-        if (!_obj->messages.empty()) {
-            return action(nullptr);
+        if (!_payload->messages.empty()) {
+            return false;
         }
 
         loggers::CAPABILITY::INFO("Endpoint没有消息可接收, 线程进入等待");
 
-        // TODO: wait_current() 的语义是将线程调度状态改为阻塞态
-        // 但是我们希望在线程调度状态回到就绪态时进行后半部分的处理(即从消息队列中取出消息并返回)
-        // 因此引入一个编译期协程框架可能会对其实现有所裨益
-        // 目前先通过向 wait_current() 传入一个回调函数来实现这个功能
-        auto wait_res = task::wait::wait_current(_obj->recv_wait_reason,
-                                                 std::move(action));
-        return wait_res.transform(always(true));
+        auto *receiver = schd::Scheduler::inst().current_tcb();
+        if (receiver != nullptr) {
+            receiver->coroutines.ipc_handle = handle;
+        }
+        auto wait_res = task::wait::wait_current(
+            _payload->recv_wait_reason,
+            [](task::TCB *tcb) {
+                return tcb != nullptr &&
+                       (!tcb->coroutines.syscall_pending ||
+                        tcb->coroutines.syscall_done);
+            });
+        if (!wait_res.has_value()) {
+            if (receiver != nullptr) {
+                receiver->coroutines.ipc_handle = nullptr;
+            }
+            loggers::CAPABILITY::ERROR("Endpoint接收等待失败: err=%d",
+                                       wait_res.error());
+            return false;
+        }
+        assert(receiver == nullptr ||
+               receiver->coroutines.ipc_handle == handle);
+        return true;
+    }
+
+    Result<EndpointObject::RecvAwaiter> EndpointObject::recv_sync() {
+        if (!imply(perm::endpoint::READ)) {
+            loggers::CAPABILITY::ERROR("Endpoint READ权限不足");
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        return RecvAwaiter(_obj);
     }
 }  // namespace cap

@@ -22,6 +22,7 @@
 #include <sus/tree.h>
 #include <sustcore/addr.h>
 
+#include <coroutine>
 #include <functional>
 
 using tid_t        = size_t;
@@ -33,7 +34,7 @@ namespace task {
     struct PCB;
 
     namespace wait {
-        using WakePostAction = std::function<bool(TCB *tcb)>;
+        using WaitPredicate = std::function<bool(TCB *tcb)>;
     }
 
     // Make sure that TCB is has standard layout,
@@ -62,10 +63,21 @@ namespace task {
         schd::SchedMeta basic_entity;
         schd::rr::Entity rr_entity;
 
+        struct SystemCoroutines {
+            // Endpoint IPC recv 协程句柄, 只由 endpoint recv/send 路径使用。
+            std::coroutine_handle<> ipc_handle = nullptr;
+            // syscall 协程状态。pending 表示线程正在等待一个尚未返回用户态的 syscall;
+            // done 表示返回值已经写入上下文并且可以重新进入用户态。
+            bool syscall_pending = false;
+            bool syscall_done    = true;
+        };
+
         // wait data
-        WaitReasonId wait_reason;
-        wait::WakePostAction wait_post_action;
         util::ListHead<TCB> wait_head;
+        WaitReasonId wait_reason;
+        // 等待谓词, 由等待的线程在进入等待时设置, 由被等待的事件在满足条件时检查, 决定是否可以唤醒线程
+        wait::WaitPredicate wait_predicate;
+        SystemCoroutines coroutines;
 
         void *operator new(size_t size);
         void operator delete(void *ptr);

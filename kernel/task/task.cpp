@@ -146,8 +146,9 @@ namespace task {
         tcb->task        = task;
         tcb->list_head   = {};
         tcb->wait_reason = 0;
-        tcb->wait_post_action = {};
+        tcb->wait_predicate = {};
         tcb->wait_head   = {};
+        tcb->coroutines  = {};
 
         // ask for a kstack for this thread
         Result<PhyAddr> gfp_res = GFP::get_free_page(TCB::KSTACK_PAGES);
@@ -169,6 +170,7 @@ namespace task {
         tcb->context()->sp() = reinterpret_cast<umb_t>(stack_top);
         tcb->basic_entity    = {};
         tcb->rr_entity       = {};
+        tcb->coroutines      = {};
 
         void_return();
     }

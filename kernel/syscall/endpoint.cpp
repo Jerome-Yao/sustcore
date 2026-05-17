@@ -6,6 +6,7 @@
 #include <cap/cholder.h>
 #include <logger.h>
 #include <object/endpoint.h>
+#include <sus/coroutine.h>
 #include <sus/nonnull.h>
 #include <sus/raii.h>
 #include <sustcore/capability.h>
@@ -16,6 +17,7 @@
 #include <task/wait.h>
 
 #include <cassert>
+#include <coroutine>
 #include <cstring>
 
 namespace syscall {
@@ -176,47 +178,12 @@ namespace syscall {
         void_return();
     }
 
-    struct RecvPostContext {
-        cap::EndpointPayload *endpoint;
-        cap::CHolder *holder;
-        VirAddr msgbuf;
-        VirAddr msgsz;
-        VirAddr caplist;
-        VirAddr capsz;
-        bool ok;
-    };
-
-    static bool handle_received_message(RecvPostContext &ctx) {
-        if (ctx.endpoint == nullptr) {
-            return false;
-        }
-        if (ctx.endpoint->messages.empty()) {
-            return false;
-        }
-
-        cap::EndpointMessage *msg = &ctx.endpoint->messages.front();
-        ctx.endpoint->messages.pop_front();
-        auto msg_guard = util::Guard([&]() { delete msg; });
-
-        auto wake_res = task::wait::wake_one(ctx.endpoint->send_wait_reason);
-        if (!wake_res.has_value()) {
-            ctx.ok = false;
-            return true;
-        }
-
-        auto write_res = write_received_msg(ctx.holder, msg, ctx.msgbuf,
-                                            ctx.msgsz, ctx.caplist,
-                                            ctx.capsz);
-        ctx.ok = write_res.has_value();
-        if (!write_res.has_value()) {
-            loggers::SYSCALL::ERROR("接收endpoint消息失败: 写回失败 err=%d",
-                                    write_res.error());
-        }
-        return true;
-    }
-
     static Result<cap::CHolder *> current_holder() {
         return cap::CHolder::current();
+    }
+
+    static syscall::RetPack recv_ret(bool ok) {
+        return syscall::RetPack{true, static_cast<b64>(ok), 0};
     }
 
     bool recv_msg_async(CapIdx endpoint, VirAddr msgbuf, VirAddr msgsz,
@@ -257,46 +224,64 @@ namespace syscall {
         return true;
     }
 
-    bool recv_msg_sync(CapIdx endpoint, VirAddr msgbuf, VirAddr msgsz,
-                       VirAddr caplist, VirAddr capsz) {
+    util::cotask<syscall::RetPack> recv_msg_sync(CapIdx endpoint,
+                                                 VirAddr msgbuf,
+                                                 VirAddr msgsz,
+                                                 VirAddr caplist,
+                                                 VirAddr capsz) {
         if (!msgbuf.nonnull() || !msgsz.nonnull() || !capsz.nonnull()) {
-            return false;
+            co_return recv_ret(false);
         }
 
         auto holder_res = current_holder();
         if (!holder_res.has_value()) {
             loggers::SYSCALL::ERROR("接收endpoint消息失败: 当前CSpace不可用 err=%d",
                                     holder_res.error());
-            return false;
+            co_return recv_ret(false);
         }
 
         auto endpoint_res = endpoint_object(endpoint);
         if (!endpoint_res.has_value()) {
             loggers::SYSCALL::ERROR("接收endpoint消息失败: err=%d",
                                     endpoint_res.error());
-            return false;
+            co_return recv_ret(false);
         }
 
         cap::EndpointObject endpoint_obj = endpoint_res.value();
-        RecvPostContext ctx{
-            .endpoint = endpoint_obj.obj(),
-            .holder   = holder_res.value(),
-            .msgbuf   = msgbuf,
-            .msgsz    = msgsz,
-            .caplist  = caplist,
-            .capsz    = capsz,
-            .ok       = true,
-        };
 
-        auto recv_res =
-            endpoint_obj.recv_sync([&ctx](task::TCB *) {
-                return handle_received_message(ctx);
-            });
+        // 接收消息
+        auto awaiter_res = endpoint_obj.recv_sync();
+        if (!awaiter_res.has_value()) {
+            loggers::SYSCALL::ERROR("接收endpoint消息失败: err=%d",
+                                    awaiter_res.error());
+            co_return recv_ret(false);
+        }
+
+        auto awaiter = awaiter_res.value();
+        co_await awaiter;
+
+        // awaiter完成后说明可以安全地访问消息内容了
+        auto recv_res = endpoint_obj.recv_async();
+        bool ok = false;
         if (!recv_res.has_value()) {
             loggers::SYSCALL::ERROR("接收endpoint消息失败: err=%d",
                                     recv_res.error());
-            return false;
+        } else {
+            cap::EndpointMessage *msg = recv_res.value();
+            if (msg != nullptr) {
+                util::Guard msg_guard([&]() { delete msg; });
+
+                auto write_res = write_received_msg(holder_res.value(), msg,
+                                                    msgbuf, msgsz, caplist,
+                                                    capsz);
+                ok = write_res.has_value();
+                if (!write_res.has_value()) {
+                    loggers::SYSCALL::ERROR(
+                        "接收endpoint消息失败: 写回失败 err=%d",
+                        write_res.error());
+                }
+            }
         }
-        return recv_res.value() && ctx.ok;
+        co_return recv_ret(ok);
     }
 }  // namespace syscall

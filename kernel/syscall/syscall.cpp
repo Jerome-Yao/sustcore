@@ -19,6 +19,9 @@
 #include <syscall/syscall.h>
 #include <syscall/task.h>
 #include <syscall/uaccess.h>
+#include <task/task_struct.h>
+
+#include <cassert>
 
 namespace syscall {
     void write_serial(const UString &str, size_t len) {
@@ -45,7 +48,19 @@ namespace syscall {
         return grow_res.value();
     }
 
-    RetPack entrance(const ArgPack &args) {
+    static RetPack finish_syscall(const util::nonnull<Riscv64Context *> &ctx,
+                                  const util::nonnull<task::TCB *> &tcb,
+                                  RetPack ret) {
+        ctx->write_ret(ret);
+        ctx->sepc += 4;
+        tcb->coroutines.syscall_done = true;
+        return ret;
+    }
+
+    util::cotask<RetPack> entrance(const util::nonnull<Riscv64Context *> &ctx,
+                                   const util::nonnull<task::TCB *> &tcb) {
+        ArgPack args = ctx->read_args();
+
         // 参数解包
         b64 arg0 = args.args[0];
         b64 arg1 = args.args[1];
@@ -89,8 +104,6 @@ namespace syscall {
                 bool ok = execve(UString((VirAddr)arg0, MAX_SYSCALL_PATH),
                                  VirAddr(arg1), arg2);
                 if (ok) {
-                    auto *ctx = env::inst().trap_context();
-                    assert(ctx != nullptr);
                     ret0 = ctx->regs[Context::A0_BASE];
                     ret1 = ctx->regs[Context::A0_BASE + 1];
                     ctx->sepc -= 4;
@@ -184,10 +197,11 @@ namespace syscall {
                 break;
             }
             case SYS_RECV_MSG: {
-                ret0 = recv_msg_sync(capidx, VirAddr(arg0), VirAddr(arg1),
-                                     VirAddr(arg2), VirAddr(arg3));
-                ret1 = 0;
-                break;
+                auto recv_task =
+                    recv_msg_sync(capidx, VirAddr(arg0), VirAddr(arg1),
+                                  VirAddr(arg2), VirAddr(arg3));
+                RetPack ret = co_await recv_task;
+                co_return finish_syscall(ctx, tcb, ret);
             }
             case SYS_TRY_SEND_MSG: {
                 ret0 = send_msg(capidx, VirAddr(arg0), arg1, VirAddr(arg2),
@@ -209,6 +223,6 @@ namespace syscall {
             }
         }
 
-        return RetPack{processed, ret0, ret1};
+        co_return finish_syscall(ctx, tcb, RetPack{processed, ret0, ret1});
     };
 }  // namespace syscall

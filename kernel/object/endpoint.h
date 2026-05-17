@@ -11,6 +11,7 @@
 #include <sustcore/capability.h>
 #include <task/task_struct.h>
 
+#include <coroutine>
 #include <cstddef>
 
 namespace cap {
@@ -37,12 +38,32 @@ namespace cap {
 
     class EndpointObject : public CapObj<EndpointPayload> {
     public:
+        /**
+         * @brief Endpoint消息接收的协程等待器
+         * 
+         */
+        class RecvAwaiter {
+        private:
+            EndpointPayload *_payload = nullptr;
+
+        public:
+            explicit RecvAwaiter(EndpointPayload *payload)
+                : _payload(payload) {}
+
+            [[nodiscard]]
+            bool await_ready() const {
+                return false;
+            }
+            bool await_suspend(std::coroutine_handle<> handle);
+            void await_resume() const {}
+        };
+
         explicit EndpointObject(util::nonnull<Capability *> cap)
             : CapObj<EndpointPayload>(cap) {}
 
         Result<bool> send(pid_t sender_pid, const char *msgbuf, size_t msgsz,
                           Capability **caps, size_t capsz, bool blocking);
         Result<EndpointMessage *> recv_async();
-        Result<bool> recv_sync(task::wait::WakePostAction action);
+        Result<RecvAwaiter> recv_sync();
     };
 }  // namespace cap

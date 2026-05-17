@@ -79,7 +79,7 @@ namespace task::wait {
     }
 
     Result<void> WaitReasonManager::enqueue(WaitReasonId id, TCB *tcb,
-                                            WakePostAction action) {
+                                            WaitPredicate predicate) {
         if (tcb == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -87,10 +87,21 @@ namespace task::wait {
         propagate(qres);
 
         tcb->wait_reason        = id;
-        tcb->wait_post_action   = std::move(action);
+        tcb->wait_predicate     = std::move(predicate);
         tcb->basic_entity.state = ThreadState::WAITING;
         qres.value()->threads.push_back(*tcb);
         void_return();
+    }
+
+    Result<TCB *> WaitReasonManager::peek_one(WaitReasonId id) {
+        auto qres = queue_if_exists(id);
+        propagate(qres);
+
+        WaitQueue *queue = qres.value();
+        if (queue == nullptr || queue->threads.empty()) {
+            return static_cast<TCB *>(nullptr);
+        }
+        return &queue->threads.front();
     }
 
     Result<TCB *> WaitReasonManager::pop_one(WaitReasonId id) {
@@ -105,16 +116,19 @@ namespace task::wait {
         TCB *tcb = &queue->threads.front();
         queue->threads.pop_front();
         tcb->wait_reason        = 0;
-        tcb->wait_post_action   = {};
+        tcb->wait_predicate     = {};
+        tcb->coroutines.ipc_handle = nullptr;
+        tcb->coroutines.syscall_pending = false;
+        tcb->coroutines.syscall_done = true;
         tcb->wait_head.clear();
         return tcb;
     }
 
-    static bool run_post_action(TCB *tcb) {
+    static bool run_wait_predicate(TCB *tcb) {
         if (tcb == nullptr) {
             return false;
         }
-        if (!tcb->wait_post_action) {
+        if (!tcb->wait_predicate) {
             return true;
         }
 
@@ -129,7 +143,7 @@ namespace task::wait {
             PageMan::flush_tlb();
         }
 
-        bool should_wake = tcb->wait_post_action(tcb);
+        bool should_wake = tcb->wait_predicate(tcb);
 
         if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
             target_tmm->pgd() != origin_pgd) {
@@ -141,10 +155,21 @@ namespace task::wait {
         return should_wake;
     }
 
+    static bool syscall_done_for_wakeup(TCB *tcb) {
+        if (tcb == nullptr) {
+            return false;
+        }
+        return !tcb->coroutines.syscall_pending ||
+               tcb->coroutines.syscall_done;
+    }
+
     static void clear_wait_metadata(TCB *tcb) {
         assert(tcb != nullptr);
         tcb->wait_reason        = 0;
-        tcb->wait_post_action   = {};
+        tcb->wait_predicate     = {};
+        tcb->coroutines.ipc_handle = nullptr;
+        tcb->coroutines.syscall_pending = false;
+        tcb->coroutines.syscall_done = true;
         tcb->wait_head.clear();
     }
 
@@ -167,7 +192,7 @@ namespace task::wait {
                 return size_t(0);
             }
 
-            if (run_post_action(tcb)) {
+            if (run_wait_predicate(tcb) && syscall_done_for_wakeup(tcb)) {
                 clear_wait_metadata(tcb);
                 return schd::Scheduler::inst().wakeup_waiting(tcb) ? size_t(1)
                                                                    : size_t(0);
@@ -197,7 +222,7 @@ namespace task::wait {
             TCB *tcb = &queue->threads.front();
             queue->threads.pop_front();
 
-            if (!run_post_action(tcb)) {
+            if (!run_wait_predicate(tcb) || !syscall_done_for_wakeup(tcb)) {
                 queue->threads.push_back(*tcb);
                 continue;
             }
@@ -227,8 +252,12 @@ namespace task::wait {
         return schd::Scheduler::inst().block_current(id);
     }
 
-    Result<void> wait_current(WaitReasonId id, WakePostAction action) {
-        return schd::Scheduler::inst().block_current(id, std::move(action));
+    Result<void> wait_current(WaitReasonId id, WaitPredicate predicate) {
+        return schd::Scheduler::inst().block_current(id, std::move(predicate));
+    }
+
+    Result<TCB *> peek_one(WaitReasonId id) {
+        return WaitReasonManager::inst().peek_one(id);
     }
 
     Result<size_t> wake_one(WaitReasonId id) {

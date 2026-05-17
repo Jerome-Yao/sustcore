@@ -45,7 +45,8 @@ namespace task::wait {
         // 将当前线程加入等待队列
         Result<void> enqueue(WaitReasonId id, TCB *tcb);
         Result<void> enqueue(WaitReasonId id, TCB *tcb,
-                             WakePostAction action);
+                             WaitPredicate predicate);
+        Result<TCB *> peek_one(WaitReasonId id);
         // 从等待队列中弹出一个线程
         Result<TCB *> pop_one(WaitReasonId id);
         // 从等待队列中唤醒一个线程, 返回被唤醒线程的数量(0或1)
@@ -63,7 +64,8 @@ namespace task::wait {
 
     WaitReasonId alloc_reason();
     Result<void> wait_current(WaitReasonId id);
-    Result<void> wait_current(WaitReasonId id, WakePostAction action);
+    Result<void> wait_current(WaitReasonId id, WaitPredicate predicate);
+    Result<TCB *> peek_one(WaitReasonId id);
     Result<size_t> wake_one(WaitReasonId id);
     Result<size_t> wake_all(WaitReasonId id);
     bool has_waiting(WaitReasonId id);
