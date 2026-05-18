@@ -19,6 +19,7 @@
 #define SUPPRESS_SELF_MOVE _Pragma("clang diagnostic ignored \"-Wself-move\"")
 #define SUPPRESS_SELF_ASSIGN \
     _Pragma("clang diagnostic ignored \"-Wself-assign-overloaded\"")
+#define SUPPRESS_SFINAE_INCOMPLETE
 #elif defined(__GNUC__) || defined(__GNUG__)
 #define SUPPRESS_WARNING_BEGIN _Pragma("GCC diagnostic push")
 #define SUPPRESS_WARNING_END   _Pragma("GCC diagnostic pop")
@@ -26,6 +27,8 @@
     _Pragma("GCC diagnostic ignored \"-Wliteral-suffix\"")
 #define SUPPRESS_SELF_MOVE _Pragma("GCC diagnostic ignored \"-Wself-move\"")
 #define SUPPRESS_SELF_ASSIGN
+#define SUPPRESS_SFINAE_INCOMPLETE \
+    _Pragma("GCC diagnostic ignored \"-Wsfinae-incomplete\"")
 #else
 #warning "Failed at suppressing diagnostic infomations!"
 // 其他编译器中不处理该警告

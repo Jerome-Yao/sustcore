@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <sustcore/capability.h>
+#include <sustcore/msg.h>
 
 extern CapIdx __pcb_cap;
 extern CapIdx __main_tcb_cap;

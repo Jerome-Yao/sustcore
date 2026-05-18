@@ -29,6 +29,7 @@ enum class ErrCode : int {
     BUSY                     = GENERIC_ERROR | 0x0004,
     OUT_OF_MEMORY            = GENERIC_ERROR | 0x0005,
     NULLPTR                  = GENERIC_ERROR | 0x0006,
+    ALLOCATION_FAILED        = GENERIC_ERROR | 0x0007,
     // capability errors
     CAP_ERROR                = 0x01'0000,
     INVALID_CAPABILITY       = CAP_ERROR | 0x0001,
@@ -69,6 +70,7 @@ constexpr const char *to_cstring(ErrCode err) {
         case ErrCode::BUSY:               return "BUSY";
         case ErrCode::OUT_OF_MEMORY:      return "OUT_OF_MEMORY";
         case ErrCode::NULLPTR:            return "NULLPTR";
+        case ErrCode::ALLOCATION_FAILED:  return "ALLOCATION_FAILED";
         case ErrCode::INVALID_CAPABILITY: return "INVALID_CAPABILITY";
         case ErrCode::INSUFFICIENT_PERMISSIONS:
             return "INSUFFICIENT_PERMISSIONS";

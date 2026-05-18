@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <features/diagnostic.h>
 #include <fwd/stringfwd.h>
 
 #include <algorithm>
@@ -175,6 +176,8 @@ namespace std {
         }
     };
 
+    SUPPRESS_WARNING_BEGIN
+    SUPPRESS_SFINAE_INCOMPLETE
     template <>
     class char_traits<char> : public __impl_char_traits<char> {};
     template <>
@@ -185,6 +188,7 @@ namespace std {
     class char_traits<char16_t> : public __impl_char_traits<char16_t> {};
     template <>
     class char_traits<char32_t> : public __impl_char_traits<char32_t> {};
+    SUPPRESS_WARNING_END
 
     template <class CharT, class Traits, class Allocator>
     class basic_string {
@@ -599,9 +603,8 @@ namespace std {
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        EXCEPTION_DEPRECATED
-        constexpr basic_string &assign(const StringViewLike &svl, size_type pos,
-                                       size_type count = npos) {
+        EXCEPTION_DEPRECATED constexpr basic_string &assign(
+            const StringViewLike &svl, size_type pos, size_type count = npos) {
             return assign(_sv_type(svl).substr(pos, count));
         }
 
@@ -837,9 +840,8 @@ namespace std {
             return *this;
         }
 
-        constexpr result_nt<basic_string &> insert_nt(size_type index,
-                                                      const_pointer s,
-                                                      size_type count) noexcept {
+        constexpr result_nt<basic_string &> insert_nt(
+            size_type index, const_pointer s, size_type count) noexcept {
             if (index > size()) {
                 return {unexpect, error_type::OUT_OF_RANGE};
             }
@@ -852,8 +854,8 @@ namespace std {
             return insert(index, s, Traits::length(s));
         }
 
-        constexpr result_nt<basic_string &> insert_nt(size_type index,
-                                                      const_pointer s) noexcept {
+        constexpr result_nt<basic_string &> insert_nt(
+            size_type index, const_pointer s) noexcept {
             return insert_nt(index, s, Traits::length(s));
         }
 
@@ -880,9 +882,9 @@ namespace std {
             if (index > size() || pos > str.size()) {
                 return {unexpect, error_type::OUT_OF_RANGE};
             }
-            size_type rcount =
-                (count == npos || pos + count > str.size()) ? str.size() - pos
-                                                            : count;
+            size_type rcount = (count == npos || pos + count > str.size())
+                                   ? str.size() - pos
+                                   : count;
             return insert_nt(index, str.data() + pos, rcount);
         }
 
@@ -915,9 +917,8 @@ namespace std {
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        EXCEPTION_DEPRECATED
-        constexpr basic_string &insert(size_type index,
-                                       const StringViewLike &svl) {
+        EXCEPTION_DEPRECATED constexpr basic_string &insert(
+            size_type index, const StringViewLike &svl) {
             _sv_type sv = svl;
             return insert(index, sv.data(), sv.size());
         }
@@ -932,10 +933,9 @@ namespace std {
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        EXCEPTION_DEPRECATED
-        constexpr basic_string &insert(size_type index,
-                                       const StringViewLike &svl, size_type pos,
-                                       size_type count = npos) {
+        EXCEPTION_DEPRECATED constexpr basic_string &insert(
+            size_type index, const StringViewLike &svl, size_type pos,
+            size_type count = npos) {
             return insert(index, _sv_type(svl).substr(pos, count));
         }
 
@@ -1141,10 +1141,10 @@ namespace std {
             if (pos > size() || str_pos > str.size()) {
                 return {unexpect, error_type::OUT_OF_RANGE};
             }
-            size_type rcount = (str_count == npos ||
-                                str_pos + str_count > str.size())
-                                   ? str.size() - str_pos
-                                   : str_count;
+            size_type rcount =
+                (str_count == npos || str_pos + str_count > str.size())
+                    ? str.size() - str_pos
+                    : str_count;
             return replace_nt(pos, count,
                               basic_string(str.data() + str_pos, rcount));
         }
@@ -1214,9 +1214,10 @@ namespace std {
             return __replace(pos, count, begin, end);
         }
 
-        constexpr result_nt<basic_string &> replace_nt(
-            size_type pos, size_type count, size_type count2,
-            CharT ch) noexcept {
+        constexpr result_nt<basic_string &> replace_nt(size_type pos,
+                                                       size_type count,
+                                                       size_type count2,
+                                                       CharT ch) noexcept {
             if (pos > size()) {
                 return {unexpect, error_type::OUT_OF_RANGE};
             }
@@ -1238,9 +1239,10 @@ namespace std {
             return replace(first - begin(), last - first, count2, ch);
         }
 
-        constexpr result_nt<basic_string &> replace_nt(
-            const_iterator first, const_iterator last, size_type count2,
-            CharT ch) noexcept {
+        constexpr result_nt<basic_string &> replace_nt(const_iterator first,
+                                                       const_iterator last,
+                                                       size_type count2,
+                                                       CharT ch) noexcept {
             if (first >= last || first < begin() || last > end()) {
                 return {unexpect, error_type::OUT_OF_RANGE};
             }
@@ -1249,10 +1251,9 @@ namespace std {
         }
 
         template <class InputIt>
-        EXCEPTION_DEPRECATED
-        constexpr basic_string &replace(const_iterator first,
-                                        const_iterator last, InputIt first2,
-                                        InputIt last2) {
+        EXCEPTION_DEPRECATED constexpr basic_string &replace(
+            const_iterator first, const_iterator last, InputIt first2,
+            InputIt last2) {
             if (first >= last) {
                 _THROW(out_of_range("basic_string::replace: invalid range"));
             }
@@ -1264,9 +1265,10 @@ namespace std {
         }
 
         template <class InputIt>
-        constexpr result_nt<basic_string &> replace_nt(
-            const_iterator first, const_iterator last, InputIt first2,
-            InputIt last2) noexcept {
+        constexpr result_nt<basic_string &> replace_nt(const_iterator first,
+                                                       const_iterator last,
+                                                       InputIt first2,
+                                                       InputIt last2) noexcept {
             if (first >= last || first < begin() || last > end()) {
                 return {unexpect, error_type::OUT_OF_RANGE};
             }
@@ -1283,26 +1285,27 @@ namespace std {
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        EXCEPTION_DEPRECATED
-        basic_string &replace(size_type pos, size_type count,
-                              const StringViewLike &svl) {
+        EXCEPTION_DEPRECATED basic_string &replace(size_type pos,
+                                                   size_type count,
+                                                   const StringViewLike &svl) {
             _sv_type sv = svl;
             return replace(pos, count, sv.data(), sv.size());
         }
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        result_nt<basic_string &> replace_nt(size_type pos, size_type count,
-                                             const StringViewLike &svl) noexcept {
+        result_nt<basic_string &> replace_nt(
+            size_type pos, size_type count,
+            const StringViewLike &svl) noexcept {
             _sv_type sv = svl;
             return replace_nt(pos, count, sv.data(), sv.size());
         }
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        EXCEPTION_DEPRECATED
-        basic_string &replace(const_iterator first, const_iterator last,
-                              const StringViewLike &svl) {
+        EXCEPTION_DEPRECATED basic_string &replace(const_iterator first,
+                                                   const_iterator last,
+                                                   const StringViewLike &svl) {
             _sv_type sv = svl;
             return replace(first, last, sv.data(), sv.size());
         }
@@ -1318,18 +1321,20 @@ namespace std {
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        EXCEPTION_DEPRECATED
-        basic_string &replace(size_type pos, size_type count,
-                              const StringViewLike &svl, size_type pos2,
-                              size_type count2 = npos) {
+        EXCEPTION_DEPRECATED basic_string &replace(size_type pos,
+                                                   size_type count,
+                                                   const StringViewLike &svl,
+                                                   size_type pos2,
+                                                   size_type count2 = npos) {
             return replace(pos, count, _sv_type(svl).substr(pos2, count2));
         }
 
         template <class StringViewLike>
             requires __StringViewLike<StringViewLike>
-        result_nt<basic_string &> replace_nt(
-            size_type pos, size_type count, const StringViewLike &svl,
-            size_type pos2, size_type count2 = npos) noexcept {
+        result_nt<basic_string &> replace_nt(size_type pos, size_type count,
+                                             const StringViewLike &svl,
+                                             size_type pos2,
+                                             size_type count2 = npos) noexcept {
             _sv_type sv = svl;
             auto sub    = sv.substr_nt(pos2, count2);
             if (!sub) {

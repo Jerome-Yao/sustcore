@@ -16,6 +16,7 @@
 #include <syscall/uaccess.h>
 #include <task/scheduler.h>
 #include <task/wait.h>
+#include <sustcore/msg.h>
 
 #include <cassert>
 #include <coroutine>
