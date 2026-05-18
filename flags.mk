@@ -10,7 +10,7 @@ flags-common-cpp := -std=gnu++26 -nostdlib -fno-builtin -ffreestanding \
 	-Wall -Wno-sign-compare -Wno-literal-suffix -Wno-int-to-pointer-cast \
 	-fno-strict-aliasing -fomit-frame-pointer -fno-pic -fno-asynchronous-unwind-tables \
 	-fno-stack-protector -fno-toplevel-reorder -fno-tree-scev-cprop \
-	-mcmodel=medany
+	-mcmodel=medany -freflection
 
 flags-no-rtti-cpp := -D__SUS_NO_RTTI__ -fno-rtti
 flags-no-exceptions-cpp := -D__SUS_NO_EXCEPTIONS__ -fno-exceptions

@@ -70,9 +70,21 @@ namespace std {
         using const_iterator         = const_pointer;
 
     private:
+        static constexpr size_type U_constexpr_capacity = 64;
+
+        union U_constexpr_storage_type {
+            char D_dummy;
+            value_type D_values[U_constexpr_capacity];
+
+            constexpr U_constexpr_storage_type() noexcept : D_dummy() {}
+            constexpr ~U_constexpr_storage_type() {}
+        };
+
         pointer D_data       = nullptr;
         size_type D_size     = 0;
         size_type D_capacity = 0;
+        bool D_constexpr_view = false;
+        U_constexpr_storage_type D_constexpr_storage;
         allocator_type D_alloc;
 
         [[nodiscard]]
@@ -91,14 +103,14 @@ namespace std {
             return a > max_size() - b;
         }
 
-        pointer U_allocate(size_type count) {
+        constexpr pointer U_allocate(size_type count) {
             if (count == 0) {
                 return nullptr;
             }
             return allocator_traits<allocator_type>::allocate(D_alloc, count);
         }
 
-        result_nt<pointer> U_allocate_nt(size_type count) noexcept {
+        constexpr result_nt<pointer> U_allocate_nt(size_type count) noexcept {
             if (count == 0) {
                 return pointer(nullptr);
             }
@@ -112,23 +124,23 @@ namespace std {
             return data;
         }
 
-        void U_deallocate(pointer data, size_type capacity) noexcept {
+        constexpr void U_deallocate(pointer data, size_type capacity) noexcept {
             if (data != nullptr) {
                 allocator_traits<allocator_type>::deallocate(D_alloc, data, capacity);
             }
         }
 
         template <class... Args>
-        void U_construct(pointer where, Args&&... args) {
+        constexpr void U_construct(pointer where, Args&&... args) {
             allocator_traits<allocator_type>::construct(
                 D_alloc, where, std::forward<Args>(args)...);
         }
 
-        void U_destroy(pointer where) noexcept {
+        constexpr void U_destroy(pointer where) noexcept {
             D_alloc.destroy(where);
         }
 
-        void U_destroy_range(pointer first, pointer last) noexcept {
+        constexpr void U_destroy_range(pointer first, pointer last) noexcept {
             while (first != last) {
                 U_destroy(first);
                 ++first;
@@ -137,7 +149,7 @@ namespace std {
 
         template <class InputIt>
         [[nodiscard]]
-        size_type U_count_range(InputIt first, InputIt last) const noexcept {
+        constexpr size_type U_count_range(InputIt first, InputIt last) const noexcept {
             size_type count = 0;
             while (first != last) {
                 ++first;
@@ -156,7 +168,14 @@ namespace std {
             return D_data == nullptr ? nullptr : D_data + D_size;
         }
 
-        void U_reset() noexcept {
+        constexpr void U_reset() noexcept {
+            if (D_constexpr_view) {
+                D_data           = nullptr;
+                D_size           = 0;
+                D_capacity       = 0;
+                D_constexpr_view = false;
+                return;
+            }
             U_destroy_range(D_data, U_end_ptr());
             U_deallocate(D_data, D_capacity);
             D_data     = nullptr;
@@ -164,26 +183,30 @@ namespace std {
             D_capacity = 0;
         }
 
-        result_nt<void> U_reallocate_nt(size_type new_capacity) noexcept {
+        constexpr result_nt<void> U_reallocate_nt(size_type new_capacity) noexcept {
             auto allocated = U_allocate_nt(new_capacity);
             if (!allocated) {
                 return {unexpect, allocated.error()};
             }
 
             pointer new_data = allocated.value();
+            bool was_constexpr_view = D_constexpr_view;
             size_type i      = 0;
             for (; i < D_size; ++i) {
                 U_construct(new_data + i, std::move(D_data[i]));
             }
 
-            U_destroy_range(D_data, U_end_ptr());
-            U_deallocate(D_data, D_capacity);
-            D_data     = new_data;
-            D_capacity = new_capacity;
+            if (!was_constexpr_view) {
+                U_destroy_range(D_data, U_end_ptr());
+                U_deallocate(D_data, D_capacity);
+            }
+            D_data           = new_data;
+            D_capacity       = new_capacity;
+            D_constexpr_view = false;
             return {};
         }
 
-        void U_reallocate(size_type new_capacity) {
+        constexpr void U_reallocate(size_type new_capacity) {
             if (U_over_max(new_capacity)) {
                 _THROW(length_error("vector::reserve: new capacity too large"));
             }
@@ -193,17 +216,21 @@ namespace std {
             }
 
             size_type i = 0;
+            bool was_constexpr_view = D_constexpr_view;
             for (; i < D_size; ++i) {
                 U_construct(new_data + i, std::move(D_data[i]));
             }
 
-            U_destroy_range(D_data, U_end_ptr());
-            U_deallocate(D_data, D_capacity);
-            D_data     = new_data;
-            D_capacity = new_capacity;
+            if (!was_constexpr_view) {
+                U_destroy_range(D_data, U_end_ptr());
+                U_deallocate(D_data, D_capacity);
+            }
+            D_data           = new_data;
+            D_capacity       = new_capacity;
+            D_constexpr_view = false;
         }
 
-        result_nt<void> U_ensure_capacity_nt(size_type required) noexcept {
+        constexpr result_nt<void> U_ensure_capacity_nt(size_type required) noexcept {
             if (required <= D_capacity) {
                 return {};
             }
@@ -213,7 +240,7 @@ namespace std {
             return U_reallocate_nt(U_next_capacity(required));
         }
 
-        void U_ensure_capacity(size_type required) {
+        constexpr void U_ensure_capacity(size_type required) {
             if (required <= D_capacity) {
                 return;
             }
@@ -223,15 +250,15 @@ namespace std {
             U_reallocate(U_next_capacity(required));
         }
 
-        void U_fill_construct(size_type count, const_reference value) {
+        constexpr void U_fill_construct(size_type count, const_reference value) {
             U_ensure_capacity(count);
             for (; D_size < count; ++D_size) {
                 U_construct(D_data + D_size, value);
             }
         }
 
-        result_nt<void> U_fill_construct_nt(size_type count,
-                                            const_reference value) noexcept {
+        constexpr result_nt<void> U_fill_construct_nt(
+            size_type count, const_reference value) noexcept {
             auto reserved = U_ensure_capacity_nt(count);
             if (!reserved) {
                 return {unexpect, reserved.error()};
@@ -243,7 +270,7 @@ namespace std {
         }
 
         template <class InputIt>
-        void U_range_construct(InputIt first, InputIt last) {
+        constexpr void U_range_construct(InputIt first, InputIt last) {
             size_type count = U_count_range(first, last);
             U_ensure_capacity(count);
             for (; first != last; ++first) {
@@ -253,7 +280,8 @@ namespace std {
         }
 
         template <class InputIt>
-        result_nt<void> U_range_construct_nt(InputIt first, InputIt last) noexcept {
+        constexpr result_nt<void> U_range_construct_nt(
+            InputIt first, InputIt last) noexcept {
             size_type count = U_count_range(first, last);
             auto reserved   = U_ensure_capacity_nt(count);
             if (!reserved) {
@@ -267,7 +295,7 @@ namespace std {
         }
 
         [[nodiscard]]
-        size_type U_index_of(const_iterator pos) const noexcept {
+        constexpr size_type U_index_of(const_iterator pos) const noexcept {
             if (D_data == nullptr && pos == nullptr) {
                 return 0;
             }
@@ -281,13 +309,13 @@ namespace std {
             : D_alloc(alloc) {}
 
         EXCEPTION_DEPRECATED
-        explicit vector(size_type count, const allocator_type& alloc = allocator_type())
+        constexpr explicit vector(size_type count, const allocator_type& alloc = allocator_type())
             : D_alloc(alloc) {
             resize(count);
         }
 
         EXCEPTION_DEPRECATED
-        vector(size_type count, const_reference value,
+        constexpr vector(size_type count, const_reference value,
                const allocator_type& alloc = allocator_type())
             : D_alloc(alloc) {
             U_fill_construct(count, value);
@@ -296,25 +324,42 @@ namespace std {
         template <class InputIt>
             requires (!__vector_helper::__is_integral_v<InputIt>)
         EXCEPTION_DEPRECATED
-        vector(InputIt first, InputIt last,
+        constexpr vector(InputIt first, InputIt last,
                const allocator_type& alloc = allocator_type())
             : D_alloc(alloc) {
             U_range_construct(first, last);
         }
 
         EXCEPTION_DEPRECATED
-        vector(std::initializer_list<value_type> init,
+        constexpr vector(std::initializer_list<value_type> init,
                const allocator_type& alloc = allocator_type())
-            : vector(init.begin(), init.end(), alloc) {}
+            : D_alloc(alloc) {
+            if consteval {
+                if (init.size() <= U_constexpr_capacity) {
+                    D_data           = D_constexpr_storage.D_values;
+                    D_size           = init.size();
+                    D_capacity       = U_constexpr_capacity;
+                    D_constexpr_view = true;
+                    for (size_type i = 0; i < init.size(); ++i) {
+                        ::new (&D_constexpr_storage.D_values[i])
+                            value_type(init.begin()[i]);
+                    }
+                } else {
+                    U_range_construct(init.begin(), init.end());
+                }
+            } else {
+                U_range_construct(init.begin(), init.end());
+            }
+        }
 
         EXCEPTION_DEPRECATED
-        vector(const vector& other)
+        constexpr vector(const vector& other)
             : D_alloc(other.D_alloc) {
             U_range_construct(other.begin(), other.end());
         }
 
         EXCEPTION_DEPRECATED
-        vector(const vector& other, const allocator_type& alloc)
+        constexpr vector(const vector& other, const allocator_type& alloc)
             : D_alloc(alloc) {
             U_range_construct(other.begin(), other.end());
         }
@@ -323,34 +368,54 @@ namespace std {
             : D_data(other.D_data),
               D_size(other.D_size),
               D_capacity(other.D_capacity),
+              D_constexpr_view(other.D_constexpr_view),
               D_alloc(std::move(other.D_alloc)) {
+            if (other.D_constexpr_view) {
+                D_data     = D_constexpr_storage.D_values;
+                D_capacity = U_constexpr_capacity;
+                for (size_type i = 0; i < D_size; ++i) {
+                    ::new (&D_constexpr_storage.D_values[i])
+                        value_type(std::move(other.D_data[i]));
+                }
+            }
             other.D_data     = nullptr;
             other.D_size     = 0;
             other.D_capacity = 0;
+            other.D_constexpr_view = false;
         }
 
         EXCEPTION_DEPRECATED
-        vector(vector&& other, const allocator_type& alloc)
+        constexpr vector(vector&& other, const allocator_type& alloc)
             : D_alloc(alloc) {
             if (D_alloc == other.D_alloc) {
                 D_data           = other.D_data;
                 D_size           = other.D_size;
                 D_capacity       = other.D_capacity;
+                D_constexpr_view = other.D_constexpr_view;
+                if (other.D_constexpr_view) {
+                    D_data     = D_constexpr_storage.D_values;
+                    D_capacity = U_constexpr_capacity;
+                    for (size_type i = 0; i < D_size; ++i) {
+                        ::new (&D_constexpr_storage.D_values[i])
+                            value_type(std::move(other.D_data[i]));
+                    }
+                }
                 other.D_data     = nullptr;
                 other.D_size     = 0;
                 other.D_capacity = 0;
+                other.D_constexpr_view = false;
             } else {
                 U_range_construct(other.begin(), other.end());
                 other.clear();
             }
         }
 
-        ~vector() {
+        constexpr ~vector() {
             U_reset();
         }
 
         EXCEPTION_DEPRECATED
-        vector& operator=(const vector& other) {
+        constexpr vector& operator=(const vector& other) {
             if (this != &other) {
                 vector temp(other);
                 swap(temp);
@@ -365,27 +430,37 @@ namespace std {
                 D_size           = other.D_size;
                 D_capacity       = other.D_capacity;
                 D_alloc          = std::move(other.D_alloc);
+                D_constexpr_view = other.D_constexpr_view;
+                if (other.D_constexpr_view) {
+                    D_data     = D_constexpr_storage.D_values;
+                    D_capacity = U_constexpr_capacity;
+                    for (size_type i = 0; i < D_size; ++i) {
+                        ::new (&D_constexpr_storage.D_values[i])
+                            value_type(std::move(other.D_data[i]));
+                    }
+                }
                 other.D_data     = nullptr;
                 other.D_size     = 0;
                 other.D_capacity = 0;
+                other.D_constexpr_view = false;
             }
             return *this;
         }
 
         EXCEPTION_DEPRECATED
-        vector& operator=(std::initializer_list<value_type> ilist) {
+        constexpr vector& operator=(std::initializer_list<value_type> ilist) {
             assign(ilist);
             return *this;
         }
 
         EXCEPTION_DEPRECATED
-        void assign(size_type count, const_reference value) {
+        constexpr void assign(size_type count, const_reference value) {
             clear();
             U_fill_construct(count, value);
         }
 
-        result_nt<void> assign_nt(size_type count,
-                                  const_reference value) noexcept {
+        constexpr result_nt<void> assign_nt(size_type count,
+                                            const_reference value) noexcept {
             vector temp(D_alloc);
             auto built = temp.U_fill_construct_nt(count, value);
             if (!built) {
@@ -398,14 +473,15 @@ namespace std {
         template <class InputIt>
             requires (!__vector_helper::__is_integral_v<InputIt>)
         EXCEPTION_DEPRECATED
-        void assign(InputIt first, InputIt last) {
+        constexpr void assign(InputIt first, InputIt last) {
             clear();
             U_range_construct(first, last);
         }
 
         template <class InputIt>
             requires (!__vector_helper::__is_integral_v<InputIt>)
-        result_nt<void> assign_nt(InputIt first, InputIt last) noexcept {
+        constexpr result_nt<void> assign_nt(InputIt first,
+                                            InputIt last) noexcept {
             vector temp(D_alloc);
             auto built = temp.U_range_construct_nt(first, last);
             if (!built) {
@@ -416,11 +492,12 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void assign(std::initializer_list<value_type> ilist) {
+        constexpr void assign(std::initializer_list<value_type> ilist) {
             assign(ilist.begin(), ilist.end());
         }
 
-        result_nt<void> assign_nt(std::initializer_list<value_type> ilist) noexcept {
+        constexpr result_nt<void> assign_nt(
+            std::initializer_list<value_type> ilist) noexcept {
             return assign_nt(ilist.begin(), ilist.end());
         }
 
@@ -547,13 +624,13 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void reserve(size_type new_cap) {
+        constexpr void reserve(size_type new_cap) {
             if (new_cap > D_capacity) {
                 U_reallocate(new_cap);
             }
         }
 
-        result_nt<void> reserve_nt(size_type new_cap) noexcept {
+        constexpr result_nt<void> reserve_nt(size_type new_cap) noexcept {
             if (new_cap <= D_capacity) {
                 return {};
             }
@@ -566,13 +643,13 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void shrink_to_fit() {
+        constexpr void shrink_to_fit() {
             if (D_size < D_capacity) {
                 U_reallocate(D_size);
             }
         }
 
-        result_nt<void> shrink_to_fit_nt() noexcept {
+        constexpr result_nt<void> shrink_to_fit_nt() noexcept {
             if (D_size >= D_capacity) {
                 return {};
             }
@@ -585,28 +662,28 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        iterator insert(const_iterator pos, const_reference value) {
+        constexpr iterator insert(const_iterator pos, const_reference value) {
             return emplace(pos, value);
         }
 
-        result_nt<iterator> insert_nt(const_iterator pos,
-                                      const_reference value) noexcept {
+        constexpr result_nt<iterator> insert_nt(
+            const_iterator pos, const_reference value) noexcept {
             return emplace_nt(pos, value);
         }
 
         EXCEPTION_DEPRECATED
-        iterator insert(const_iterator pos, value_type&& value) {
+        constexpr iterator insert(const_iterator pos, value_type&& value) {
             return emplace(pos, std::move(value));
         }
 
-        result_nt<iterator> insert_nt(const_iterator pos,
-                                      value_type&& value) noexcept {
+        constexpr result_nt<iterator> insert_nt(
+            const_iterator pos, value_type&& value) noexcept {
             return emplace_nt(pos, std::move(value));
         }
 
         EXCEPTION_DEPRECATED
-        iterator insert(const_iterator pos, size_type count,
-                        const_reference value) {
+        constexpr iterator insert(const_iterator pos, size_type count,
+                                  const_reference value) {
             size_type index = U_index_of(pos);
             if (index > D_size) {
                 _THROW(out_of_range("vector::insert: pos out of range"));
@@ -630,8 +707,9 @@ namespace std {
             return begin() + index;
         }
 
-        result_nt<iterator> insert_nt(const_iterator pos, size_type count,
-                                      const_reference value) noexcept {
+        constexpr result_nt<iterator> insert_nt(
+            const_iterator pos, size_type count,
+            const_reference value) noexcept {
             size_type index = U_index_of(pos);
             if (index > D_size) {
                 return {unexpect, error_type::OUT_OF_RANGE};
@@ -661,7 +739,8 @@ namespace std {
         template <class InputIt>
             requires (!__vector_helper::__is_integral_v<InputIt>)
         EXCEPTION_DEPRECATED
-        iterator insert(const_iterator pos, InputIt first, InputIt last) {
+        constexpr iterator insert(const_iterator pos, InputIt first,
+                                  InputIt last) {
             size_type index = U_index_of(pos);
             if (index > D_size) {
                 _THROW(out_of_range("vector::insert: pos out of range"));
@@ -685,8 +764,9 @@ namespace std {
 
         template <class InputIt>
             requires (!__vector_helper::__is_integral_v<InputIt>)
-        result_nt<iterator> insert_nt(const_iterator pos, InputIt first,
-                                      InputIt last) noexcept {
+        constexpr result_nt<iterator> insert_nt(const_iterator pos,
+                                                InputIt first,
+                                                InputIt last) noexcept {
             size_type index = U_index_of(pos);
             if (index > D_size) {
                 return {unexpect, error_type::OUT_OF_RANGE};
@@ -716,18 +796,20 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        iterator insert(const_iterator pos, std::initializer_list<value_type> ilist) {
+        constexpr iterator insert(const_iterator pos,
+                                  std::initializer_list<value_type> ilist) {
             return insert(pos, ilist.begin(), ilist.end());
         }
 
-        result_nt<iterator> insert_nt(const_iterator pos,
-                                      std::initializer_list<value_type> ilist) noexcept {
+        constexpr result_nt<iterator> insert_nt(
+            const_iterator pos,
+            std::initializer_list<value_type> ilist) noexcept {
             return insert_nt(pos, ilist.begin(), ilist.end());
         }
 
         template <class... Args>
         EXCEPTION_DEPRECATED
-        iterator emplace(const_iterator pos, Args&&... args) {
+        constexpr iterator emplace(const_iterator pos, Args&&... args) {
             size_type index = U_index_of(pos);
             if (index > D_size) {
                 _THROW(out_of_range("vector::emplace: pos out of range"));
@@ -751,8 +833,8 @@ namespace std {
         }
 
         template <class... Args>
-        result_nt<iterator> emplace_nt(const_iterator pos,
-                                       Args&&... args) noexcept {
+        constexpr result_nt<iterator> emplace_nt(const_iterator pos,
+                                                 Args&&... args) noexcept {
             size_type index = U_index_of(pos);
             if (index > D_size) {
                 return {unexpect, error_type::OUT_OF_RANGE};
@@ -779,7 +861,7 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        iterator erase(const_iterator pos) {
+        constexpr iterator erase(const_iterator pos) {
             size_type index = U_index_of(pos);
             if (index >= D_size) {
                 _THROW(out_of_range("vector::erase: pos out of range"));
@@ -787,7 +869,7 @@ namespace std {
             return erase(pos, pos + 1);
         }
 
-        result_nt<iterator> erase_nt(const_iterator pos) noexcept {
+        constexpr result_nt<iterator> erase_nt(const_iterator pos) noexcept {
             size_type index = U_index_of(pos);
             if (index >= D_size) {
                 return {unexpect, error_type::OUT_OF_RANGE};
@@ -796,7 +878,7 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        iterator erase(const_iterator first, const_iterator last) {
+        constexpr iterator erase(const_iterator first, const_iterator last) {
             size_type first_index = U_index_of(first);
             size_type last_index  = U_index_of(last);
             if (first_index > last_index || last_index > D_size) {
@@ -814,8 +896,8 @@ namespace std {
             return begin() + first_index;
         }
 
-        result_nt<iterator> erase_nt(const_iterator first,
-                                     const_iterator last) noexcept {
+        constexpr result_nt<iterator> erase_nt(const_iterator first,
+                                               const_iterator last) noexcept {
             size_type first_index = U_index_of(first);
             size_type last_index  = U_index_of(last);
             if (first_index > last_index || last_index > D_size) {
@@ -834,11 +916,11 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void push_back(const_reference value) {
+        constexpr void push_back(const_reference value) {
             emplace_back(value);
         }
 
-        result_nt<void> push_back_nt(const_reference value) noexcept {
+        constexpr result_nt<void> push_back_nt(const_reference value) noexcept {
             auto result = emplace_back_nt(value);
             if (!result) {
                 return {unexpect, result.error()};
@@ -847,11 +929,11 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void push_back(value_type&& value) {
+        constexpr void push_back(value_type&& value) {
             emplace_back(std::move(value));
         }
 
-        result_nt<void> push_back_nt(value_type&& value) noexcept {
+        constexpr result_nt<void> push_back_nt(value_type&& value) noexcept {
             auto result = emplace_back_nt(std::move(value));
             if (!result) {
                 return {unexpect, result.error()};
@@ -861,13 +943,13 @@ namespace std {
 
         template <class... Args>
         EXCEPTION_DEPRECATED
-        reference emplace_back(Args&&... args) {
+        constexpr reference emplace_back(Args&&... args) {
             emplace(end(), std::forward<Args>(args)...);
             return back();
         }
 
         template <class... Args>
-        result_nt<reference> emplace_back_nt(Args&&... args) noexcept {
+        constexpr result_nt<reference> emplace_back_nt(Args&&... args) noexcept {
             auto inserted = emplace_nt(end(), std::forward<Args>(args)...);
             if (!inserted) {
                 return {unexpect, inserted.error()};
@@ -883,7 +965,7 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void resize(size_type count) {
+        constexpr void resize(size_type count) {
             if (count < D_size) {
                 U_destroy_range(D_data + count, U_end_ptr());
                 D_size = count;
@@ -896,7 +978,7 @@ namespace std {
             }
         }
 
-        result_nt<void> resize_nt(size_type count) noexcept {
+        constexpr result_nt<void> resize_nt(size_type count) noexcept {
             if (count < D_size) {
                 U_destroy_range(D_data + count, U_end_ptr());
                 D_size = count;
@@ -914,7 +996,7 @@ namespace std {
         }
 
         EXCEPTION_DEPRECATED
-        void resize(size_type count, const_reference value) {
+        constexpr void resize(size_type count, const_reference value) {
             if (count < D_size) {
                 U_destroy_range(D_data + count, U_end_ptr());
                 D_size = count;
@@ -927,8 +1009,8 @@ namespace std {
             }
         }
 
-        result_nt<void> resize_nt(size_type count,
-                                  const_reference value) noexcept {
+        constexpr result_nt<void> resize_nt(size_type count,
+                                            const_reference value) noexcept {
             if (count < D_size) {
                 U_destroy_range(D_data + count, U_end_ptr());
                 D_size = count;
@@ -949,6 +1031,7 @@ namespace std {
             std::swap(D_data, other.D_data);
             std::swap(D_size, other.D_size);
             std::swap(D_capacity, other.D_capacity);
+            std::swap(D_constexpr_view, other.D_constexpr_view);
             std::swap(D_alloc, other.D_alloc);
         }
     };

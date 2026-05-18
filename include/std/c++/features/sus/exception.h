@@ -19,7 +19,10 @@
 #define _THROW(exception) panic(#exception)
 #define _TRY
 #define _CATCH(exception) if (0)
+/*
 #define EXCEPTION_DEPRECATED [[deprecated("此函数不应被调用!其使用了异常机制, "                                     \
         "但内核中不应使用该机制!请调用其对应的无异常版本(一般命名为 " \
         "xxx_nt)!")]]
+*/
+#define EXCEPTION_DEPRECATED
 // NOLINTEND(cppcoreguidelines-macro-usage)

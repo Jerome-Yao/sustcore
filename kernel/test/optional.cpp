@@ -17,6 +17,25 @@
 #include <utility>
 
 namespace test::optional {
+    constexpr bool constexpr_optional_smoke() {
+        std::optional<int> value;
+        if (value.has_value()) {
+            return false;
+        }
+        value.emplace(4);
+        if (!value || *value != 4) {
+            return false;
+        }
+        value = 8;
+        auto doubled = value.transform([](int v) {
+            return v * 2;
+        });
+        value.reset();
+        return !value && doubled.has_value() && *doubled == 16;
+    }
+
+    static_assert(constexpr_optional_smoke());
+
     class CaseBasicState : public TestCase {
     public:
         CaseBasicState() : TestCase("基础状态") {}

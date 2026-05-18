@@ -33,4 +33,7 @@ namespace std {
     concept derived_from =
         std::is_base_of_v<Base, Derived> &&
         std::is_convertible_v<const volatile Derived *, const volatile Base *>;
+
+    template <class T, class... Args>
+    concept constructible_from = is_constructible_v<T, Args...>;
 }  // namespace std

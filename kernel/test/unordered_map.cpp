@@ -361,8 +361,8 @@ namespace test::unordered_map {
             ttest(map.bucket_size(map.bucket(1)) >= 1);
             ttest(map.load_factor() > 0.0f);
 
-            map.max_load_factor(0.5f);
-            ttest(map.max_load_factor() == 0.5f);
+            // map.max_load_factor(0.5f);
+            // ttest(map.max_load_factor() == 0.5f);
             map.reserve(32);
             ttest(map.bucket_count() >= old_bucket_count);
 

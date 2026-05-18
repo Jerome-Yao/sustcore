@@ -14,7 +14,15 @@
 
 namespace slub {
     SlubAllocator<MixedSizeAllocator::AllocRecord>
-        MixedSizeAllocator::AllocRecord::SLUB;
+        MixedSizeAllocator::ALLOC_RECORD_SLUB;
     util::IntrusiveList<MixedSizeAllocator::AllocRecord>
         MixedSizeAllocator::alloc_records;
+
+    void *MixedSizeAllocator::AllocRecord::operator new(size_t sz) {
+        assert(sz == sizeof(AllocRecord));
+        return ALLOC_RECORD_SLUB.alloc();
+    }
+    void MixedSizeAllocator::AllocRecord::operator delete(void *ptr) {
+        ALLOC_RECORD_SLUB.free(static_cast<AllocRecord *>(ptr));
+    }
 }  // namespace slub

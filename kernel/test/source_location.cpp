@@ -14,6 +14,15 @@
 #include <source_location>
 
 namespace test::source_location {
+    constexpr bool constexpr_source_location_smoke() {
+        std::source_location empty;
+        auto loc = std::source_location::current();
+        return empty.line() == 0 && empty.column() == 0 && loc.line() > 0 &&
+               loc.file_name() != nullptr && loc.function_name() != nullptr;
+    }
+
+    static_assert(constexpr_source_location_smoke());
+
     static bool contains(const char* text, const char* pattern) noexcept {
         if (text == nullptr || pattern == nullptr) {
             return false;

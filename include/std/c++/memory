@@ -18,6 +18,14 @@
 
 namespace std {
     template <class T>
+    constexpr T* addressof(T& value) noexcept {
+        return __builtin_addressof(value);
+    }
+
+    template <class T>
+    const T* addressof(const T&&) = delete;
+
+    template <class T>
     constexpr T* to_address(T* p) noexcept {
         return p;
     }
@@ -41,17 +49,21 @@ namespace std {
         using is_always_equal = true_type;  // 无状态分配器总是相等
 
         // 默认构造函数、复制构造函数、析构函数 (无状态, 可默认）
-        allocator() = default;
+        constexpr allocator() = default;
         template <typename U>
-        allocator(const allocator<U>&) noexcept {}  // 支持跨类型转换
+        constexpr allocator(const allocator<U>&) noexcept {}  // 支持跨类型转换
 
         // 分配 n 个 T 对象的内存
-        pointer allocate(size_type n, const void* hint = nullptr) {
+        constexpr pointer allocate(size_type n, const void* hint = nullptr) {
             if (n == 0)
                 return nullptr;  // 标准允许分配 0 字节时返回空指针
             // 检查是否超出最大可分配大小
             if (n > numeric_limits<size_type>::max() / sizeof(T))
                 _THROW(bad_alloc());  // 超出限制, 抛出 bad_alloc
+
+            if consteval {
+                return new T[n];
+            }
 
             // 调用全局 operator new, 失败时它会抛出 bad_alloc
             void* ptr = ::operator new(n * sizeof(T));
@@ -59,7 +71,11 @@ namespace std {
         }
 
         // 释放内存
-        void deallocate(pointer p, size_type n) noexcept {
+        constexpr void deallocate(pointer p, size_type n [[maybe_unused]]) noexcept {
+            if consteval {
+                delete[] p;
+                return;
+            }
             // 调用全局 operator delete, 它对空指针安全
             ::operator delete(p);
         }
@@ -67,12 +83,15 @@ namespace std {
         // C++11/14 中需要 construct/destroy (C++17
         // 后容器不再强制使用它们, 但保留无害）
         template <typename U, typename... Args>
-        void construct(U* p, Args&&... args) {
+        constexpr void construct(U* p, Args&&... args) {
             ::new ((void*)p) U(forward<Args>(args)...);
         }
 
         template <typename U>
-        void destroy(U* p) noexcept {
+        constexpr void destroy(U* p) noexcept {
+            if consteval {
+                return;
+            }
             p->~U();
         }
 
@@ -85,11 +104,11 @@ namespace std {
 
     // 无状态分配器总是相等
     template <typename T, typename U>
-    bool operator==(const allocator<T>&, const allocator<U>&) noexcept {
+    constexpr bool operator==(const allocator<T>&, const allocator<U>&) noexcept {
         return true;
     }
     template <typename T, typename U>
-    bool operator!=(const allocator<T>&, const allocator<U>&) noexcept {
+    constexpr bool operator!=(const allocator<T>&, const allocator<U>&) noexcept {
         return false;
     }
 
@@ -174,20 +193,22 @@ namespace std {
         template <class _Up>
         using rebind_traits = allocator_traits<rebind_alloc<_Up>>;
 
-        static pointer allocate(allocator_type& a, size_type n) {
+        static constexpr pointer allocate(allocator_type& a, size_type n) {
             return a.allocate(n);
         }
 
-        static void deallocate(allocator_type& a, pointer p, size_type n) {
+        static constexpr void deallocate(allocator_type& a, pointer p,
+                                         size_type n) {
             a.deallocate(p, n);
         }
 
         template <typename... Args>
-        static void construct(allocator_type& a, pointer p, Args&&... args) {
+        static constexpr void construct(allocator_type& a, pointer p,
+                                        Args&&... args) {
             a.construct(p, forward<Args>(args)...);
         }
 
-        void destroy(allocator_type& a, pointer p) noexcept {
+        static constexpr void destroy(allocator_type& a, pointer p) noexcept {
             a.destroy(p);
         }
     };

@@ -418,24 +418,19 @@ namespace slub {
             size_t size;
             // TODO: 改成用哈希表/红黑树?
             util::ListHead<AllocRecord> list_head{};
-            static SlubAllocator<AllocRecord> SLUB;
 
             constexpr AllocRecord(void *ptr, size_t size)
                 : ptr(ptr), size(size) {}
             constexpr AllocRecord() : AllocRecord(nullptr, 0) {}
 
-            inline void *operator new(size_t sz) {
-                assert(sz == sizeof(AllocRecord));
-                return SLUB.alloc();
-            }
-            inline void operator delete(void *ptr) {
-                SLUB.free(static_cast<AllocRecord *>(ptr));
-            }
+            void *operator new(size_t sz);
+            void operator delete(void *ptr);
         };
+        static SlubAllocator<AllocRecord> ALLOC_RECORD_SLUB;
         static util::IntrusiveList<AllocRecord> alloc_records;
 
         static bool add_record(void *ptr, size_t rsz) {
-            auto *record = new AllocRecord(ptr, rsz);
+            auto *record  = new AllocRecord(ptr, rsz);
             auto inserted = alloc_records.insert(alloc_records.end(), *record);
             if (inserted == alloc_records.end()) {
                 loggers::MEMORY::ERROR(
@@ -527,8 +522,7 @@ namespace slub {
         static void init() {
             // 构造AllocRecord的SLUB
             new (&alloc_records) util::IntrusiveList<AllocRecord>();
-            new (&AllocRecord::SLUB)
-                SlubAllocator<MixedSizeAllocator::AllocRecord>;
+            new (&ALLOC_RECORD_SLUB) SlubAllocator<AllocRecord>();
             Helper::init();
         }
 

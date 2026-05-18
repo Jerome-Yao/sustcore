@@ -17,6 +17,17 @@
 #include <utility>
 
 namespace test::array {
+    constexpr bool constexpr_array_smoke() {
+        std::array<int, 3> a{1, 2, 3};
+        a.fill(4);
+        std::array<int, 3> b{7, 8, 9};
+        a.swap(b);
+        return a.front() == 7 && a.back() == 9 && b[1] == 4 &&
+               std::get<2>(a) == 9;
+    }
+
+    static_assert(constexpr_array_smoke());
+
     class CaseBasicAccess : public TestCase {
     public:
         CaseBasicAccess() : TestCase("基础访问") {}

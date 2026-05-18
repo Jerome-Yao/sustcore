@@ -15,6 +15,36 @@
 #include <vector>
 
 namespace test::vector {
+    constexpr bool constexpr_vector_smoke() {
+        std::vector<int> v;
+        if (!v.empty() || v.size() != 0) {
+            return false;
+        }
+        if (!v.push_back_nt(1) || !v.emplace_back_nt(2)) {
+            return false;
+        }
+        if (!v.insert_nt(v.begin() + 1, 9)) {
+            return false;
+        }
+        if (v.size() != 3 || v[0] != 1 || v[1] != 9 || v[2] != 2) {
+            return false;
+        }
+        if (!v.erase_nt(v.begin() + 1)) {
+            return false;
+        }
+        if (!v.resize_nt(4, 7)) {
+            return false;
+        }
+        if (v.size() != 4 || v[0] != 1 || v[1] != 2 || v.back() != 7) {
+            return false;
+        }
+        v.pop_back();
+        v.clear();
+        return v.empty();
+    }
+
+    static_assert(constexpr_vector_smoke());
+
     class CaseBasicAccess : public TestCase {
     public:
         CaseBasicAccess() : TestCase("基础访问") {}

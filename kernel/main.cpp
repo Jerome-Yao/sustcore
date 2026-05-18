@@ -232,6 +232,8 @@ extern "C" void post_init(void) {
 
     task::wait::WaitReasonManager::init();
 
+    loggers::SUSTCORE::INFO("测试输出ErrCode::BUSY", to_cstring(ErrCode::BUSY));
+
     after_init();
 }
 

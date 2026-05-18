@@ -66,6 +66,21 @@ namespace std {
     template <typename _Fp, typename _Tp>
     inline constexpr bool is_convertible_v = is_convertible<_Fp, _Tp>::value;
 
+    // is_constructible
+    template <typename _Tp, typename... _Args>
+    struct is_constructible
+        : public bool_constant<__is_constructible(_Tp, _Args...)> {};
+    template <typename _Tp, typename... _Args>
+    inline constexpr bool is_constructible_v =
+        is_constructible<_Tp, _Args...>::value;
+
+    template <typename _Tp>
+    struct is_copy_constructible
+        : public is_constructible<_Tp, const _Tp&> {};
+    template <typename _Tp>
+    inline constexpr bool is_copy_constructible_v =
+        is_copy_constructible<_Tp>::value;
+
     // Const - Volatile Modifiers
     template <typename _Tp>
     struct remove_const {

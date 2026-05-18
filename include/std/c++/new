@@ -15,10 +15,21 @@
 #include <exception>
 
 // Placement new/delete
-void* operator new(size_t size, void* ptr) noexcept;
-void operator delete(void* ptr, void*) noexcept;
-void* operator new[](size_t size, void* ptr) noexcept;
-void operator delete[](void* ptr, void*) noexcept;
+constexpr void* operator new(size_t size [[maybe_unused]],
+                             void* ptr) noexcept {
+    return ptr;
+}
+
+constexpr void operator delete(void* ptr [[maybe_unused]],
+                               void*) noexcept {}
+
+constexpr void* operator new[](size_t size [[maybe_unused]],
+                               void* ptr) noexcept {
+    return ptr;
+}
+
+constexpr void operator delete[](void* ptr [[maybe_unused]],
+                                 void*) noexcept {}
 
 namespace std {
     template <typename T>

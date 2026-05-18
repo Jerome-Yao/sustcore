@@ -39,19 +39,6 @@ void operator delete[](void* ptr, size_t) noexcept {
     Allocator::free(ptr);
 }
 
-// Placement new/delete
-void* operator new(size_t size, void* ptr) noexcept {
-    return ptr;
-}
-
-void operator delete(void* ptr, void*) noexcept {}
-
-void* operator new[](size_t size, void* ptr) noexcept {
-    return ptr;
-}
-
-void operator delete[](void* ptr, void*) noexcept {}
-
 // C++ 运行时支持 (C++ Runtime Support)
 // 这段代码定义了链接器缺失的符号, 满足 C++ 静态对象管理的 ABI 需求
 extern "C" {

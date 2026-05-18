@@ -97,15 +97,16 @@ namespace std {
         using comparison_category =
             __impl_char_info<CharT>::comparison_category;
 
-        static bool eq(const char_type &c1, const char_type &c2) {
+        static constexpr bool eq(const char_type &c1, const char_type &c2) {
             return c1 == c2;
         }
 
-        static bool lt(const char_type &c1, const char_type &c2) {
+        static constexpr bool lt(const char_type &c1, const char_type &c2) {
             return c1 < c2;
         }
 
-        static int compare(const char_type *s1, const char_type *s2, size_t n) {
+        static constexpr int compare(const char_type *s1, const char_type *s2,
+                                     size_t n) {
             for (size_t i = 0; i < n; ++i) {
                 if (s1[i] != s2[i]) {
                     return (s1[i] < s2[i]) ? -1 : 1;
@@ -114,7 +115,7 @@ namespace std {
             return 0;
         }
 
-        static size_t length(const char_type *s) {
+        static constexpr size_t length(const char_type *s) {
             size_t len = 0;
             while (s[len] != '\0') {
                 ++len;
@@ -122,8 +123,8 @@ namespace std {
             return len;
         }
 
-        static const char_type *find(const char_type *s, size_t n,
-                                     const char_type &c) {
+        static constexpr const char_type *find(const char_type *s, size_t n,
+                                               const char_type &c) {
             for (size_t i = 0; i < n; ++i) {
                 if (s[i] == c) {
                     return s + i;
@@ -144,7 +145,7 @@ namespace std {
             return dest;
         }
 
-        static void assign(char_type &c1, const char_type &c2) {
+        static constexpr void assign(char_type &c1, const char_type &c2) {
             c1 = c2;
         }
 

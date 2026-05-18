@@ -1,0 +1,424 @@
+#pragma once
+
+#include <concepts>
+#include <cstddef>
+#include <initializer_list>
+#include <iterator>
+#include <type_traits>
+#include <utility>
+
+namespace std::ranges {
+    namespace __cust {
+        template <class T>
+        constexpr T* __decay_copy(T* value) noexcept {
+            return value;
+        }
+
+        struct __begin {
+            template <class T, size_t N>
+            [[nodiscard]]
+            constexpr T* operator()(T (&arr)[N]) const noexcept {
+                return arr;
+            }
+
+            template <class R>
+                requires requires(R&& r) { std::forward<R>(r).begin(); }
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const
+                noexcept(noexcept(std::forward<R>(r).begin())) {
+                return std::forward<R>(r).begin();
+            }
+        };
+
+        struct __end {
+            template <class T, size_t N>
+            [[nodiscard]]
+            constexpr T* operator()(T (&arr)[N]) const noexcept {
+                return arr + N;
+            }
+
+            template <class R>
+                requires requires(R&& r) { std::forward<R>(r).end(); }
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const
+                noexcept(noexcept(std::forward<R>(r).end())) {
+                return std::forward<R>(r).end();
+            }
+        };
+    }  // namespace __cust
+
+    inline constexpr __cust::__begin begin{};
+    inline constexpr __cust::__end end{};
+
+    template <class T>
+    concept range = requires(T& t) {
+        ranges::begin(t);
+        ranges::end(t);
+    };
+
+    template <class T>
+    concept input_range = range<T>;
+
+    template <range R>
+    using iterator_t = decltype(ranges::begin(std::declval<R&>()));
+
+    template <range R>
+    using sentinel_t = decltype(ranges::end(std::declval<R&>()));
+
+    template <range R>
+    using range_reference_t = decltype(*ranges::begin(std::declval<R&>()));
+
+    template <range R>
+    using range_value_t =
+        typename std::iterator_traits<iterator_t<R>>::value_type;
+
+    template <range R>
+    using range_difference_t =
+        typename std::iterator_traits<iterator_t<R>>::difference_type;
+
+    namespace __cust {
+        struct __cbegin {
+            template <class R>
+            [[nodiscard]]
+            constexpr auto operator()(const R& r) const
+                noexcept(noexcept(ranges::begin(r))) {
+                return ranges::begin(r);
+            }
+        };
+
+        struct __cend {
+            template <class R>
+            [[nodiscard]]
+            constexpr auto operator()(const R& r) const
+                noexcept(noexcept(ranges::end(r))) {
+                return ranges::end(r);
+            }
+        };
+
+        struct __empty {
+            template <class R>
+                requires requires(R&& r) { std::forward<R>(r).empty(); }
+            [[nodiscard]]
+            constexpr bool operator()(R&& r) const
+                noexcept(noexcept(static_cast<bool>(std::forward<R>(r).empty()))) {
+                return static_cast<bool>(std::forward<R>(r).empty());
+            }
+
+            template <class T, size_t N>
+            [[nodiscard]]
+            constexpr bool operator()(T (&)[N]) const noexcept {
+                return N == 0;
+            }
+
+            template <class R>
+                requires (!requires(R&& r) { std::forward<R>(r).empty(); }) &&
+                         requires(R&& r) { ranges::begin(r) == ranges::end(r); }
+            [[nodiscard]]
+            constexpr bool operator()(R&& r) const
+                noexcept(noexcept(ranges::begin(r) == ranges::end(r))) {
+                return ranges::begin(r) == ranges::end(r);
+            }
+        };
+
+        struct __size {
+            template <class R>
+                requires requires(R&& r) { std::forward<R>(r).size(); }
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const
+                noexcept(noexcept(std::forward<R>(r).size())) {
+                return std::forward<R>(r).size();
+            }
+
+            template <class T, size_t N>
+            [[nodiscard]]
+            constexpr size_t operator()(T (&)[N]) const noexcept {
+                return N;
+            }
+
+            template <class R>
+                requires (!requires(R&& r) { std::forward<R>(r).size(); }) &&
+                         requires(R&& r) { ranges::end(r) - ranges::begin(r); }
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const
+                noexcept(noexcept(ranges::end(r) - ranges::begin(r))) {
+                return ranges::end(r) - ranges::begin(r);
+            }
+        };
+
+        struct __data {
+            template <class R>
+                requires requires(R&& r) { std::forward<R>(r).data(); }
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const
+                noexcept(noexcept(std::forward<R>(r).data())) {
+                return std::forward<R>(r).data();
+            }
+
+            template <class T, size_t N>
+            [[nodiscard]]
+            constexpr T* operator()(T (&arr)[N]) const noexcept {
+                return arr;
+            }
+
+            template <class R>
+                requires (!requires(R&& r) { std::forward<R>(r).data(); }) &&
+                         requires(R&& r) { &*ranges::begin(r); }
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const
+                noexcept(noexcept(&*ranges::begin(r))) {
+                return &*ranges::begin(r);
+            }
+        };
+    }  // namespace __cust
+
+    inline constexpr __cust::__cbegin cbegin{};
+    inline constexpr __cust::__cend cend{};
+    inline constexpr __cust::__empty empty{};
+    inline constexpr __cust::__size size{};
+    inline constexpr __cust::__data data{};
+
+    template <range R>
+    using range_size_t = decltype(ranges::size(std::declval<R&>()));
+
+    template <class T>
+    inline constexpr bool enable_view = false;
+
+    template <class T>
+    concept view = range<T> && enable_view<remove_cvref_t<T>>;
+
+    template <class T>
+    concept borrowed_range = range<T>;
+
+    template <class D>
+    class view_interface {
+    private:
+        [[nodiscard]]
+        constexpr D& U_derived() noexcept {
+            return static_cast<D&>(*this);
+        }
+
+        [[nodiscard]]
+        constexpr const D& U_derived() const noexcept {
+            return static_cast<const D&>(*this);
+        }
+
+    public:
+        [[nodiscard]]
+        constexpr bool empty() {
+            return ranges::begin(U_derived()) == ranges::end(U_derived());
+        }
+
+        [[nodiscard]]
+        constexpr bool empty() const {
+            return ranges::begin(U_derived()) == ranges::end(U_derived());
+        }
+
+        [[nodiscard]]
+        constexpr auto front() {
+            return *ranges::begin(U_derived());
+        }
+
+        [[nodiscard]]
+        constexpr auto front() const {
+            return *ranges::begin(U_derived());
+        }
+
+        [[nodiscard]]
+        constexpr auto back() {
+            auto last = ranges::end(U_derived());
+            --last;
+            return *last;
+        }
+
+        [[nodiscard]]
+        constexpr auto back() const {
+            auto last = ranges::end(U_derived());
+            --last;
+            return *last;
+        }
+
+        [[nodiscard]]
+        constexpr auto operator[](ptrdiff_t n) {
+            return ranges::begin(U_derived())[n];
+        }
+
+        [[nodiscard]]
+        constexpr auto operator[](ptrdiff_t n) const {
+            return ranges::begin(U_derived())[n];
+        }
+    };
+
+    template <range R>
+    class ref_view : public view_interface<ref_view<R>> {
+    private:
+        R* D_range = nullptr;
+
+    public:
+        constexpr ref_view() noexcept = default;
+        constexpr explicit ref_view(R& r) noexcept : D_range(&r) {}
+
+        [[nodiscard]]
+        constexpr auto begin() const {
+            return ranges::begin(*D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto end() const {
+            return ranges::end(*D_range);
+        }
+
+        [[nodiscard]]
+        constexpr bool empty() const {
+            return ranges::empty(*D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto size() const {
+            return ranges::size(*D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto data() const {
+            return ranges::data(*D_range);
+        }
+    };
+
+    template <class R>
+    inline constexpr bool enable_view<ref_view<R>> = true;
+
+    template <range R>
+    class owning_view : public view_interface<owning_view<R>> {
+    private:
+        R D_range;
+
+    public:
+        constexpr owning_view() = default;
+        constexpr explicit owning_view(R&& r) : D_range(std::move(r)) {}
+
+        [[nodiscard]]
+        constexpr auto begin() {
+            return ranges::begin(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto begin() const {
+            return ranges::begin(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto end() {
+            return ranges::end(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto end() const {
+            return ranges::end(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr bool empty() const {
+            return ranges::empty(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto size() const {
+            return ranges::size(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto data() {
+            return ranges::data(D_range);
+        }
+
+        [[nodiscard]]
+        constexpr auto data() const {
+            return ranges::data(D_range);
+        }
+    };
+
+    template <class R>
+    inline constexpr bool enable_view<owning_view<R>> = true;
+
+    template <class I, class S = I>
+    class subrange : public view_interface<subrange<I, S>> {
+    private:
+        I D_begin{};
+        S D_end{};
+
+    public:
+        constexpr subrange() = default;
+        constexpr subrange(I first, S last) : D_begin(first), D_end(last) {}
+
+        [[nodiscard]]
+        constexpr I begin() const {
+            return D_begin;
+        }
+
+        [[nodiscard]]
+        constexpr S end() const {
+            return D_end;
+        }
+
+        [[nodiscard]]
+        constexpr bool empty() const {
+            return D_begin == D_end;
+        }
+    };
+
+    template <class I, class S>
+    inline constexpr bool enable_view<subrange<I, S>> = true;
+}  // namespace std::ranges
+
+namespace std::views {
+    namespace __detail {
+        template <class T>
+        struct __is_lvalue_reference : false_type {};
+
+        template <class T>
+        struct __is_lvalue_reference<T&> : true_type {};
+
+        template <class T>
+        inline constexpr bool __is_lvalue_reference_v =
+            __is_lvalue_reference<T>::value;
+
+        struct __all {
+            template <std::ranges::view R>
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const {
+                return std::forward<R>(r);
+            }
+
+            template <std::ranges::range R>
+                requires ((!std::ranges::view<remove_cvref_t<R>>) &&
+                          __is_lvalue_reference_v<R>)
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const {
+                return std::ranges::ref_view<remove_reference_t<R>>(r);
+            }
+
+            template <std::ranges::range R>
+                requires ((!std::ranges::view<remove_cvref_t<R>>) &&
+                          (!__is_lvalue_reference_v<R>))
+            [[nodiscard]]
+            constexpr auto operator()(R&& r) const {
+                return std::ranges::owning_view<remove_cvref_t<R>>(
+                    std::forward<R>(r));
+            }
+        };
+
+        struct __counted {
+            template <class I>
+            [[nodiscard]]
+            constexpr auto operator()(I first, std::ptrdiff_t count) const {
+                return std::ranges::subrange<I, I>(first, first + count);
+            }
+        };
+    }  // namespace __detail
+
+    inline constexpr __detail::__all all{};
+    inline constexpr __detail::__counted counted{};
+}  // namespace std::views
+
+namespace std {
+    namespace view = views;
+}
