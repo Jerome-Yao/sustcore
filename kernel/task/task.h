@@ -19,6 +19,7 @@
 #include <sus/nonnull.h>
 #include <sus/queue.h>
 #include <task/task_struct.h>
+#include <unordered_map>
 
 namespace task {
     struct ForkResult {
@@ -39,7 +40,7 @@ namespace task {
             return __pid_alloc++;
         }
 
-        util::LinkedMap<pid_t, PCB *> _pid_map;
+        std::unordered_map<pid_t, PCB *> _pid_map;
         util::LinkedList<PCB *> _recycle_pcbs;
 
         /**

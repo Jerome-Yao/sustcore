@@ -315,53 +315,9 @@ namespace Handlers {
     bool illegal_instruction(csr_scause_t scause, umb_t sepc, umb_t stval,
                              Riscv64Context *ctx) {
         loggers::INTERRUPT::DEBUG("进入非法指令异常处理程序");
-        // 我们可以通过该指令自定义kernel服务
-
-        // 此处存在问题:
-        // 直接读取sepc处的指令几乎一定会导致页异常
-        // 因为此处的指令几乎一定是用户态的RX页
-        // 因此我们暂不处理
-        // 不过, 为了测试我们的程序, 我们暂时按照输入的总是0x00FF00FF来处理
-
-        {
-            loggers::INTERRUPT::INFO(
-                "自定义Kernel服务: 输出 t0寄存器指向的日志");
-
-            ker_paddr::SumGuard guard;  // 确保可以访问用户空间地址
-            char msg[64];
-            // t0 = x5 = regs[5 - 1]
-            guard.open();
-            memcpy(msg, (void *)ctx->regs[4], sizeof(msg) - 1);
-            msg[sizeof(msg) - 1] = '\0';  // 确保字符串以 null 结尾
-            loggers::INTERRUPT::INFO("用户程序传递的消息: %s", msg);
-        }
-
-        ctx->sepc += 4;  // 跳过该指令
-        return true;
-
-        // dword ins = *((dword *)sepc);
-        // loggers::INTERRUPT::INFO("指令内容: 0x%08x", ins);
-        // 这是一个任意的非法指令
-        // 被我们选中用于模拟真实指令
-        // if (ins == 0x000000FF) {
-        //     loggers::INTERRUPT::INFO("自定义Kernel服务: Hello, World!");
-        // } else if (ins == 0x00FF00FF) {
-        //     loggers::INTERRUPT::INFO(
-        //         "自定义Kernel服务: 输出 t0寄存器指向的日志");
-
-        //     ker_paddr::SumGuard guard;  // 确保可以访问用户空间地址
-        //     char msg[64];
-        //     // t0 = x5 = regs[5 - 1]
-        //     memcpy(msg, (void *)ctx->regs[4], sizeof(msg) - 1);
-        //     msg[sizeof(msg) - 1] = '\0';  // 确保字符串以 null 结尾
-        //     loggers::INTERRUPT::INFO("用户程序传递的消息: %s", msg);
-        // } else {
-        //     loggers::INTERRUPT::ERROR("非kernel自定义指令: 0x%08x", ins);
-        //     return false;
-        // }
-
-        // ctx->sepc += 4;  // 跳过该指令
-        // return true;
+        loggers::INTERRUPT::ERROR("非法指令异常: sepc=0x%016lx, stval=0x%016lx",
+                                  sepc, stval);
+        return false;  // 无法处理该异常
     }
 
     void exception(csr_scause_t scause, umb_t sepc, umb_t stval,
@@ -429,7 +385,7 @@ namespace Handlers {
         }
 
         if (!processed) {
-            loggers::INTERRUPT::ERROR("无法处理该异常, 终止相关进程");
+            loggers::INTERRUPT::ERROR("无法处理该异常, 需终止相关进程");
             while (true);
         }
     }

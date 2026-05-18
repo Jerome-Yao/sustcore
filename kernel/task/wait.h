@@ -15,6 +15,7 @@
 #include <sus/map.h>
 #include <sustcore/errcode.h>
 #include <task/task_struct.h>
+#include <unordered_map>
 
 namespace task::wait {
     // 等待队列
@@ -33,7 +34,7 @@ namespace task::wait {
         // 编号分配
         WaitReasonId _next_reason = 1;
         // wait_id -> wait_queue
-        util::LinkedMap<WaitReasonId, WaitQueue *> _queues;
+        std::unordered_map<WaitReasonId, WaitQueue *> _queues;
 
         // 获取等待队列, 如果不存在则创建一个新的
         Result<WaitQueue *> queue_for_wait(WaitReasonId id);

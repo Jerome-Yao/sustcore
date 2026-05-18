@@ -12,9 +12,10 @@
 #pragma once
 
 #include <sus/list.h>
-#include <string>
 #include <cstddef>
+#include <functional>
 #include <iterator>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -36,6 +37,10 @@ namespace util {
 
         constexpr const char *c_str() const {
             return path_.c_str();
+        }
+
+        constexpr std::string_view view() const noexcept {
+            return std::string_view(path_.data(), path_.size());
         }
 
         // 允许转换为 std::string, 但有可能会发生拷贝
@@ -117,3 +122,12 @@ namespace util {
         }
     };
 }  // namespace util
+
+namespace std {
+    template <>
+    struct hash<util::Path> {
+        size_t operator()(const util::Path &path) const noexcept {
+            return std::hash<std::string_view>()(path.view());
+        }
+    };
+}  // namespace std

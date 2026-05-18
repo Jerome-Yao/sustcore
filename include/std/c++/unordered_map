@@ -22,6 +22,38 @@ namespace std {
             : value(std::forward<Args>(args)...), next(nullptr) {}
     };
 
+    struct __RationalNumber {
+        size_t numerator;
+        size_t denominator;
+
+        constexpr __RationalNumber() : numerator(1), denominator(1) {}
+
+        constexpr __RationalNumber(size_t num, size_t denom)
+            : numerator(num), denominator(denom) {
+            normalize();
+        }
+
+        constexpr void normalize() {
+            if (numerator == 0 || denominator == 0) {
+                numerator   = 1;
+                denominator = 1;
+                return;
+            }
+            size_t div = gcd(numerator, denominator);
+            numerator /= div;
+            denominator /= div;
+        }
+
+        constexpr static size_t gcd(size_t lhs, size_t rhs) {
+            while (rhs != 0) {
+                size_t rem = lhs % rhs;
+                lhs        = rhs;
+                rhs        = rem;
+            }
+            return lhs == 0 ? 1 : lhs;
+        }
+    };
+
     template <class Key, class T, class Hash = std::hash<Key>,
               class KeyEqual  = std::equal_to<Key>,
               class Allocator = std::allocator<std::pair<const Key, T>>>
@@ -54,7 +86,7 @@ namespace std {
         node_type **buckets_;
         size_type bucket_count_;
         size_type size_;
-        float max_load_factor_;
+        __RationalNumber max_load_factor_;
 
     public:
         class unordered_map_iterator {
@@ -197,7 +229,7 @@ namespace std {
               buckets_(nullptr),
               bucket_count_(bucket_count == 0 ? 1 : bucket_count),
               size_(0),
-              max_load_factor_(1.0f) {
+              max_load_factor_(1, 1) {
             buckets_ = alloc_buckets(bucket_count_);
         }
 
@@ -656,13 +688,27 @@ namespace std {
             return static_cast<float>(size_) / static_cast<float>(bucket_count_);
         }
 
+        [[deprecated("内核中应避免使用浮点数!")]]
+        [[nodiscard]]
         float max_load_factor() const noexcept {
+            return static_cast<float>(max_load_factor_.numerator) /
+                   static_cast<float>(max_load_factor_.denominator);
+        }
+
+        [[deprecated("内核中应避免使用浮点数!")]]
+        void max_load_factor(float ml) noexcept {
+            max_load_factor_ = U_rational_from_float(ml);
+        }
+
+        [[nodiscard]]
+        __RationalNumber __max_load_factor_rational() const noexcept {
             return max_load_factor_;
         }
 
-        void max_load_factor(float ml) noexcept {
+        void max_load_factor(const __RationalNumber &ml) noexcept {
             max_load_factor_ = ml;
         }
+
 
         void rehash(size_type count) {
             size_type min_count = U_min_bucket_count(size_);
@@ -749,12 +795,63 @@ namespace std {
             return hash_(key) % count;
         }
 
+        bool U_exceeds_max_load(size_type element_count,
+                                size_type bucket_count) const noexcept {
+            return element_count * max_load_factor_.denominator >
+                   bucket_count * max_load_factor_.numerator;
+        }
+
+        static __RationalNumber U_rational_from_float(float value) noexcept {
+            union FloatBits {
+                float value;
+                unsigned int bits;
+            } converter{value};
+
+            constexpr unsigned int EXP_MASK  = 0x7f800000U;
+            constexpr unsigned int FRAC_MASK = 0x007fffffU;
+            constexpr unsigned int SIGN_MASK = 0x80000000U;
+            constexpr int FRAC_BITS          = 23;
+            constexpr int EXP_BIAS           = 127;
+            constexpr int SIZE_BITS          = sizeof(size_t) * 8;
+
+            if ((converter.bits & SIGN_MASK) != 0) {
+                return __RationalNumber(1, 1);
+            }
+
+            unsigned int exp  = (converter.bits & EXP_MASK) >> FRAC_BITS;
+            unsigned int frac = converter.bits & FRAC_MASK;
+            if (exp == 0 || exp == 0xff) {
+                return __RationalNumber(1, 1);
+            }
+
+            size_t mantissa = (size_t{1} << FRAC_BITS) | frac;
+            int shift       = static_cast<int>(exp) - EXP_BIAS - FRAC_BITS;
+            if (shift >= 0) {
+                if (shift >= SIZE_BITS) {
+                    return __RationalNumber(1, 1);
+                }
+                return __RationalNumber(mantissa << shift, 1);
+            }
+
+            int denom_shift = -shift;
+            while (denom_shift >= SIZE_BITS && (mantissa & 1) == 0) {
+                mantissa >>= 1;
+                --denom_shift;
+            }
+            if (denom_shift >= SIZE_BITS) {
+                return __RationalNumber(1, 1);
+            }
+            return __RationalNumber(mantissa, size_t{1} << denom_shift);
+        }
+
         size_type U_min_bucket_count(size_type element_count) const noexcept {
             if (element_count == 0) {
                 return 1;
             }
+            size_type numerator   = max_load_factor_.numerator;
+            size_type denominator = max_load_factor_.denominator;
             size_type count =
-                static_cast<size_type>(element_count / max_load_factor_) + 1;
+                (element_count * denominator + numerator - 1) / numerator;
             return count == 0 ? 1 : count;
         }
 
@@ -775,7 +872,7 @@ namespace std {
                 node = node->next;
             }
 
-            if (size_ + 1 > bucket_count_ * max_load_factor_) {
+            if (U_exceeds_max_load(size_ + 1, bucket_count_)) {
                 rehash(bucket_count_ * 2);
                 index = bucket_index(key);
             }

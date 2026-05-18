@@ -12,8 +12,10 @@
 #pragma once
 
 #include <nt/errors.h>
+#include <sus/owner.h>
 
 #include <expected>
+#include <functional>
 
 enum class ErrCode : int {
     GENERIC_ERROR            = 0x00'0000,
@@ -111,4 +113,14 @@ constexpr auto always(T &&value) {
     return [value = std::forward<T>(value)](auto &&...) -> decltype(auto) {
         return value;
     };
+}
+
+template <typename T>
+constexpr auto unwrap_ref() {
+    return std::mem_fn(&std::reference_wrapper<T>::get);
+}
+
+template <typename T>
+constexpr auto unwrap_owner() {
+    return std::mem_fn(&util::owner<T>::get);
 }

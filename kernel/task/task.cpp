@@ -377,7 +377,7 @@ namespace task {
         auto rm_res = chman.remove_holder(pcb->cholder->id());
         propagate(rm_res);
 
-        _pid_map.remove(pcb->pid);
+        _pid_map.erase(pcb->pid);
 
         delete pcb.get();
 
@@ -423,7 +423,7 @@ namespace task {
             propagate_return(main_thread_res);
         }
 
-        _pid_map.put(pcb->pid, pcb);
+        _pid_map[pcb->pid] = pcb;
         pcb_guard.release();  // 进程已成功构造, 释放PCB的自动释放机制
         return pcb;
     }
@@ -453,7 +453,7 @@ namespace task {
             unexpect_return(ErrCode::CREATION_FAILED);
         }
 
-        _pid_map.put(pcb->pid, pcb);
+        _pid_map[pcb->pid] = pcb;
         pcb_guard.release();  // 进程已成功构造并加入调度队列
         return pcb;
     }
@@ -596,15 +596,14 @@ namespace task {
     }
 
     Result<size_t> TaskManager::lookup_holder_id(pid_t pid) {
-        auto pcb_res = _pid_map.get(pid);
-        if (!pcb_res.has_value()) {
-            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
-        }
-        PCB *pcb = pcb_res.value().get();
-        if (pcb == nullptr || pcb->cholder == nullptr) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-        return pcb->cholder->id();
+        return _pid_map.at_nt(pid)
+            .transform_error(always(ErrCode::OUT_OF_BOUNDARY))
+            .and_then([](PCB *pcb) -> Result<size_t> {
+                if (pcb == nullptr || pcb->cholder == nullptr) {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
+                return pcb->cholder->id();
+            });
     }
 
     Result<ForkResult> TaskManager::fork_current() {
@@ -716,10 +715,9 @@ namespace task {
             assert(remove_res.has_value());
             propagate_return(insert_child_res);
         }
-
-        _pid_map.put(child_pcb->pid, child_pcb.get());
+        _pid_map[child_pcb->pid] = child_pcb.get();
         if (!schd::Scheduler::inst().wakeup_new(child_tcb.get())) {
-            _pid_map.remove(child_pcb->pid);
+            _pid_map.erase(child_pcb->pid);
             unexpect_return(ErrCode::CREATION_FAILED);
         }
 
@@ -804,8 +802,8 @@ namespace task {
         schd::ClassType schd_class = schd::ClassType::FCFS;
         TCB *reuse_tcb             = nullptr;
         if (target_current) {
-            reuse_tcb   = current_tcb;
-            schd_class  = current_tcb->schd_class;
+            reuse_tcb  = current_tcb;
+            schd_class = current_tcb->schd_class;
         } else if (!pcb->threads.empty()) {
             schd_class = pcb->threads.front().schd_class;
             if (schd_class == schd::ClassType::IDLE ||

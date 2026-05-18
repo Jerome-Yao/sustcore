@@ -320,8 +320,8 @@ bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
     auto locate_res = locate(e.access_address);
     if (!locate_res.has_value()) {
         loggers::PAGING::ERROR(
-            "TM::on_np: 地址不在任何 VMA 中: addr = %p, err=%d",
-            e.access_address.addr(), locate_res.error());
+            "TM::on_np: 地址不在任何 VMA 中: addr = %p, err=%s",
+            e.access_address.addr(), to_cstring(locate_res.error()));
         return false;
     }
     VMA *vma = locate_res.value();

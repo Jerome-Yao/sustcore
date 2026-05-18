@@ -18,6 +18,7 @@
 #include <sustcore/capability.h>
 #include <sustcore/errcode.h>
 
+#include <unordered_map>
 #include <utility>
 
 namespace cap {
@@ -185,7 +186,7 @@ namespace cap {
         constexpr size_t _new_id() {
             return __cur_id++;
         }
-        util::LinkedMap<size_t, CHolder *> _holders;
+        std::unordered_map<size_t, CHolder *> _holders;
         size_t _timestamp = 1;  // 用于记录发送记录的时间戳, 每次发送能力时递增
     public:
         static void init();
@@ -195,28 +196,25 @@ namespace cap {
 
         [[nodiscard]]
         Result<CHolder *> get_holder(size_t _id) const {
-            return _holders.get(_id)
+            return _holders.at_nt(_id)
                 .transform_error(always(ErrCode::OUT_OF_BOUNDARY))
-                .transform(
-                    std::mem_fn(&std::reference_wrapper<CHolder *const>::get));
+                .transform(unwrap_ref<CHolder *const>());
         }
 
         template <typename... Args>
         Result<CHolder *> create_holder(Args &&...args) {
             size_t _id  = _new_id();
             auto holder = new CHolder(_id, std::forward<Args>(args)...);
-            _holders.put(_id, holder);
+            _holders[_id] = holder;
             return holder;
         }
 
         Result<void> remove_holder(size_t _id) {
-            if (!_holders.contains(_id)) {
-                return {unexpect, ErrCode::OUT_OF_BOUNDARY};
-            }
-            auto holder = _holders.get(_id).value();
-            delete holder;
-            _holders.remove(_id);
-            void_return();
+            return get_holder(_id).and_then([&](CHolder *holder) {
+                delete holder;
+                _holders.erase(_id);
+                void_return();
+            });
         }
 
         [[nodiscard]]

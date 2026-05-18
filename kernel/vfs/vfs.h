@@ -15,7 +15,6 @@
 #include <device/block.h>
 #include <logger.h>
 #include <sus/list.h>
-#include <sus/map.h>
 #include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/path.h>
@@ -24,6 +23,7 @@
 #include <vfs/vfs.h>
 
 #include <string>
+#include <unordered_map>
 
 class VFsDriver;
 class VSuperblock;
@@ -61,7 +61,7 @@ public:
 private:
     util::owner<ISuperblock *> _sb;
     util::refc_ptr<VFsDriver> _fsd;
-    util::LinkedMap<inode_t, util::owner<VINode *>> inode_cache;
+    std::unordered_map<inode_t, util::owner<VINode *>> inode_cache;
 
 public:
     VSuperblock(util::owner<ISuperblock *> sb, VFsDriver &fsd)
@@ -190,9 +190,9 @@ enum class MountFlags { NONE = 0 };
 
 class VFS {
 private:
-    util::LinkedMap<std::string, util::owner<VFsDriver *>> fs_table;
-    util::LinkedMap<util::Path, util::owner<VSuperblock *>> mount_table;
-    util::LinkedMap<util::Path, util::owner<DEntry *>> dentry_cache;
+    std::unordered_map<std::string, util::owner<VFsDriver *>> fs_table;
+    std::unordered_map<util::Path, util::owner<VSuperblock *>> mount_table;
+    std::unordered_map<util::Path, util::owner<DEntry *>> dentry_cache;
     util::ArrayList<VFile *> open_files;
 
 public:

@@ -15,6 +15,7 @@
 #include <task/wait.h>
 
 #include <cassert>
+#include <functional>
 
 namespace task::wait {
     namespace key {
@@ -46,7 +47,7 @@ namespace task::wait {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        auto qres = _queues.get(id);
+        auto qres = _queues.at_nt(id);
         if (qres.has_value()) {
             return qres.value().get();
         }
@@ -57,7 +58,7 @@ namespace task::wait {
         if (queue == nullptr) {
             unexpect_return(ErrCode::OUT_OF_MEMORY);
         }
-        _queues.put(id, queue);
+        _queues[id] = queue;
         return queue;
     }
 
@@ -66,12 +67,9 @@ namespace task::wait {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        auto qres = _queues.get(id);
-        if (!qres.has_value()) {
-            // Waking an unused reason is a no-op, not an error.
-            return static_cast<WaitQueue *>(nullptr);
-        }
-        return qres.value().get();
+        return _queues.at_nt(id)
+            .transform(unwrap_ref<WaitQueue *>())
+            .value_or(nullptr);
     }
 
     Result<void> WaitReasonManager::enqueue(WaitReasonId id, TCB *tcb) {
@@ -83,6 +81,7 @@ namespace task::wait {
         if (tcb == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
+
         auto qres = queue_for_wait(id);
         propagate(qres);
 
@@ -115,11 +114,11 @@ namespace task::wait {
 
         TCB *tcb = &queue->threads.front();
         queue->threads.pop_front();
-        tcb->wait_reason        = 0;
-        tcb->wait_predicate     = {};
-        tcb->coroutines.ipc_handle = nullptr;
+        tcb->wait_reason                = 0;
+        tcb->wait_predicate             = {};
+        tcb->coroutines.ipc_handle      = nullptr;
         tcb->coroutines.syscall_pending = false;
-        tcb->coroutines.syscall_done = true;
+        tcb->coroutines.syscall_done    = true;
         tcb->wait_head.clear();
         return tcb;
     }
@@ -132,12 +131,13 @@ namespace task::wait {
             return true;
         }
 
-        auto *origin_tmm = env::inst().tmm();
+        auto *origin_tmm   = env::inst().tmm();
         PhyAddr origin_pgd = env::inst().pgd();
-        auto *target_tmm = tcb->task == nullptr ? nullptr : tcb->task->tmm;
+        auto *target_tmm   = tcb->task == nullptr ? nullptr : tcb->task->tmm;
 
         if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
-            target_tmm->pgd() != origin_pgd) {
+            target_tmm->pgd() != origin_pgd)
+        {
             env::inst().tmm(key::wait()) = target_tmm;
             PageMan(target_tmm->pgd()).switch_root();
             PageMan::flush_tlb();
@@ -146,7 +146,8 @@ namespace task::wait {
         bool should_wake = tcb->wait_predicate(tcb);
 
         if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
-            target_tmm->pgd() != origin_pgd) {
+            target_tmm->pgd() != origin_pgd)
+        {
             env::inst().tmm(key::wait()) = origin_tmm;
             PageMan(origin_pgd).switch_root();
             PageMan::flush_tlb();
@@ -159,17 +160,16 @@ namespace task::wait {
         if (tcb == nullptr) {
             return false;
         }
-        return !tcb->coroutines.syscall_pending ||
-               tcb->coroutines.syscall_done;
+        return !tcb->coroutines.syscall_pending || tcb->coroutines.syscall_done;
     }
 
     static void clear_wait_metadata(TCB *tcb) {
         assert(tcb != nullptr);
-        tcb->wait_reason        = 0;
-        tcb->wait_predicate     = {};
-        tcb->coroutines.ipc_handle = nullptr;
+        tcb->wait_reason                = 0;
+        tcb->wait_predicate             = {};
+        tcb->coroutines.ipc_handle      = nullptr;
         tcb->coroutines.syscall_pending = false;
-        tcb->coroutines.syscall_done = true;
+        tcb->coroutines.syscall_done    = true;
         tcb->wait_head.clear();
     }
 
@@ -209,7 +209,7 @@ namespace task::wait {
 
     Result<size_t> WaitReasonManager::wake_all(WaitReasonId id) {
         size_t count = 0;
-        auto qres = queue_if_exists(id);
+        auto qres    = queue_if_exists(id);
         propagate(qres);
 
         WaitQueue *queue = qres.value();
