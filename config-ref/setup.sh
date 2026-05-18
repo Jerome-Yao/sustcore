@@ -28,11 +28,11 @@ if [ -f "$STATE_DIR/packages_installed" ] && [ $FORCE -eq 0 ]; then
     echo "已安装系统依赖，跳过此步骤"
 else
     case $packman in
-        1) sudo apt install   qemu-system-misc make gcc g++ ninja-build libsdl2-dev texinfo curl wget git m4
+        1) sudo apt install   qemu-system-misc make gcc g++ ninja-build libsdl2-dev texinfo curl wget git m4 gawk
         ;;
-        2) sudo pacman -S     qemu-system-misc make gcc g++ ninja-build libsdl2-dev texinfo curl wget git m4
+        2) sudo pacman -S     qemu-system-misc make gcc g++ ninja-build libsdl2-dev texinfo curl wget git m4 gawk
         ;;
-        *) echo "暂不支持该发行版，请手动安装gcc g++ ninja-build libsdl2-dev texinfo curl wget git m4（软件包名称可能因发行版而不同）"
+        *) echo "暂不支持该发行版，请手动安装gcc g++ ninja-build libsdl2-dev texinfo curl wget git m4 gawk（软件包名称可能因发行版而不同）"
         ;;
     esac
     touch "$STATE_DIR/packages_installed"
@@ -40,11 +40,11 @@ fi
 
 echo -e "\\e[34mdownloading packages...\\e[0m"
 
-export MPFR=mpfr-4.1.0
-export MPC=mpc-1.2.1
-export GMP=gmp-6.2.1
-export BINUTILS=binutils-2.44
-export GCCV=gcc-15.2.0
+export MPFR=mpfr-4.2.2
+export MPC=mpc-1.4.1
+export GMP=gmp-6.3.0
+export BINUTILS=binutils-2.46.0
+export GCCV=gcc-16.1.0
 
 download_if_needed() {
     url=$1
@@ -60,7 +60,7 @@ if [ -f "$STATE_DIR/downloads_done" ] && [ $FORCE -eq 0 ]; then
     echo "已完成下载，跳过此步骤"
 else
     download_if_needed "https://mirrors.aliyun.com/gnu/mpfr/$MPFR.tar.xz" ./$MPFR.tar.xz
-    download_if_needed "https://mirrors.aliyun.com/gnu/mpc/$MPC.tar.gz" ./$MPC.tar.gz
+    download_if_needed "https://mirrors.aliyun.com/gnu/mpc/$MPC.tar.xz" ./$MPC.tar.xz
     download_if_needed "https://mirrors.aliyun.com/gnu/gmp/$GMP.tar.xz" ./$GMP.tar.xz
     download_if_needed "https://mirrors.aliyun.com/gnu/binutils/$BINUTILS.tar.xz" ./$BINUTILS.tar.xz
     download_if_needed "https://mirrors.aliyun.com/gnu/gcc/$GCCV/$GCCV.tar.xz" ./$GCCV.tar.xz
@@ -82,7 +82,7 @@ extract_once() {
 }
 
 extract_once "mpfr_extracted" ./$MPFR.tar.xz "$MPFR"
-extract_once "mpc_extracted"  ./$MPC.tar.gz  "$MPC"
+extract_once "mpc_extracted"  ./$MPC.tar.xz  "$MPC"
 extract_once "gmp_extracted"  ./$GMP.tar.xz  "$GMP"
 extract_once "binutils_extracted" ./$BINUTILS.tar.xz "$BINUTILS"
 extract_once "gcc_extracted" ./$GCCV.tar.xz "$GCCV"
@@ -96,6 +96,13 @@ export PATH="$PREFIX/bin:$PATH"
 # 创建必要的目录
 mkdir -p "$PREFIX"
 
+cleanup_zero_objects() {
+    build_dir=$1
+    if [ -d "$build_dir/gcc" ]; then
+        find "$build_dir/gcc" -type f -name '*.o' -size 0 -delete
+    fi
+}
+
 #编译GMP, MPFR与MPC
 
 echo -e "\\e[34mbuilding gmp\\e[0m"
@@ -106,7 +113,7 @@ else
         mkdir -p ./build/
         cd ./build/
             ../configure
-            make -j2
+            make -j8
             sudo make install
         cd ../
     cd ../
@@ -121,7 +128,7 @@ else
         mkdir -p ./build/
         cd ./build/
             ../configure
-            make -j2
+            make -j8
             sudo make install
         cd ../
     cd ../
@@ -136,7 +143,7 @@ else
         mkdir -p ./build/
         cd ./build/
             ../configure
-            make -j2
+            make -j8
             sudo make install
         cd ../
     cd ../
@@ -155,7 +162,7 @@ else
         cd "$BUILD_DIR"
             make distclean || true
             ../configure --target=$TARGET1 --prefix="$PREFIX" --with-sysroot --disable-nls --disable-werror
-            make -j2
+            make -j8
             make install
         cd ../
     cd ../
@@ -174,8 +181,9 @@ else
         cd "$BUILD_DIR"
             make distclean || true
             ../configure --target=$TARGET1 --prefix="$PREFIX" --disable-nls --enable-languages=c,c++ --without-headers
-            make all-gcc -j2
-            make all-target-libgcc -j2
+            cleanup_zero_objects "$PWD"
+            make all-gcc -j8
+            make all-target-libgcc -j8
             make install-gcc
             make install-target-libgcc
         cd ../
@@ -214,8 +222,9 @@ else
         cd "$BUILD_DIR"
             make distclean || true
             ../configure --target=$TARGET2 --prefix="$PREFIX" --disable-nls --enable-languages=c,c++ --without-headers
-            make all-gcc -j2
-            make all-target-libgcc -j2
+            cleanup_zero_objects "$PWD"
+            make all-gcc -j8
+            make all-target-libgcc -j8
             make install-gcc
             make install-target-libgcc
         cd ../
@@ -235,7 +244,7 @@ else
         cd "$BUILD_DIR"
             make distclean || true
             ../configure --target=$TARGET3 --prefix="$PREFIX" --with-sysroot --disable-nls --disable-werror
-            make -j2
+            make -j8
             make install
         cd ../
     cd ../
@@ -254,8 +263,9 @@ else
         cd "$BUILD_DIR"
             make distclean || true
             ../configure --target=$TARGET3 --prefix="$PREFIX" --disable-nls --enable-languages=c,c++ --without-headers
-            make all-gcc -j2
-            make all-target-libgcc -j2
+            cleanup_zero_objects "$PWD"
+            make all-gcc -j8
+            make all-target-libgcc -j8
             make install-gcc
             make install-target-libgcc
         cd ../

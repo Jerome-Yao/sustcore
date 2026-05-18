@@ -13,37 +13,45 @@
 #include <sus/ansi.h>
 #include <sus/list.h>
 #include <sus/pair.h>
+#include <test/array.h>
 #include <test/buddy.h>
 #include <test/cap.h>
 #include <test/expected.h>
 #include <test/framework.h>
 #include <test/fs.h>
 #include <test/functional.h>
+#include <test/optional.h>
 #include <test/path.h>
 #include <test/printf.h>
 #include <test/schd/fcfs.h>
 #include <test/schd/rr.h>
 #include <test/slub.h>
+#include <test/source_location.h>
 #include <test/string.h>
 #include <test/string_view.h>
 #include <test/tree.h>
 #include <test/unordered_map.h>
+#include <test/vector.h>
 
 void collect_tests(TestFramework& framework) {
+    test::array::collect_tests(framework);
     test::buddy::collect_tests(framework);
     test::cap::collect_tests(framework);
     test::expected::collect_tests(framework);
     test::fs::collect_tests(framework);
     test::functional::collect_tests(framework);
+    test::optional::collect_tests(framework);
     test::path::collect_tests(framework);
     test::printf::collect_tests(framework);
     test::schd_test::fcfs::collect_tests(framework);
     test::schd_test::rr::collect_tests(framework);
     test::slub::collect_tests(framework);
+    test::source_location::collect_tests(framework);
     test::string::collect_tests(framework);
     test::string_view::collect_tests(framework);
     test::tree::collect_tests(framework);
     test::unordered_map::collect_tests(framework);
+    test::vector::collect_tests(framework);
 }
 
 void TestFramework::run_all() const {

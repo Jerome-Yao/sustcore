@@ -89,6 +89,27 @@ namespace std {
 #endif
     };
 
+    class length_error : public logic_error {
+    public:
+        // NOLINTNEXTLINE(modernize-pass-by-value)
+        explicit length_error(const string &what_arg)
+            : logic_error(what_arg) {}
+        explicit length_error(const char *what_arg)
+            : logic_error(what_arg) {}
+        // NOLINTNEXTLINE(modernize-pass-by-value)
+        length_error(const length_error &other)            = default;
+        length_error &operator=(const length_error &other) = default;
+        length_error(length_error &&)                      = default;
+        length_error &operator=(length_error &&)           = default;
+        virtual ~length_error() override                   = default;
+#ifdef __SUS_NO_RTTI__
+        [[nodiscard]]
+        const char* type() const override {
+            return "std::length_error";
+        }
+#endif
+    };
+
     class overflow_error : public runtime_error {
     public:
         // NOLINTNEXTLINE(modernize-pass-by-value)
