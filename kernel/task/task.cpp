@@ -31,17 +31,28 @@
 #include <task/task_struct.h>
 #include <vfs/vfs.h>
 
+#include <cassert>
+
 namespace task {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static TaskManager inst_task_manager;
+    static bool inst_task_manager_initialized = false;
 
     void TaskManager::init() {
         // call the constructor explicitly to ensure the instance is initialized
         // before use
         new (&inst_task_manager) TaskManager();
+        inst_task_manager_initialized = true;
+    }
+
+    bool TaskManager::initialized() {
+        return inst_task_manager_initialized;
     }
 
     TaskManager &TaskManager::inst() {
+        if (!initialized()) {
+            panic("TaskManager 未初始化!");
+        }
         return inst_task_manager;
     }
 
@@ -333,7 +344,7 @@ namespace task {
     }
 
     Result<void> TaskManager::recycle_tcb(util::nonnull<TCB *> tcb) {
-        loggers::TASK::INFO("回收线程 %d (PID: %d)", tcb->tid,
+        loggers::TASK::DEBUG("回收线程 %d (PID: %d)", tcb->tid,
                             tcb->task != nullptr ? tcb->task->pid : -1);
         PCB *pcb = tcb->task;
         if (pcb != nullptr) {
@@ -898,7 +909,7 @@ namespace task {
             GFP::put_page(old_pgd, 1);
         }
 
-        loggers::SUSTCORE::INFO("execve成功: path=%s pid=%d", path, pcb->pid);
+        loggers::SUSTCORE::DEBUG("execve成功: path=%s pid=%d", path, pcb->pid);
         void_return();
     }
 

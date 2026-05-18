@@ -24,6 +24,7 @@ namespace {
         schd::Scheduler)];
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     schd::Scheduler *inst_scheduler = nullptr;
+    bool inst_scheduler_initialized = false;
 }  // namespace
 
 namespace key {
@@ -40,10 +41,17 @@ namespace schd {
     using namespace task;
     void Scheduler::init(util::nonnull<TCB *> init_tcb) {
         inst_scheduler = new (scheduler_storage) Scheduler(init_tcb);
+        inst_scheduler_initialized = true;
+    }
+
+    bool Scheduler::initialized() {
+        return inst_scheduler_initialized && inst_scheduler != nullptr;
     }
 
     Scheduler &Scheduler::inst() {
-        assert(inst_scheduler != nullptr);
+        if (!initialized()) {
+            panic("Scheduler 未初始化!");
+        }
         return *inst_scheduler;
     }
 

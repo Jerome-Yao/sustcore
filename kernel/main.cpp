@@ -46,19 +46,30 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
 
 namespace env {
     static Environment _env;
+    static bool _env_initialized = false;
+
+    bool initialized() {
+        return _env_initialized;
+    }
+
     Environment &inst() {
+        if (!initialized()) {
+            panic("Environment 未初始化!");
+        }
         return _env;
     }
 
     void construct() {
         // call the constructor here
         new (&_env) Environment();
+        _env_initialized = true;
     }
 }  // namespace env
 
@@ -181,7 +192,7 @@ extern "C" void post_init(void) {
 
     // 初始化中断处理程序
     Interrupt::init();
-    // 按理来说这个东西应该放在下面的
+    // TODO: 按理来说这个东西应该放在下面的
     // 但是我忘记把device tree给提升到kernel physical address space中了
     // 我现在也改不动了
     // 就先放在这吧

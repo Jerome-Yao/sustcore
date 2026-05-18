@@ -221,9 +221,9 @@ namespace loader::elf {
         spec.heap_mem_cap = heap_cap_res.value();
 
         // 输出TM中的VMA信息以供调试
-        loggers::SUSTCORE::INFO("ELF加载完成, TM中的VMA列表:");
+        loggers::SUSTCORE::DEBUG("ELF加载完成, TM中的VMA列表:");
         for (const auto &vma : spec.tmm->vmas()) {
-            loggers::SUSTCORE::INFO("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
+            loggers::SUSTCORE::DEBUG("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
                                     to_string(vma.type), vma.varea.begin.addr(),
                                     vma.varea.end.addr(), vma.size());
         }
@@ -258,7 +258,7 @@ namespace loader::elf {
         }
 
         // 输出每个VMA的开头几个字节以供调试
-        loggers::SUSTCORE::INFO("每个VMA的前16字节内容:");
+        loggers::SUSTCORE::DEBUG("每个VMA的前16字节内容:");
         for (const auto &vma : spec.tmm->vmas()) {
             if (vma.varea.nullable()) {
                 continue;
@@ -268,7 +268,7 @@ namespace loader::elf {
             ker_paddr::SumGuard sum_guard;
             sum_guard.open();
 
-            loggers::SUSTCORE::INFO("  VMA类型: %s, 起始地址: %p",
+            loggers::SUSTCORE::DEBUG("  VMA类型: %s, 起始地址: %p",
                                     to_string(vma.type),
                                     vma.varea.begin.addr());
 
@@ -282,7 +282,7 @@ namespace loader::elf {
                 sprintf(buf, "%02x ", data[i]);
                 hex_dump += buf;
             }
-            loggers::SUSTCORE::INFO("    前%d字节: %s", dump_size,
+            loggers::SUSTCORE::DEBUG("    前%d字节: %s", dump_size,
                                     hex_dump.c_str());
         }
 

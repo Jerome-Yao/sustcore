@@ -34,6 +34,8 @@ namespace syscall {
         b64 ret1;
     };
 
+    const char *name_of(b64 sysno);
+
     /**
      * @brief 系统调用入口函数
      *

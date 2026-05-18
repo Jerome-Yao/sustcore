@@ -203,6 +203,7 @@ namespace task {
          * @brief 初始化 TaskManager 单例, 仅应在内核启动早期调用.
          */
         static void init();
+        static bool initialized();
 
         /**
          * @brief 返回 TaskManager 的单例引用.

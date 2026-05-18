@@ -13,7 +13,7 @@
 namespace cap {
     // 无人引用的 PCB 对象会被放入 TaskManager 的回收队列中等待销毁
     void PCBPayload::destruct() {
-        loggers::TASK::INFO("PCBPayload destruct: pid=%d", pcb->pid);
+        loggers::TASK::DEBUG("PCBPayload destruct: pid=%d", pcb->pid);
         task::TaskManager::inst().enqueue_recycle(pcb);
         delete this;
     }

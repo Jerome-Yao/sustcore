@@ -91,5 +91,6 @@ namespace env {
     };
 
     void construct();
+    bool initialized();
     Environment &inst();
 }  // namespace env

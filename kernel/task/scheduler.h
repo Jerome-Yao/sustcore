@@ -33,6 +33,7 @@ namespace schd {
 
     public:
         static void init(util::nonnull<TCB *> init_tcb);
+        static bool initialized();
         static Scheduler &inst();
 
         constexpr Scheduler(util::nonnull<TCB *> init_tcb)

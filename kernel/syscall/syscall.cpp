@@ -31,6 +31,44 @@ namespace syscall {
 
     constexpr size_t MAX_SYSCALL_PATH = 256;
 
+    const char *name_of(b64 sysno) {
+        switch (sysno) {
+            case SYS_WRITE_SERIAL:        return "SYS_WRITE_SERIAL";
+            case SYS_CREATE_PROCESS:      return "SYS_CREATE_PROCESS";
+            case SYS_PCB_KILL:            return "SYS_PCB_KILL";
+            case SYS_YIELD:               return "SYS_YIELD";
+            case SYS_LOG:                 return "SYS_LOG";
+            case SYS_FORK:                return "SYS_FORK";
+            case SYS_GETPID:              return "SYS_GETPID";
+            case SYS_CREATE_THREAD:       return "SYS_CREATE_THREAD";
+            case SYS_YIELD_THREAD:        return "SYS_YIELD_THREAD";
+            case SYS_EXECVE:              return "SYS_EXECVE";
+            case SYS_PCB_MAP:             return "SYS_PCB_MAP";
+            case SYS_NOTIF_CREATE:        return "SYS_NOTIF_CREATE";
+            case SYS_NOTIF_SIGNAL:        return "SYS_NOTIF_SIGNAL";
+            case SYS_NOTIF_UNSIGNAL:      return "SYS_NOTIF_UNSIGNAL";
+            case SYS_NOTIF_CHECK:         return "SYS_NOTIF_CHECK";
+            case SYS_NOTIF_WAIT:          return "SYS_NOTIF_WAIT";
+            case SYS_CAP_CLONE:           return "SYS_CAP_CLONE";
+            case SYS_CAP_DOWNGRADE:       return "SYS_CAP_DOWNGRADE";
+            case SYS_CAP_DERIVE:          return "SYS_CAP_DERIVE";
+            case SYS_CAP_LOOKUP:          return "SYS_CAP_LOOKUP";
+            case SYS_CAP_REMOVE:          return "SYS_CAP_REMOVE";
+            case SYS_ENDPOINT_CREATE:     return "SYS_ENDPOINT_CREATE";
+            case SYS_ENDPOINT_SEND:       return "SYS_ENDPOINT_SEND";
+            case SYS_ENDPOINT_RECV:       return "SYS_ENDPOINT_RECV";
+            case SYS_ENDPOINT_SEND_ASYNC: return "SYS_ENDPOINT_SEND_ASYNC";
+            case SYS_ENDPOINT_RECV_ASYNC: return "SYS_ENDPOINT_RECV_ASYNC";
+            case SYS_ENDPOINT_CALL:       return "SYS_ENDPOINT_CALL";
+            case SYS_ENDPOINT_REPLY:      return "SYS_ENDPOINT_REPLY";
+            case SYS_MEM_CREATE:          return "SYS_MEM_CREATE";
+            case SYS_MEM_UNMAP:           return "SYS_MEM_UNMAP";
+            case SYS_MEM_RESIZE:          return "SYS_MEM_RESIZE";
+            case SYS_MEM_QUERY:           return "SYS_MEM_QUERY";
+            default:                      return "UNKNOWN_SYSCALL";
+        }
+    }
+
     static RetPack finish_syscall(const util::nonnull<Riscv64Context *> &ctx,
                                   const util::nonnull<task::TCB *> &tcb,
                                   RetPack ret) {

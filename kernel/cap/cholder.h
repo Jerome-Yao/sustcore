@@ -190,6 +190,7 @@ namespace cap {
         size_t _timestamp = 1;  // 用于记录发送记录的时间戳, 每次发送能力时递增
     public:
         static void init();
+        static bool initialized();
         static CHolderManager &inst();
 
         CHolderManager() = default;

@@ -30,7 +30,7 @@
 
 namespace syscall {
     /**
-     * @brief 查找当前进程 capability 空间中的 PCB payload. 
+     * @brief 查找当前进程 capability 空间中的 PCB payload.
      */
     static Result<cap::PCBPayload *> lookup_pcb(CapIdx idx,
                                                 cap::Capability **out_cap) {
@@ -47,7 +47,7 @@ namespace syscall {
     }
 
     /**
-     * @brief 查找当前进程 capability 空间中的 Memory payload. 
+     * @brief 查找当前进程 capability 空间中的 Memory payload.
      */
     static Result<cap::MemoryPayload *> lookup_memory(
         CapIdx idx, cap::Capability **out_cap) {
@@ -64,14 +64,16 @@ namespace syscall {
     }
 
     /**
-     * @brief 将父进程指定 capability 按相同 CapIdx 复制到子 CHolder. 
+     * @brief 将父进程指定 capability 按相同 CapIdx 复制到子 CHolder.
      *
      * 该函数只处理 capability transfer 的 CLONE 语义; 对象自身权限检查
-     * 仍由对应 CapObj 方法完成. 
+     * 仍由对应 CapObj 方法完成.
      */
-    static Result<void> copy_initial_caps_in_place(
-        cap::CHolder *src_holder, TaskMemoryManager *src_tmm,
-        cap::CHolder *dst_holder, VirAddr caps_uaddr, size_t caps_sz) {
+    static Result<void> copy_initial_caps_in_place(cap::CHolder *src_holder,
+                                                   TaskMemoryManager *src_tmm,
+                                                   cap::CHolder *dst_holder,
+                                                   VirAddr caps_uaddr,
+                                                   size_t caps_sz) {
         if (src_holder == nullptr || dst_holder == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -103,8 +105,7 @@ namespace syscall {
             }
 
             auto *memory = src_cap->payload_as<cap::MemoryPayload>();
-            if (memory != nullptr && !memory->shared && src_tmm != nullptr)
-            {
+            if (memory != nullptr && !memory->shared && src_tmm != nullptr) {
                 auto cow_res = src_tmm->protect_memory_cow(memory);
                 if (!cow_res.has_value()) {
                     auto remove_res = dst_holder->internal_remove(idx);
@@ -129,7 +130,7 @@ namespace syscall {
     CapIdx pcb_create_process(CapIdx pcb_cap, const UString &path,
                               VirAddr caps_uaddr, size_t caps_sz,
                               size_t sched_class) {
-        loggers::SYSCALL::INFO(
+        loggers::SYSCALL::DEBUG(
             "创建进程: pcb=%p path=%s, caps_uaddr=%p, caps_sz=%u, "
             "sched_class=%u",
             pcb_cap, path.kbuf(), caps_uaddr.addr(), caps_sz, sched_class);
@@ -181,10 +182,9 @@ namespace syscall {
             assert(rm_res.has_value());
         });
 
-        auto copy_res =
-            copy_initial_caps_in_place(parent_pcb->cholder,
-                                       parent_pcb->tmm.get(), child_holder,
-                                       caps_uaddr, caps_sz);
+        auto copy_res = copy_initial_caps_in_place(
+            parent_pcb->cholder, parent_pcb->tmm.get(), child_holder,
+            caps_uaddr, caps_sz);
         if (!copy_res.has_value()) {
             loggers::SYSCALL::ERROR("创建进程失败: 初始能力原位复制失败 err=%d",
                                     copy_res.error());
@@ -227,7 +227,7 @@ namespace syscall {
             return cap::error;
         }
 
-        loggers::SYSCALL::INFO("创建进程成功: path=%s, pid=%d", path.kbuf(),
+        loggers::SYSCALL::DEBUG("创建进程成功: path=%s, pid=%d", path.kbuf(),
                                pcb->pid);
         pcb_guard.release();
         return ret_insert_res.value();

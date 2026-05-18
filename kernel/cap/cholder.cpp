@@ -17,9 +17,12 @@
 #include <task/scheduler.h>
 #include <task/task_struct.h>
 
+#include <cassert>
+
 namespace {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static cap::CHolderManager inst_cholder_manager;
+    static bool inst_cholder_manager_initialized = false;
 }  // namespace
 
 namespace cap {
@@ -27,9 +30,17 @@ namespace cap {
         // call the constructor explicitly to ensure the instance is initialized
         // before use
         new (&inst_cholder_manager) CHolderManager();
+        inst_cholder_manager_initialized = true;
+    }
+
+    bool CHolderManager::initialized() {
+        return inst_cholder_manager_initialized;
     }
 
     CHolderManager &CHolderManager::inst() {
+        if (!initialized()) {
+            panic("CHolderManager 未初始化!");
+        }
         return inst_cholder_manager;
     }
 

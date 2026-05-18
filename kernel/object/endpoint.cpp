@@ -208,7 +208,7 @@ namespace cap {
             return false;
         }
 
-        loggers::CAPABILITY::INFO("Endpoint没有消息可接收, 线程进入等待");
+        loggers::CAPABILITY::DEBUG("Endpoint没有消息可接收, 线程进入等待");
 
         auto *receiver = schd::Scheduler::inst().current_tcb();
         if (receiver != nullptr) {

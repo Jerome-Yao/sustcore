@@ -17,20 +17,30 @@
 #include <vfs/ops.h>
 #include <vfs/vfs.h>
 
+#include <cassert>
 #include <cstring>
 #include <expected>
 
 namespace {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static VFS inst_vfs;
+    static bool inst_vfs_initialized = false;
 }  // namespace
 
 void VFS::init() {
     // call the constructor explicitly to ensure the instance is initialized before use
     new (&inst_vfs) VFS();
+    inst_vfs_initialized = true;
+}
+
+bool VFS::initialized() {
+    return inst_vfs_initialized;
 }
 
 VFS &VFS::inst() {
+    if (!initialized()) {
+        panic("VFS 未初始化!");
+    }
     return inst_vfs;
 }
 

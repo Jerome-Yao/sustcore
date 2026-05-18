@@ -59,6 +59,7 @@ namespace task::wait {
 
         // 初始化等待原因管理器的单例实例
         static void init();
+        static bool initialized();
         // 获取等待原因管理器的单例实例
         static WaitReasonManager &inst();
     };

@@ -197,6 +197,7 @@ private:
 
 public:
     static void init();
+    static bool initialized();
     static VFS &inst();
 
     VFS() = default;

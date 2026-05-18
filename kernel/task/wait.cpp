@@ -27,8 +27,12 @@ namespace task::wait {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static WaitReasonManager inst_wait_reason_manager;
+    static bool inst_wait_reason_manager_initialized = false;
 
     WaitReasonManager &WaitReasonManager::inst() {
+        if (!initialized()) {
+            panic("WaitReasonManager 未初始化!");
+        }
         return inst_wait_reason_manager;
     }
 
@@ -36,6 +40,11 @@ namespace task::wait {
         // call the constructor explicitly to ensure the instance is initialized
         // before use
         new (&inst_wait_reason_manager) WaitReasonManager();
+        inst_wait_reason_manager_initialized = true;
+    }
+
+    bool WaitReasonManager::initialized() {
+        return inst_wait_reason_manager_initialized;
     }
 
     WaitReasonId WaitReasonManager::alloc_reason() {
