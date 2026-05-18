@@ -76,8 +76,7 @@ def main():
 
     # 1. 定义操作流水线
     operations = [
-        RemoveFlags(['-fno-toplevel-reorder', '-fno-tree-scev-cprop']),
-        AddFlags(['-fno-blocks']),
+        RemoveFlags(['-fno-toplevel-reorder', '-fno-tree-scev-cprop', '-freflection']),
         # 使用正则表达式转换: 将 ^-I 替换为 -isystem
         RegexTransform(pattern=r'^-I', replacement='-isystem'),
         RegexTransform(pattern=r'^-Wno-literal-suffix', replacement='-Wno-user-defined-literals'),

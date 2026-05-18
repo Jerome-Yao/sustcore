@@ -43,9 +43,9 @@
 #include <vfs/tarfs.h>
 #include <vfs/vfs.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
