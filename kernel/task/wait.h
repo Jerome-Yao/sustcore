@@ -13,9 +13,11 @@
 
 #include <sus/list.h>
 #include <sus/map.h>
+#include <sus/coroutine.h>
 #include <sustcore/errcode.h>
 #include <task/task_struct.h>
 #include <unordered_map>
+#include <utility>
 
 namespace task::wait {
     // 等待队列
@@ -65,8 +67,17 @@ namespace task::wait {
     };
 
     WaitReasonId alloc_reason();
-    Result<void> wait_current(WaitReasonId id);
-    Result<void> wait_current(WaitReasonId id, WaitPredicate predicate);
+    util::cotask<Result<void>> wait_current(WaitReasonId id);
+    util::cotask<Result<void>> wait_current(WaitReasonId id,
+                                            WaitPredicate predicate);
+    util::cotask<Result<void>> wait_current(
+        WaitReasonId id, WaitPredicate predicate,
+        WaitReadyPredicate ready_predicate);
+    [[deprecated("use co_await wait_current(...) in syscall coroutine paths")]]
+    Result<void> deprecated_wait_current(WaitReasonId id);
+    [[deprecated("use co_await wait_current(...) in syscall coroutine paths")]]
+    Result<void> deprecated_wait_current(WaitReasonId id,
+                                         WaitPredicate predicate);
     Result<TCB *> peek_one(WaitReasonId id);
     Result<size_t> wake_one(WaitReasonId id);
     Result<size_t> wake_all(WaitReasonId id);

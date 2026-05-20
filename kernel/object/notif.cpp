@@ -9,9 +9,9 @@
  *
  */
 
+#include <device/int.h>
 #include <logger.h>
 #include <object/notif.h>
-#include <device/int.h>
 #include <task/wait.h>
 
 namespace cap {
@@ -53,7 +53,7 @@ namespace cap {
         InterruptGuard guard;
         guard.enter();
         _obj->signalbits |= (static_cast<b32>(1U) << idx);
-        auto wake_res = task::wait::wake_all(_obj->wait_reasons[idx]);
+        auto wake_res     = task::wait::wake_all(_obj->wait_reasons[idx]);
         propagate(wake_res);
         return true;
     }
@@ -76,7 +76,7 @@ namespace cap {
         guard.enter();
         if (state) {
             _obj->signalbits |= (static_cast<b32>(1U) << idx);
-            auto wake_res = task::wait::wake_all(_obj->wait_reasons[idx]);
+            auto wake_res     = task::wait::wake_all(_obj->wait_reasons[idx]);
             propagate(wake_res);
         } else {
             _obj->signalbits &= ~(static_cast<b32>(1U) << idx);
@@ -102,12 +102,14 @@ namespace cap {
         InterruptGuard guard;
         guard.enter();
 
-        // if the signal is already set, just return immediately without sleeping
+        // if the signal is already set, just return immediately without
+        // sleeping
         if ((_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0) {
             return true;
         }
 
-        auto wait_res = task::wait::wait_current(_obj->wait_reasons[idx]);
+        auto wait_res =
+            task::wait::deprecated_wait_current(_obj->wait_reasons[idx]);
         propagate(wait_res);
         return true;
     }

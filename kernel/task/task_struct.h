@@ -35,6 +35,7 @@ namespace task {
 
     namespace wait {
         using WaitPredicate = std::function<bool(TCB *tcb)>;
+        using WaitReadyPredicate = std::function<bool()>;
     }
 
     // Make sure that TCB is has standard layout,

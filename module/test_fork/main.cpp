@@ -8,12 +8,11 @@ static volatile size_t global_value = 0;
 
 constexpr size_t kScanGroups         = 1;
 constexpr size_t kScanSlots          = 32;
-constexpr CapIdx kCompletionNotifCap = cap::make(1, 3);
-constexpr CapIdx kExecNotifCap       = cap::make(1, 4);
 constexpr size_t kSignalSyn          = 0;
 constexpr size_t kSignalSynAck       = 1;
 constexpr size_t kSignalAck          = 2;
 constexpr size_t kCompletionSignal   = 0;
+static CapIdx exec_notif_cap         = cap::null;
 
 static const char *cap_type_name(PayloadType type) {
     return to_string(type);
@@ -40,8 +39,7 @@ static char *alloc_page_string(const char *str) {
     char *buf = static_cast<char *>(sbrk(4096));
     if (buf == reinterpret_cast<char *>(-1)) {
         printf("test_fork: sbrk failed\n");
-        while (true) {
-        }
+        exit(-1);
     }
     strcpy(buf, str);
     return buf;
@@ -51,30 +49,30 @@ int kmod_main() {
     printf("test_fork: 启动时PID=%u pcb_cap=%p\n", sys_getpid(__pcb_cap),
            (void *)__pcb_cap);
 
-    if (!sys_notif_create(kExecNotifCap)) {
+    exec_notif_cap = sys_notif_create();
+    if (exec_notif_cap == cap::error) {
         printf("test_fork: create exec notification failed\n");
-        while (true) {
-        }
+        exit(-1);
     }
 
     global_value     = 114514;
     char *shared_buf = alloc_page_string("全体目光向我看齐");
 
-    ForkRet ret = fork();
-    if (ret.ret1 == cap::error) {
+    CapIdx child_pcb_cap = cap::null;
+    size_t child_pid     = fork(&child_pcb_cap);
+    if (child_pcb_cap == cap::error) {
         printf("test_fork: fork failed\n");
-        while (true) {
-        }
+        exit(-1);
     }
 
-    bool is_child        = ret.ret2 == 0;
+    bool is_child        = child_pid == 0;
     const char *tag      = is_child ? "child" : "parent";
     size_t abi_pcb_pid   = sys_getpid(__pcb_cap);
-    size_t child_cap_pid = sys_getpid(ret.ret1);
+    size_t child_cap_pid = sys_getpid(child_pcb_cap);
     printf(
         "test_fork: %s fork后 子进程capidx=%p 子进程pid=%u ABI获得的PCB PID=%u "
         "子进程PID=%u global=%u shared=%s\n",
-        tag, (void *)ret.ret1, ret.ret2, abi_pcb_pid, child_cap_pid,
+        tag, (void *)child_pcb_cap, child_pid, abi_pcb_pid, child_cap_pid,
         global_value, shared_buf);
 
     if (is_child) {
@@ -99,35 +97,25 @@ int kmod_main() {
     dump_caps(is_child ? "子进程" : "父进程");
 
     if (is_child) {
-        CapIdx reserved_caps[] = {kExecNotifCap};
+        CapIdx reserved_caps[] = {exec_notif_cap};
         printf("test_fork: child exec test_execve\n");
         if (!execve("/initrd/test_execve.mod", reserved_caps, 1)) {
             printf("test_fork: child exec failed\n");
-            while (true) {
-            }
         }
-        while (true) {
-        }
+        exit(-1);
     }
 
     printf("test_fork: 发送 SYN\n");
-    sys_notif_signal(kExecNotifCap, kSignalSyn);
+    sys_notif_signal(exec_notif_cap, kSignalSyn);
 
-    sys_notif_wait(kExecNotifCap, kSignalSynAck);
+    sys_notif_wait(exec_notif_cap, kSignalSynAck);
     printf("test_fork: 接收 SYN-ACK\n");
-    sys_notif_unsignal(kExecNotifCap, kSignalSynAck);
+    sys_notif_unsignal(exec_notif_cap, kSignalSynAck);
 
     printf("test_fork: 发送 ACK\n");
-    sys_notif_signal(kExecNotifCap, kSignalAck);
-
-    printf("test_fork: 发送 completion signal\n");
-    sys_notif_signal(kCompletionNotifCap, kCompletionSignal);
-    printf("test_fork: completion signaled\n");
+    sys_notif_signal(exec_notif_cap, kSignalAck);
 
     printf("test_fork: %s exit\n", tag);
-    exit(-1);
-
-    while (true) {
-    }
+    exit(0);
     return 0;
 }

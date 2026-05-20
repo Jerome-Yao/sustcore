@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 constexpr uint64_t kValueK    = 0xfedcba9876543210ULL;
 constexpr size_t kRepeatCount = 10;
@@ -17,7 +18,7 @@ static CapIdx find_unique_endpoint_cap() {
     size_t count = 0;
 
     for (size_t slot = 0; slot < kScanSlots; ++slot) {
-        CapIdx candidate = cap::make(1, slot);
+        CapIdx candidate = cap::make(0, slot);
         CapInfo info{};
         if (!sys_cap_lookup(candidate, &info) ||
             info.type != PayloadType::ENDPOINT)
@@ -42,21 +43,19 @@ static CapIdx find_unique_endpoint_cap() {
 
 static uint64_t recv_u64(CapIdx endpoint, const char *tag) {
     uint64_t value = 0;
-    size_t msgsz   = 0;
-    size_t capsz   = 0;
     MsgPacket packet{
-        .msgbuf  = &value,
-        .msgsz   = &msgsz,
-        .caplist = nullptr,
-        .capsz   = &capsz,
+        .msgsz = sizeof(value),
+        .capsz = 0,
     };
 
     sys_endpoint_recv(endpoint, &packet);
-    if (msgsz != sizeof(value) || capsz != 0) {
-        printf("%s: 无效的消息 msgsz=%u capsz=%u\n", tag, msgsz, capsz);
+    if (packet.msgsz != sizeof(value) || packet.capsz != 0) {
+        printf("%s: 无效的消息 msgsz=%u capsz=%u\n", tag, packet.msgsz,
+               packet.capsz);
         exit(-1);
     }
 
+    memcpy(&value, packet.msgbuf, sizeof(value));
     return value;
 }
 
@@ -68,14 +67,11 @@ int kmod_main() {
 
     printf("test-endpoint-slave: 发送密钥 K=0x%016lx\n", kValueK);
     uint64_t value = kValueK;
-    size_t msgsz   = sizeof(kValueK);
-    size_t capsz   = 0;
     MsgPacket packet{
-        .msgbuf  = &value,
-        .msgsz   = &msgsz,
-        .caplist = nullptr,
-        .capsz   = &capsz,
+        .msgsz = sizeof(kValueK),
+        .capsz = 0,
     };
+    memcpy(packet.msgbuf, &value, sizeof(value));
     sys_endpoint_send(endpoint_cap, &packet);
 
     for (size_t round = 0; round < kRepeatCount; ++round) {

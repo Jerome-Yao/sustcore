@@ -251,7 +251,7 @@ namespace task {
          * @note fork 操作可能涉及写时复制与资源共享,
          * 调用者需注意并发与内存一致性问题.
          */
-        Result<ForkResult> fork_current();
+        Result<ForkResult> fork_current(CapIdx ret_slot);
 
         /**
          * @brief 为当前进程创建一个线程, 线程入口与栈由参数指定.

@@ -285,21 +285,11 @@ namespace schd {
     }
 
     void Scheduler::init() {
-        // 将当前线程设置为 IDLE 调度类中的 IDLE 线程
-        auto idle_res = idle_schd()->pick_next(rq());
-        if (!idle_res.has_value()) {
-            loggers::SUSTCORE::ERROR("IDLE调度器没有可运行的线程! 错误码: %s",
-                                     to_cstring(idle_res.error()));
+        // Scheduler构造时已经将内核初始init线程设为当前线程.
+        if (_curtcb == nullptr || _curpcb == nullptr) {
+            loggers::SUSTCORE::ERROR("INIT线程无效");
             panic("调度器崩溃!");
         }
-        auto yield_res = idle_schd()->yield(rq());
-        if (!yield_res.has_value()) {
-            loggers::SUSTCORE::ERROR("IDLE调度器处理yield失败! 错误码: %s",
-                                     to_cstring(yield_res.error()));
-            panic("调度器崩溃!");
-        }
-        _curtcb = idle_res.value();
-        _curpcb = _curtcb->task;
     }
 
     [[noreturn]]

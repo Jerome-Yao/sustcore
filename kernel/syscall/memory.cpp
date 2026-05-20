@@ -17,6 +17,9 @@
 #include <mem/vma.h>
 #include <object/memory.h>
 #include <syscall/memory.h>
+#include <syscall/uaccess.h>
+
+#include <cstring>
 
 namespace {
     /**
@@ -39,64 +42,64 @@ namespace {
 }  // namespace
 
 namespace syscall {
-    bool mem_create(CapIdx idx, size_t memsz, bool shared, bool continuity,
-                    cap::MemoryGrowth growth) {
+    Result<CapIdx> mem_create(size_t memsz, bool shared, bool continuity,
+                              cap::MemoryGrowth growth) {
         if (shared && growth != cap::MemoryGrowth::FIXED) {
-            return false;
+            unexpect_return(ErrCode::INVALID_PARAM);
         }
         auto payload =
             new cap::MemoryPayload(memsz, shared, continuity, growth);
         auto insert_res =
             cap::CHolder::current().and_then([&](cap::CHolder *holder) {
-                return holder->internal_insert(idx, payload);
+                return holder->internal_insert_to_free(payload);
             });
         if (!insert_res.has_value()) {
             delete payload;
-            loggers::SYSCALL::ERROR("mem_create失败: err=%d",
-                                    insert_res.error());
-            return false;
+            propagate_return(insert_res);
         }
-        return true;
+        return insert_res.value();
     }
 
-    bool mem_unmap(CapIdx idx, VirAddr vaddr) {
+    Result<bool> mem_unmap(CapIdx idx, VirAddr vaddr) {
         cap::Capability *cap = nullptr;
         auto memory_res      = lookup_memory(idx, &cap);
-        if (!memory_res.has_value()) {
-            return false;
-        }
+        propagate(memory_res);
         auto *tmm = env::inst().tmm();
         if (tmm == nullptr) {
-            return false;
+            unexpect_return(ErrCode::INVALID_PARAM);
         }
         cap::MemoryObject obj(util::nnullforce(cap));
         auto remove_res = obj.unmap_from(*tmm, vaddr);
-        return remove_res.has_value();
+        propagate(remove_res);
+        return true;
     }
 
-    bool mem_resize(CapIdx idx, size_t newsz) {
+    Result<bool> mem_resize(CapIdx idx, size_t newsz) {
         cap::Capability *cap = nullptr;
         auto memory_res      = lookup_memory(idx, &cap);
-        if (!memory_res.has_value()) {
-            return false;
-        }
+        propagate(memory_res);
         cap::MemoryObject obj(util::nnullforce(cap));
         auto *tmm       = env::inst().tmm();
         auto resize_res = obj.resize_in(tmm, newsz);
-        return resize_res.has_value();
+        propagate(resize_res);
+        return true;
     }
 
-    MemQueryRet mem_query(CapIdx idx) {
+    Result<void> mem_query(CapIdx idx, VirAddr out_uaddr) {
+        if (!out_uaddr.nonnull()) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
         cap::Capability *cap = nullptr;
         auto memory_res      = lookup_memory(idx, &cap);
-        if (!memory_res.has_value()) {
-            return {0, 0};
-        }
+        propagate(memory_res);
         cap::MemoryObject obj(util::nnullforce(cap));
         auto query_res = obj.query();
-        if (!query_res.has_value()) {
-            return {0, 0};
-        }
-        return {query_res.value().memsz, query_res.value().allocated};
+        propagate(query_res);
+
+        MemQueryRet ret{query_res.value().memsz, query_res.value().allocated};
+        UBuffer out_buf(out_uaddr, sizeof(ret));
+        memcpy(out_buf.kbuf(), &ret, sizeof(ret));
+        out_buf.sync_to_user();
+        void_return();
     }
 }  // namespace syscall

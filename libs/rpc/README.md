@@ -9,19 +9,20 @@ sustcore RPC协议基于sustcore IPC, 其中 sustcore IPC 消息包的结构为:
 ``` cpp
 struct MsgPacket {
     /// 消息数据缓冲区.
-    void *msgbuf;
-    /// 指向消息字节数的用户态地址.
-    size_t *msgsz;
+    byte msgbuf[MAX_MSG_SIZE];
+    /// 消息字节数或接收缓冲容量.
+    size_t msgsz;
     /// Capability索引列表缓冲区.
-    CapIdx *caplist;
-    /// 指向Capability数量的用户态地址.
-    size_t *capsz;
+    CapIdx caplist[MAX_MSG_CAPS];
+    /// Capability数量或接收cap列表容量.
+    size_t capsz;
 };
 ```
 
 其中主要信息存放在 `msgbuf` 中, RPC协议规定了 `msgbuf` 中的调用消息数据格式如下:
 
 ``` cpp
+rpc_request_magic: u32
 service_magic: u32,     // 只有在 service_magic 与该服务匹配的情况下, 才会被该服务处理, 否则消息将被拒收, 立即返回一个 ErrorResponse
 packet_type: u32,       // 消息包类型 (RPC_CALL)
 session_id: u32,        // 调用所在的会话ID
@@ -35,6 +36,7 @@ args: bytes,            // RPC 函数参数数据, 由服务定义, 由客户端
 其相应的响应消息数据格式如下:
 
 ``` cpp
+rpc_response_magic: u32
 service_magic: u32,       // 只有在 service_magic 与该服务匹配的情况下, 才是一个合适的 RPC 响应
 packet_type: u32,         // 消息包类型 (RPC_RESPONSE)
 session_id: u32,          // 调用所在的会话ID
@@ -81,6 +83,7 @@ $arg size = \sum_{i=0}^{n-1} sizeof(type_i) * count_i$
 RPC 协议规定了 `msgbuf` 中的会话消息数据格式如下:
 
 ``` cpp
+rpc_request_magic: u32,         // 表明该消息是一个 RPC 请求消息, 其值为一个固定的魔数, 由 RPC 协议定义
 service_magic: u32,     // 只有在 service_magic 与该服务匹配的情况下, 才会被该服务处理, 否则消息将被拒收, 立即返回一个 ErrorResponse
 packet_type: u32,       // 消息包类型 (RPC_SESSION)
 ```
@@ -88,6 +91,7 @@ packet_type: u32,       // 消息包类型 (RPC_SESSION)
 其相应的响应消息数据格式如下:
 
 ``` cpp
+rpc_response_magic: u32,         // 表明该消息是一个 RPC 消息, 其值为一个固定的魔数, 由 RPC 协议定义
 service_magic: u32,     // 只有在 service_magic 与该服务匹配的情况下, 才是一个合适的 SESSION 响应
 packet_type: u32,       // 消息包类型 (RPC_SESSION_RESPONSE)
 session_id: u32,        // 调用所在的会话ID, 由服务器生成
@@ -98,6 +102,7 @@ session_id: u32,        // 调用所在的会话ID, 由服务器生成
 此外还有结束会话消息, 其数据格式如下:
 
 ``` cpp
+rpc_request_magic: u32,         // 表明该消息是一个 RPC 请求消息, 其值为一个固定的魔数, 由 RPC 协议定义
 service_magic: u32,     // 只有在 service_magic 与该服务匹配的情况下, 才会被该服务处理, 否则消息将被拒收,
 packet_type: u32,       // 消息包类型 (RPC_SESSION_END)
 session_id: u32,        // 要结束的会话ID
@@ -106,10 +111,13 @@ session_id: u32,        // 要结束的会话ID
 以及相应的响应消息数据格式如下:
 
 ``` cpp
+rpc_response_magic: u32,         // 表明该消息是一个 RPC 消息, 其值为一个固定的魔数, 由 RPC 协议定义
 service_magic: u32,     // 只有在 service_magic 与该服务匹配的情况下, 才是一个合适的 SESSION_END 响应
 packet_type: u32,       // 消息包类型 (RPC_SESSION_END_RESPONSE)
 session_id: u32,        // 要结束的会话ID
 ```
+
+其中 rpc_request_magic 的值是 `RPCC` 的 ASCII 码, rpc_response_magic 的值是 'RPCR' 的 ASCII 码.
 
 ## RPC 库函数
 
@@ -149,8 +157,8 @@ int mainloop()
 {
     MyServiceImpl service_impl;
 
-    rpc::Message msg;
-    rpc::Message reply;
+    MsgPacket msg;
+    MsgPacket reply;
     rpc::receive(&msg);
 
     while (true)

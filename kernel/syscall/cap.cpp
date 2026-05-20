@@ -19,40 +19,27 @@
 #include <syscall/uaccess.h>
 
 namespace syscall {
-    // 将 capability 操作的 Result 映射为 bool, 避免入口重复处理
-    bool cap_clone(CapIdx src, CapIdx target) {
-        auto clone_res = cap::CHolder::clone(target, src);
-        if (!clone_res.has_value()) {
-            loggers::SYSCALL::ERROR("clone capability失败: err=%d",
-                                    clone_res.error());
-            return false;
-        }
-        return true;
+    Result<CapIdx> cap_clone(CapIdx src) {
+        auto clone_res = cap::CHolder::clone(src);
+        propagate(clone_res);
+        return clone_res.value();
     }
 
-    bool cap_downgrade(CapIdx idx, b64 new_perm) {
+    Result<bool> cap_downgrade(CapIdx idx, b64 new_perm) {
         auto downgrade_res = cap::CHolder::downgrade(idx, new_perm);
-        if (!downgrade_res.has_value()) {
-            loggers::SYSCALL::ERROR("downgrade capability失败: err=%d",
-                                    downgrade_res.error());
-            return false;
-        }
+        propagate(downgrade_res);
         return true;
     }
 
-    bool cap_derive(CapIdx src, CapIdx target, b64 new_perm) {
-        auto derive_res = cap::CHolder::derive(target, src, new_perm);
-        if (!derive_res.has_value()) {
-            loggers::SYSCALL::ERROR("derive capability失败: err=%d",
-                                    derive_res.error());
-            return false;
-        }
-        return true;
+    Result<CapIdx> cap_derive(CapIdx src, b64 new_perm) {
+        auto derive_res = cap::CHolder::derive(src, new_perm);
+        propagate(derive_res);
+        return derive_res.value();
     }
 
-    bool sys_cap_lookup(CapIdx idx, VirAddr info_uaddr) {
+    Result<bool> sys_cap_lookup(CapIdx idx, VirAddr info_uaddr) {
         if (!info_uaddr.nonnull()) {
-            return false;
+            unexpect_return(ErrCode::NULLPTR);
         }
 
         auto cap_res = cap::CHolder::lookup(idx);
@@ -60,8 +47,7 @@ namespace syscall {
             if (cap_res.error() == ErrCode::OUT_OF_BOUNDARY) {
                 return false;
             }
-            loggers::SYSCALL::ERROR("sys_cap_lookup失败: err=%d", cap_res.error());
-            return false;
+            propagate_return(cap_res);
         }
 
         // 将能力类型与权限回填到用户态缓冲区
@@ -75,27 +61,18 @@ namespace syscall {
         return true;
     }
 
-    bool cap_remove(CapIdx idx) {
+    Result<bool> cap_remove(CapIdx idx) {
         auto cap_res = cap::CHolder::lookup(idx);
-        if (!cap_res.has_value()) {
-            loggers::SYSCALL::ERROR("cap_remove lookup失败: idx=%p err=%d", idx,
-                                    cap_res.error());
-            return false;
-        }
+        propagate(cap_res);
         auto *memory = cap_res.value()->payload_as<cap::MemoryPayload>();
         auto *tmm    = env::inst().tmm();
         if (memory != nullptr && tmm != nullptr &&
             tmm->has_memory_mapping(memory))
         {
-            loggers::SYSCALL::ERROR("cap_remove失败: Memory 仍被 VMA 使用");
-            return false;
+            unexpect_return(ErrCode::BUSY);
         }
         auto remove_res = cap::CHolder::remove(idx);
-        if (!remove_res.has_value()) {
-            loggers::SYSCALL::ERROR("cap_remove失败: idx=%p err=%d", idx,
-                                    remove_res.error());
-            return false;
-        }
+        propagate(remove_res);
         return true;
     }
 }  // namespace syscall

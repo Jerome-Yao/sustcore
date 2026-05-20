@@ -22,37 +22,52 @@ namespace schd::idle {
     public:
         using SUType                          = SU;
         constexpr static ClassType CLASS_TYPE = ClassType::IDLE;
-        util::nonnull<SUType *> idle_unit;
-
-    public:
-        constexpr explicit IDLE(util::nonnull<SUType *> idle_unit)
-            : idle_unit(idle_unit) {
-            this->cursched = this->asmeta(idle_unit);
-        }
 
         Result<void> enqueue(util::nonnull<RQ *> rq,
                              util::nonnull<SUType *> unit) override {
-            unexpect_return(ErrCode::NOT_SUPPORTED);
+            auto meta   = this->asmeta(unit);
+            meta->state = ThreadState::READY;
+            rq->idle_list.push_back(*meta);
+            void_return();
         }
 
         Result<void> dequeue(util::nonnull<RQ *> rq,
                              util::nonnull<SUType *> unit) override {
-            unexpect_return(ErrCode::NOT_SUPPORTED);
+            auto meta = this->asmeta(unit);
+            if (!rq->idle_list.contains(*meta)) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            rq->idle_list.remove(*meta);
+            meta->state = ThreadState::EMPTY;
+            void_return();
         }
 
         Result<util::nonnull<SUType *>> pick_next(
             util::nonnull<RQ *> rq) override {
-            return idle_unit;
+            if (rq->idle_list.empty()) {
+                unexpect_return(ErrCode::NO_RUNNABLE_THREAD);
+            }
+            SchedMeta &meta = rq->idle_list.front();
+            meta.state      = ThreadState::RUNNING;
+            rq->idle_list.pop_front();
+            this->cursched = &meta;
+            return this->asunit(meta);
         }
 
         Result<void> put_prev(util::nonnull<RQ *> rq,
                               util::nonnull<SUType *> unit) override {
+            auto meta   = this->asmeta(unit);
+            meta->state = ThreadState::READY;
+            rq->idle_list.push_back(*meta);
             void_return();
         }
 
         Result<void> yield(util::nonnull<RQ *> rq) override {
             // 为当前进程添加 NEED_RESCHED 标志
-            this->cursched->template flags_set<SchedMeta::FLAGS_NEED_RESCHED>();
+            if (this->cursched != nullptr) {
+                this->cursched
+                    ->template flags_set<SchedMeta::FLAGS_NEED_RESCHED>();
+            }
             void_return();
         }
 

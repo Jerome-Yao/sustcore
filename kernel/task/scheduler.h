@@ -12,6 +12,7 @@
 #pragma once
 
 #include <schd/idle.h>
+#include <schd/init.h>
 #include <schd/schdbase.h>
 #include <sus/nonnull.h>
 #include <sustcore/errcode.h>
@@ -30,6 +31,7 @@ namespace schd {
         rr::RR<TCB> _rr_schd;
         fcfs::FCFS<TCB> _fcfs_schd;
         idle::IDLE<TCB> _idle_schd;
+        init::INIT<TCB> _init_schd;
 
     public:
         static void init(util::nonnull<TCB *> init_tcb);
@@ -37,7 +39,10 @@ namespace schd {
         static Scheduler &inst();
 
         constexpr Scheduler(util::nonnull<TCB *> init_tcb)
-            : _idle_schd(init_tcb) {}
+            : _curtcb(init_tcb.get()), _curpcb(init_tcb->task) {
+            init_tcb->basic_entity.state = ThreadState::RUNNING;
+            _init_schd.cursched = &init_tcb->basic_entity;
+        }
 
         constexpr util::nonnull<RQ *> rq() {
             return _rq;
@@ -55,6 +60,10 @@ namespace schd {
             return _idle_schd;
         }
 
+        constexpr util::nonnull<init::INIT<TCB> *> init_schd() {
+            return _init_schd;
+        }
+
         [[nodiscard]]
         constexpr TCB *current_tcb() const {
             return _curtcb;
@@ -64,6 +73,7 @@ namespace schd {
 
         constexpr Result<BaseSchedPtr> schd(ClassType type) {
             switch (type) {
+                case ClassType::INIT: return {init_schd()};
                 case ClassType::RR:   return {rr_schd()};
                 case ClassType::FCFS: return {fcfs_schd()};
                 case ClassType::IDLE: return {idle_schd()};
@@ -89,6 +99,9 @@ namespace schd {
          */
         template <typename Func>
         void foreach_schdclass(Func f, ClassType bot = ClassType::BOT) {
+            if (ClassType::INIT >= bot) {
+                f(init_schd());
+            }
             if (ClassType::RR >= bot) {
                 f(rr_schd());
             }

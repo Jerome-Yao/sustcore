@@ -29,53 +29,32 @@ namespace syscall {
         return cap::NotificationObject(util::nnullforce(cap));
     }
 
-    // TODO: allow syscall to directly return an result,
-    // and when returning an error, let the return value to be -errcode,
-    // and automatically log the error in the syscall_entrance function,
-    // to avoid repetitive error handling code in each syscall handler.
-    bool wait_notification(CapIdx capidx, size_t idx) {
+    Result<bool> wait_notification(CapIdx capidx, size_t idx) {
         auto notif_res = notif_object(capidx).and_then(
             [idx](cap::NotificationObject obj) { return obj.wait(idx); });
-        if (!notif_res.has_value()) {
-            loggers::SYSCALL::ERROR("等待notification失败: err=%s",
-                                    to_cstring(notif_res.error()));
-            return false;
-        }
+        propagate(notif_res);
         return notif_res.value();
     }
 
-    bool notification_signal(CapIdx capidx, size_t idx, bool state) {
+    Result<bool> notification_signal(CapIdx capidx, size_t idx, bool state) {
         auto set_res = notif_object(capidx).and_then(
             [idx, state](cap::NotificationObject obj) {
                 return obj.set(idx, state);
             });
-        if (!set_res.has_value()) {
-            loggers::SYSCALL::ERROR("设置notification失败: err=%s",
-                                    to_cstring(set_res.error()));
-            return false;
-        }
+        propagate(set_res);
         return set_res.value();
     }
 
-    bool check_notification(CapIdx capidx, size_t idx) {
+    Result<bool> check_notification(CapIdx capidx, size_t idx) {
         auto query_res = notif_object(capidx).and_then(
             [idx](cap::NotificationObject obj) { return obj.query(idx); });
-        if (!query_res.has_value()) {
-            loggers::SYSCALL::ERROR("查询notification失败: err=%d",
-                                    query_res.error());
-            return false;
-        }
+        propagate(query_res);
         return query_res.value();
     }
 
-    bool notification_create(CapIdx capidx) {
-        auto create_res =
-            cap::CHolder::create<cap::NotificationPayload>(capidx);
-        if (!create_res.has_value()) {
-            loggers::SYSCALL::ERROR("创建notification失败: err=%s",
-                                    to_cstring(create_res.error()));
-            return false;
-        }
-        return true;
+    Result<CapIdx> notification_create() {
+        auto create_res = cap::CHolder::create<cap::NotificationPayload>();
+        propagate(create_res);
+        return create_res.value();
     }
 }  // namespace syscall

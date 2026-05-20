@@ -14,6 +14,7 @@
 #include <env.h>
 #include <exe/elfloader.h>
 #include <exe/task.h>
+#include <guard.h>
 #include <logger.h>
 #include <mem/alloc.h>
 #include <mem/slub.h>
@@ -260,13 +261,11 @@ namespace task {
         util::nonnull<TCB *> tcb = con_res.value();
         auto tcb_guard = util::Guard([this, tcb]() { (void)recycle_tcb(tcb); });
 
-        auto tcb_cap_slot_res = pcb->cholder->internal_lookup_freeslot();
-        propagate(tcb_cap_slot_res);
         auto tcb_cap_res = pcb->cholder->internal_create<cap::TCBPayload>(
-            tcb_cap_slot_res.value(), tcb.get());
+            tcb.get());
         propagate(tcb_cap_res);
 
-        pcb->main_tcb_cap          = tcb_cap_slot_res.value();
+        pcb->main_tcb_cap          = tcb_cap_res.value();
         startup_info.pcb_cap       = pcb->pcb_cap;
         startup_info.main_tcb_cap  = pcb->main_tcb_cap;
         startup_info.stack_mem_cap = stack_cap_res.value();
@@ -330,13 +329,11 @@ namespace task {
         tcb->task       = pcb;
         tcb->schd_class = schd_class;
 
-        auto tcb_cap_slot_res = pcb->cholder->internal_lookup_freeslot();
-        propagate(tcb_cap_slot_res);
         auto tcb_cap_res = pcb->cholder->internal_create<cap::TCBPayload>(
-            tcb_cap_slot_res.value(), tcb.get());
+            tcb.get());
         propagate(tcb_cap_res);
 
-        pcb->main_tcb_cap          = tcb_cap_slot_res.value();
+        pcb->main_tcb_cap          = tcb_cap_res.value();
         startup_info.main_tcb_cap  = pcb->main_tcb_cap;
         startup_info.stack_mem_cap = stack_cap_res.value();
         tcb->context()->write_startup(startup_info);
@@ -417,9 +414,9 @@ namespace task {
 
     Result<util::nonnull<PCB *>> TaskManager::create_init_task(
         TaskSpec spec /* ... args*/) {
-        constexpr schd::ClassType INIT_SCHED_CLASS = schd::ClassType::IDLE;
+        constexpr schd::ClassType INIT_SCHED_CLASS = schd::ClassType::INIT;
         util::nonnull<PCB *> pcb                   = alloc_pcb();
-        auto pcb_guard = util::Guard([pcb]() { delete pcb.get(); });
+        auto pcb_guard = delete_guard(util::owner(pcb.get()));
 
         auto init_res = init_pcb(pcb, spec);
         if (!init_res.has_value()) {
@@ -443,7 +440,7 @@ namespace task {
     Result<util::nonnull<PCB *>> TaskManager::create_task(
         TaskSpec spec, schd::ClassType schd_class /* ... args*/) {
         util::nonnull<PCB *> pcb = alloc_pcb();
-        auto pcb_guard           = util::Guard([pcb]() { delete pcb.get(); });
+        auto pcb_guard           = delete_guard(util::owner(pcb.get()));
 
         auto init_res = init_pcb(pcb, spec);
         if (!init_res.has_value()) {
@@ -627,7 +624,7 @@ namespace task {
             });
     }
 
-    Result<ForkResult> TaskManager::fork_current() {
+    Result<ForkResult> TaskManager::fork_current(CapIdx ret_slot) {
         auto *parent_tcb = schd::Scheduler::inst().current_tcb();
         auto *parent_ctx = env::inst().trap_context();
         if (parent_tcb == nullptr || parent_tcb->task == nullptr ||
@@ -639,10 +636,6 @@ namespace task {
         if (parent_pcb->tmm == nullptr || parent_pcb->cholder == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
-
-        auto ret_slot_res = parent_pcb->cholder->internal_lookup_freeslot();
-        propagate(ret_slot_res);
-        CapIdx ret_slot = ret_slot_res.value();
 
         auto holder_res = cap::CHolderManager::inst().create_holder();
         propagate(holder_res);
@@ -692,7 +685,7 @@ namespace task {
         }
 
         util::nonnull<PCB *> child_pcb = alloc_pcb();
-        auto pcb_guard = util::Guard([child_pcb]() { delete child_pcb.get(); });
+        auto pcb_guard = delete_guard(util::owner(child_pcb.get()));
         TaskSpec spec{child_tmm, child_holder, parent_pcb->entrypoint};
         auto init_res = init_pcb(child_pcb, spec);
         if (!init_res.has_value()) {
@@ -711,9 +704,13 @@ namespace task {
 
         *child_tcb->context()                             = *parent_ctx;
         child_tcb->context()->sepc                       += 4;
-        child_tcb->context()->regs[Context::A0_BASE]      = ret_slot;
-        child_tcb->context()->regs[Context::A0_BASE + 1]  = 0;
-        child_tcb->schd_class   = parent_tcb->schd_class;
+        child_tcb->context()->regs[Context::A0_BASE]      = 0;
+        child_tcb->context()->regs[Context::A0_BASE + 1]  =
+            static_cast<b64>(ErrCode::SUCCESS);
+        child_tcb->schd_class =
+            parent_tcb->schd_class == schd::ClassType::INIT
+                ? schd::ClassType::FCFS
+                : parent_tcb->schd_class;
         child_tcb->basic_entity = {};
         child_tcb->rr_entity    = {};
         child_pcb->threads.push_back(*child_tcb);
@@ -780,14 +777,10 @@ namespace task {
         util::nonnull<TCB *> tcb = con_res.value();
         auto tcb_guard = util::Guard([this, tcb]() { (void)recycle_tcb(tcb); });
 
-        auto slot_res = pcb->cholder->internal_lookup_freeslot();
-        propagate(slot_res);
         auto cap_res = pcb->cholder->internal_create<cap::TCBPayload>(
-            slot_res.value(), tcb.get());
+            tcb.get());
         propagate(cap_res);
-        auto cap_guard = util::Guard([pcb, slot = slot_res.value()]() {
-            (void)pcb->cholder->internal_remove(slot);
-        });
+        auto cap_guard = remove_guard(pcb->cholder, cap_res.value());
 
         if (!schd::Scheduler::inst().wakeup_new(tcb.get())) {
             unexpect_return(ErrCode::CREATION_FAILED);
@@ -795,7 +788,7 @@ namespace task {
 
         cap_guard.release();
         tcb_guard.release();
-        return slot_res.value();
+        return cap_res.value();
     }
 
     Result<void> TaskManager::exec_current(const char *path,
@@ -863,17 +856,15 @@ namespace task {
         });
         // 使用 RAII 确保在函数退出时正确释放 Image File 资源,
         // 避免内存泄漏或资源泄漏
-        auto image_guard = util::Guard([&]() {
-            if (preload_res.has_value()) {
-                (void)pcb->cholder->internal_remove(preload_res.value());
-            }
-        });
+        auto image_guard = remove_guard(pcb->cholder, preload_res.value());
 
         auto load_res = loader::elf::load(spec, load_prm);
         propagate(load_res);
 
         // TODO: 接下来的操作会对当前进程的内存空间和能力空间进行大幅修改,
         // 应妥善处理执行失败的情况
+
+        image_guard.release();
 
         // 将 cholder 删减至仅包含 pcb_cap 和 reserved_caps 中的能力索引,
         // 以确保 exec 后不保留不必要的能力

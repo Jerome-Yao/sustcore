@@ -11,6 +11,8 @@
 
 #include <cap/cholder.h>
 #include <env.h>
+#include <guard.h>
+#include <logger.h>
 #include <object/memory.h>
 #include <object/perm.h>
 #include <sustcore/capability.h>
@@ -128,6 +130,12 @@ namespace cap {
     Result<void> CHolder::internal_remove(CapIdx idx) {
         auto cap_res = internal_lookup(idx);
         propagate(cap_res);
+
+        if (cap_res.value() == nullptr) {
+            loggers::CAPABILITY::WARN("尝试移除空槽位 {}", idx);
+            void_return();
+        }
+
         return set_slot(idx, nullptr);
     }
 
@@ -135,13 +143,7 @@ namespace cap {
         _space.clear();
     }
 
-    Result<void> CHolder::internal_clone(CapIdx target_idx, CapIdx src_idx) {
-        if (!cap::valid(target_idx)) {
-            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
-        }
-        if (_space.get(target_idx) != nullptr) {
-            unexpect_return(ErrCode::SLOT_BUSY);
-        }
+    Result<CapIdx> CHolder::internal_clone(CapIdx src_idx) {
         auto cap_res = internal_lookup(src_idx);
         propagate(cap_res);
 
@@ -149,6 +151,10 @@ namespace cap {
         if (!perm::imply(src_cap->perm(), perm::basic::CLONE)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
+
+        auto target_res = internal_lookup_freeslot();
+        propagate(target_res);
+        CapIdx target_idx = target_res.value();
 
         auto *cloned_cap = src_cap->clone();
         auto set_res     = set_slot(target_idx, cloned_cap);
@@ -167,47 +173,15 @@ namespace cap {
                 propagate_return(cow_res);
             }
         }
-        void_return();
+        return target_idx;
     }
 
-    Result<void> CHolder::internal_migrate(CapIdx target_idx, CapIdx src_idx) {
-        if (!cap::valid(target_idx)) {
-            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
-        }
-        if (target_idx != src_idx && _space.get(target_idx) != nullptr) {
-            unexpect_return(ErrCode::SLOT_BUSY);
-        }
-        auto cap_res = internal_lookup(src_idx);
-        propagate(cap_res);
-
-        Capability *src_cap = cap_res.value();
-        bool can_migrate =
-            perm::imply(src_cap->perm(), perm::basic::MIGRATE);
-        bool can_migrate_once =
-            perm::imply(src_cap->perm(), perm::basic::MIGRATE_ONCE);
-        if (!can_migrate && !can_migrate_once) {
-            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
-        }
-
-        auto move_res = _space.move(target_idx, src_idx);
-        propagate(move_res);
-        if (can_migrate_once) {
-            auto moved_res = internal_lookup(target_idx);
-            propagate(moved_res);
-            moved_res.value()->clear_perm(perm::basic::MIGRATE_ONCE);
-        }
-        void_return();
-    }
-
-    Result<void> CHolder::internal_derive(CapIdx target_idx, CapIdx src_idx,
-                                          b64 new_perm) {
-        auto clone_res = internal_clone(target_idx, src_idx);
+    Result<CapIdx> CHolder::internal_derive(CapIdx src_idx, b64 new_perm) {
+        auto clone_res = internal_clone(src_idx);
         propagate(clone_res);
+        CapIdx target_idx = clone_res.value();
 
-        util::Guard clone_guard([this, target_idx] {
-            auto remove_res = internal_remove(target_idx);
-            assert(remove_res.has_value());
-        });
+        auto clone_guard = remove_guard(this, target_idx);
 
         auto cap_res = internal_lookup(target_idx);
         assert(cap_res.has_value());
@@ -215,7 +189,7 @@ namespace cap {
         propagate(downgrade_res);
 
         clone_guard.release();
-        void_return();
+        return target_idx;
     }
 
     Result<void> CHolder::internal_downgrade(CapIdx idx, b64 new_perm) {
@@ -223,6 +197,52 @@ namespace cap {
         propagate(cap_res);
 
         return cap_res.value()->downgrade(new_perm);
+    }
+
+    Result<CapIdx> CHolder::internal_transfer_to(CHolder &dst,
+                                                 CapIdx src_idx) {
+        auto cap_res = internal_lookup(src_idx);
+        propagate(cap_res);
+        Capability *src_cap = cap_res.value();
+
+        if (src_cap->imply(perm::basic::CLONE)) {
+            auto *cloned_cap = src_cap->clone();
+            if (cloned_cap == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+
+            auto target_res = dst.internal_lookup_freeslot();
+            if (!target_res.has_value()) {
+                delete cloned_cap;
+                propagate_return(target_res);
+            }
+
+            auto set_res = dst.set_slot(target_res.value(), cloned_cap);
+            if (!set_res.has_value()) {
+                delete cloned_cap;
+                propagate_return(set_res);
+            }
+            return target_res.value();
+        }
+
+        if (!src_cap->imply(perm::basic::MIGRATE) &&
+            !src_cap->imply(perm::basic::MIGRATE_ONCE))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+
+        b64 delivered_perm = src_cap->perm() & ~perm::basic::MIGRATE_ONCE;
+        auto insert_res =
+            dst.internal_insert_to_free(src_cap->payload(), delivered_perm);
+        propagate(insert_res);
+
+        auto remove_res = internal_remove(src_idx);
+        if (!remove_res.has_value()) {
+            auto rollback_res = dst.internal_remove(insert_res.value());
+            assert(rollback_res.has_value());
+            propagate_return(remove_res);
+        }
+        return insert_res.value();
     }
 
     Result<void> CHolder::internal_copy_all_to(CHolder &dst) const {
@@ -268,22 +288,15 @@ namespace cap {
             [idx](CHolder *holder) { return holder->internal_remove(idx); });
     }
 
-    Result<void> CHolder::clone(CapIdx target_idx, CapIdx src_idx) {
+    Result<CapIdx> CHolder::clone(CapIdx src_idx) {
         return current().and_then([=](CHolder *holder) {
-            return holder->internal_clone(target_idx, src_idx);
+            return holder->internal_clone(src_idx);
         });
     }
 
-    Result<void> CHolder::migrate(CapIdx target_idx, CapIdx src_idx) {
-        return current().and_then([=](CHolder *holder) {
-            return holder->internal_migrate(target_idx, src_idx);
-        });
-    }
-
-    Result<void> CHolder::derive(CapIdx target_idx, CapIdx src_idx,
-                                 b64 new_perm) {
+    Result<CapIdx> CHolder::derive(CapIdx src_idx, b64 new_perm) {
         return current().and_then([&](CHolder *holder) {
-            return holder->internal_derive(target_idx, src_idx, new_perm);
+            return holder->internal_derive(src_idx, new_perm);
         });
     }
 

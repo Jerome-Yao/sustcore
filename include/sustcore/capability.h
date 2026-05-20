@@ -53,9 +53,6 @@ constexpr const char *to_string(PayloadType type) {
     }
 }
 
-constexpr size_t MAX_MSG_SIZE = 128;
-constexpr size_t MAX_MSG_CAPS = 4;
-
 using CapIdx  = b64;
 using RecvIdx = b64;
 

@@ -11,6 +11,8 @@
 
 #include <cap/capability.h>
 #include <cap/cholder.h>
+#include <guard.h>
+#include <object/endpoint.h>
 #include <object/intobj.h>
 #include <object/perm.h>
 #include <test/cap.h>
@@ -48,13 +50,9 @@ namespace test::cap {
             tassert(holder_res.has_value(), "创建 CHolder");
             auto *holder = holder_res.value();
 
-            auto idx_res = holder->internal_lookup_freeslot();
-            tassert(idx_res.has_value(), "分配槽位");
-            CapIdx idx = idx_res.value();
-
-            auto create_res =
-                holder->internal_create<kcap::IntPayload>(idx, 12345);
+            auto create_res = holder->internal_create<kcap::IntPayload>(12345);
             tassert(create_res.has_value(), "创建 IntPayload 能力");
+            CapIdx idx = create_res.value();
 
             auto cap_res = holder->internal_lookup(idx);
             tassert(cap_res.has_value(), "取回能力");
@@ -82,17 +80,13 @@ namespace test::cap {
             tassert(holder_res.has_value(), "创建 CHolder");
             auto *holder = holder_res.value();
 
-            auto src_res = holder->internal_lookup_freeslot();
-            tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src      = src_res.value();
-            auto create_res = holder->internal_create<kcap::IntPayload>(src, 7);
+            auto create_res = holder->internal_create<kcap::IntPayload>(7);
             tassert(create_res.has_value(), "创建源能力");
+            CapIdx src = create_res.value();
 
-            auto dst_res = holder->internal_lookup_freeslot();
-            tassert(dst_res.has_value(), "分配 clone 槽位");
-            CapIdx dst     = dst_res.value();
-            auto clone_res = holder->internal_clone(dst, src);
+            auto clone_res = holder->internal_clone(src);
             tassert(clone_res.has_value(), "clone 成功");
+            CapIdx dst = clone_res.value();
 
             kcap::IntObj src_op(
                 util::nnullforce(holder->internal_lookup(src).value()));
@@ -116,20 +110,14 @@ namespace test::cap {
             tassert(holder_res.has_value(), "创建 CHolder");
             auto *holder = holder_res.value();
 
-            auto src_res = holder->internal_lookup_freeslot();
-            tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src = src_res.value();
-            auto create_res =
-                holder->internal_create<kcap::IntPayload>(src, 100);
+            auto create_res = holder->internal_create<kcap::IntPayload>(100);
             tassert(create_res.has_value(), "创建源能力");
-
-            auto dst_res = holder->internal_lookup_freeslot();
-            tassert(dst_res.has_value(), "分配派生槽位");
-            CapIdx dst = dst_res.value();
+            CapIdx src = create_res.value();
 
             b64 read_only   = perm::intobj::READ;
-            auto derive_res = holder->internal_derive(dst, src, read_only);
+            auto derive_res = holder->internal_derive(src, read_only);
             tassert(derive_res.has_value(), "derive READ-only 成功");
+            CapIdx dst = derive_res.value();
 
             kcap::IntObj derived(
                 util::nnullforce(holder->internal_lookup(dst).value()));
@@ -144,83 +132,6 @@ namespace test::cap {
         }
     };
 
-    class CaseMigrate : public TestCase {
-    public:
-        CaseMigrate() : TestCase("migrate 仅在同一 CHolder 内移动") {}
-
-        void _run(void *env [[maybe_unused]]) const noexcept override {
-            auto holder_res = new_holder();
-            tassert(holder_res.has_value(), "创建 CHolder");
-            auto *holder = holder_res.value();
-
-            auto src_res = holder->internal_lookup_freeslot();
-            tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src = src_res.value();
-            auto create_res =
-                holder->internal_create<kcap::IntPayload>(src, 11);
-            tassert(create_res.has_value(), "创建源能力");
-
-            auto dst_res = holder->internal_lookup_freeslot();
-            tassert(dst_res.has_value(), "分配目标槽位");
-            CapIdx dst       = dst_res.value();
-            auto migrate_res = holder->internal_migrate(dst, src);
-            tassert(migrate_res.has_value(), "migrate 成功");
-
-            auto src_lookup = holder->internal_lookup(src);
-            tassert(!src_lookup.has_value() &&
-                        src_lookup.error() == ErrCode::OUT_OF_BOUNDARY,
-                    "源槽位已清空");
-
-            kcap::IntObj dst_op(
-                util::nnullforce(holder->internal_lookup(dst).value()));
-            auto read_res = dst_op.read();
-            tassert(read_res.has_value() && read_res.value() == 11,
-                    "目标槽位读值正确");
-        }
-    };
-
-    class CaseMigrateOnce : public TestCase {
-    public:
-        CaseMigrateOnce() : TestCase("migrate_once 迁移后自动取消权限") {}
-
-        void _run(void *env [[maybe_unused]]) const noexcept override {
-            auto holder_res = new_holder();
-            tassert(holder_res.has_value(), "创建 CHolder");
-            auto *holder = holder_res.value();
-
-            auto src_res = holder->internal_lookup_freeslot();
-            tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src = src_res.value();
-            auto create_res =
-                holder->internal_create<kcap::IntPayload>(src, 22);
-            tassert(create_res.has_value(), "创建源能力");
-
-            auto downgrade_res =
-                holder->internal_downgrade(src, perm::basic::MIGRATE_ONCE);
-            tassert(downgrade_res.has_value(), "降级为 MIGRATE_ONCE");
-
-            auto dst_res = holder->internal_lookup_freeslot();
-            tassert(dst_res.has_value(), "分配目标槽位");
-            CapIdx dst       = dst_res.value();
-            auto migrate_res = holder->internal_migrate(dst, src);
-            tassert(migrate_res.has_value(), "migrate_once 成功");
-
-            auto moved_cap = holder->internal_lookup(dst);
-            tassert(moved_cap.has_value(), "目标槽位存在");
-            tassert(!moved_cap.value()->imply(perm::basic::MIGRATE_ONCE),
-                    "MIGRATE_ONCE 被自动取消");
-
-            auto next_dst_res = holder->internal_lookup_freeslot();
-            tassert(next_dst_res.has_value(), "分配第二目标槽位");
-            auto second_migrate =
-                holder->internal_migrate(next_dst_res.value(), dst);
-            tassert(!second_migrate.has_value() &&
-                        second_migrate.error() ==
-                            ErrCode::INSUFFICIENT_PERMISSIONS,
-                    "不能二次迁移");
-        }
-    };
-
     class CasePayloadDestruct : public TestCase {
     public:
         CasePayloadDestruct() : TestCase("payload 最后引用释放时 destruct") {}
@@ -232,17 +143,13 @@ namespace test::cap {
             tassert(holder_res.has_value(), "创建 CHolder");
             auto *holder = holder_res.value();
 
-            auto src_res = holder->internal_lookup_freeslot();
-            tassert(src_res.has_value(), "分配源槽位");
-            CapIdx src      = src_res.value();
-            auto create_res = holder->internal_create<CountingPayload>(src, 1);
+            auto create_res = holder->internal_create<CountingPayload>(1);
             tassert(create_res.has_value(), "创建计数 payload");
+            CapIdx src = create_res.value();
 
-            auto dst_res = holder->internal_lookup_freeslot();
-            tassert(dst_res.has_value(), "分配 clone 槽位");
-            CapIdx dst     = dst_res.value();
-            auto clone_res = holder->internal_clone(dst, src);
+            auto clone_res = holder->internal_clone(src);
             tassert(clone_res.has_value(), "clone 成功");
+            CapIdx dst = clone_res.value();
 
             auto remove_src = holder->internal_remove(src);
             tassert(remove_src.has_value(), "删除源能力");
@@ -254,14 +161,59 @@ namespace test::cap {
         }
     };
 
+    class CaseEndpointTransferPermissions : public TestCase {
+    public:
+        CaseEndpointTransferPermissions()
+            : TestCase("Endpoint传递cap检查MIGRATE权限") {}
+
+        void _run(void *env [[maybe_unused]]) const noexcept override {
+            auto source_res = new_holder();
+            auto dest_res   = new_holder();
+            tassert(source_res.has_value() && dest_res.has_value(),
+                    "创建传递双方 CHolder");
+            auto *source = source_res.value();
+            auto *dest   = dest_res.value();
+
+            auto once_res = source->internal_insert_to_free(
+                new kcap::IntPayload(42),
+                perm::basic::MIGRATE_ONCE | perm::intobj::READ);
+            tassert(once_res.has_value(), "创建 MIGRATE_ONCE 源能力");
+
+            auto transfer_res =
+                source->internal_transfer_to(*dest, once_res.value());
+            tassert(transfer_res.has_value(), "MIGRATE_ONCE允许跨holder传递");
+
+            auto old_lookup = source->internal_lookup(once_res.value());
+            tassert(!old_lookup.has_value(), "MIGRATE_ONCE传递后源slot被消费");
+
+            auto moved_cap_res = dest->internal_lookup(transfer_res.value());
+            tassert(moved_cap_res.has_value(), "目标holder收到cap");
+            tassert(!moved_cap_res.value()->imply(perm::basic::MIGRATE_ONCE),
+                    "目标cap清除MIGRATE_ONCE");
+
+            kcap::IntObj int_obj(util::nnullforce(moved_cap_res.value()));
+            auto read_res = int_obj.read();
+            tassert(read_res.has_value() && read_res.value() == 42,
+                    "接收方cap保留对象权限");
+
+            auto plain_res = source->internal_insert_to_free(
+                new kcap::IntPayload(7), perm::intobj::READ);
+            tassert(plain_res.has_value(), "创建无传递权限能力");
+            auto denied_res =
+                source->internal_transfer_to(*dest, plain_res.value());
+            tassert(!denied_res.has_value() &&
+                        denied_res.error() == ErrCode::INSUFFICIENT_PERMISSIONS,
+                    "无CLONE/MIGRATE权限时拒绝传递");
+        }
+    };
+
     void collect_tests(TestFramework &framework) {
         auto cases = util::ArrayList<TestCase *>();
         cases.push_back(new CaseCreateObject());
         cases.push_back(new CaseSharedPayloadClone());
         cases.push_back(new CaseDowngradeAndDerive());
-        cases.push_back(new CaseMigrate());
-        cases.push_back(new CaseMigrateOnce());
         cases.push_back(new CasePayloadDestruct());
+        cases.push_back(new CaseEndpointTransferPermissions());
 
         framework.add_category(
             new TestCategory("capability", std::move(cases)));

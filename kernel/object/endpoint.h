@@ -13,19 +13,37 @@
 
 #include <cap/capability.h>
 #include <object/perm.h>
+#include <sus/coroutine.h>
 #include <sus/list.h>
 #include <sustcore/capability.h>
+#include <sustcore/msg.h>
 #include <task/task_struct.h>
+#include <task/wait.h>
 
-#include <coroutine>
 #include <cstddef>
 
 namespace cap {
+    class CHolder;
+
+    /**
+     * @brief Endpoint发送侧消息视图, 不持有缓冲区或cap数组.
+     */
+    struct EndpointMsgView {
+        const char *msgbuf = nullptr;
+        size_t msgsz = 0;
+        CapIdx *capidxs = nullptr;
+        size_t capsz = 0;
+    };
+
+    /**
+     * @brief 端点消息
+     * 
+     */
     struct EndpointMessage {
         pid_t sender_pid = 0;
         char msgbuf[MAX_MSG_SIZE]{};
         size_t msgsz = 0;
-        Capability *caps[MAX_MSG_CAPS]{};
+        CapIdx capidxs[MAX_MSG_CAPS]{};
         size_t capsz = 0;
         util::ListHead<EndpointMessage> list_head{};
 
@@ -33,9 +51,16 @@ namespace cap {
         ~EndpointMessage();
     };
 
+    /**
+     * @brief Endpoint对象的payload.
+     *
+     * 包含消息列表与接收/发送等待队列
+     * 
+     */
     struct EndpointPayload : public _PayloadHelper<PayloadType::ENDPOINT> {
         util::IntrusiveList<EndpointMessage, &EndpointMessage::list_head>
             messages = {};
+        // 等待队列
         WaitReasonId send_wait_reason;
         WaitReasonId recv_wait_reason;
 
@@ -59,40 +84,37 @@ namespace cap {
 
     class EndpointObject : public CapObj<EndpointPayload> {
     public:
-        /**
-         * @brief Endpoint消息接收的协程等待器
-         *
-         */
-        class RecvAwaiter {
-        private:
-            EndpointPayload *_payload = nullptr;
-
-        public:
-            explicit RecvAwaiter(EndpointPayload *payload)
-                : _payload(payload) {}
-
-            [[nodiscard]]
-            bool await_ready() const {
-                return false;
-            }
-            bool await_suspend(std::coroutine_handle<> handle);
-            void await_resume() const {}
-        };
-
         explicit EndpointObject(util::nonnull<Capability *> cap)
             : CapObj<EndpointPayload>(cap) {}
 
         /**
-         * @brief 向endpoint写入消息.
-         *
-         * @param migrate_caps 可选数组. 对应项为true时, 该cap按迁移语义放入消息;
-         * false或空指针时, 按普通CLONE语义复制cap.
+         * @brief 异步向endpoint写入消息.
          */
-        Result<bool> send(pid_t sender_pid, const char *msgbuf, size_t msgsz,
-                          Capability **caps, size_t capsz, bool blocking,
-                          const bool *migrate_caps = nullptr);
+        Result<bool> send_async(pid_t sender_pid,
+                                const EndpointMsgView &msg);
+        /**
+         * @brief 同步发送endpoint消息, 直到消息被接收方消费.
+         */
+        util::cotask<Result<void>> send_sync(pid_t sender_pid,
+                                             const EndpointMsgView &msg);
+        /**
+         * @brief 异步接收endpoint消息.
+         * 
+         */
         Result<EndpointMessage *> recv_async();
-        Result<RecvAwaiter> recv_sync();
+        /**
+         * @brief 同步接收endpoint消息.
+         * 
+         */
+        util::cotask<Result<EndpointMessage *>> recv_sync();
+        /**
+         * @brief 发起同步调用, 并返回调用方收到的回复消息.
+         *
+         * 调用过程中会在 holder 中创建 caller/replier Reply Capability,
+         * 将 replier cap 附加到请求消息, 发送后等待 caller 端收到回复.
+         */
+        util::cotask<Result<EndpointMessage *>> call(
+            pid_t sender_pid, CHolder *holder, const EndpointMsgView &msg);
     };
 
     /**
@@ -102,24 +124,6 @@ namespace cap {
      */
     class ReplyObject : public CapObj<ReplyPayload> {
     public:
-        /**
-         * @brief ReplyObject消息接收的协程等待器.
-         */
-        class RecvAwaiter {
-        private:
-            ReplyPayload *_payload = nullptr;
-
-        public:
-            explicit RecvAwaiter(ReplyPayload *payload) : _payload(payload) {}
-
-            [[nodiscard]]
-            bool await_ready() const {
-                return false;
-            }
-            bool await_suspend(std::coroutine_handle<> handle);
-            void await_resume() const {}
-        };
-
         explicit ReplyObject(util::nonnull<Capability *> cap)
             : CapObj<ReplyPayload>(cap) {}
 
@@ -128,18 +132,23 @@ namespace cap {
          *
          * 调用者必须持有REPLIER权限. ReplyObject已有消息时返回false.
          */
-        Result<bool> send_reply(pid_t sender_pid, const char *msgbuf,
-                                size_t msgsz, Capability **caps,
-                                size_t capsz);
+        Result<bool> send_reply(pid_t sender_pid,
+                                const EndpointMsgView &msg);
+        /**
+         * @brief 发送一次回复并从 holder 中移除本方一次性 reply cap.
+         */
+        Result<void> reply(pid_t sender_pid, CHolder *holder, CapIdx reply_cap,
+                           const EndpointMsgView &msg);
         /**
          * @brief 非阻塞读取ReplyObject中的回复消息.
          *
          * 调用者必须持有CALLER权限; 无消息时返回nullptr.
          */
         Result<EndpointMessage *> recv_async();
+
         /**
-         * @brief 创建阻塞等待ReplyObject回复消息的awaiter.
+         * @brief 同步接收ReplyObject中的回复消息.
          */
-        Result<RecvAwaiter> recv_sync();
+        util::cotask<Result<EndpointMessage *>> recv_sync();
     };
 }  // namespace cap

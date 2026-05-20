@@ -21,7 +21,7 @@
 #include <vector>
 
 namespace rpc {
-    class bytebuffer {
+    class ByteBuffer {
     public:
         enum direction
         {
@@ -31,10 +31,11 @@ namespace rpc {
     private:
         byte *_buf;
         size_t _size = 0;
+        mutable size_t _read_pos = 0;
         size_t _capacity;
         direction _dir;
 
-        Result<void> M_resize(int new_capacity) {
+        Result<void> M_resize(size_t new_capacity) {
             if (_dir != WRITE)
                 unexpect_return(ErrCode::NOT_SUPPORTED);
             byte *oldbuf = _buf;
@@ -43,65 +44,78 @@ namespace rpc {
             if (_buf == nullptr) {
                 unexpect_return(ErrCode::ALLOCATION_FAILED);
             }
-            memcpy(_buf, oldbuf, _capacity);
+            memcpy(_buf, oldbuf, _size);
             delete[] oldbuf;
             void_return();
         }
 
-        Result<void> M_check_size(int inc_sz) {
+        Result<void> M_check_size(size_t inc_sz) {
             if (_dir != WRITE)
                 unexpect_return(ErrCode::NOT_SUPPORTED);
             if (_size + inc_sz > _capacity) {
-                auto resize_res = M_resize((_size + inc_sz) * 2);
-                propagate(resize_res);
+                auto new_capacity = M_resize((_size + inc_sz) * 2);
+                propagate(new_capacity);
             }
             void_return();
         }
 
     public:
-        constexpr bytebuffer(size_t capacity)
+        constexpr ByteBuffer(size_t capacity)
             : _buf(new byte[capacity]), _capacity(capacity), _dir(direction::WRITE) {}
-        constexpr bytebuffer(byte *buf, size_t size)
+        constexpr ByteBuffer(byte *buf, size_t size)
             : _buf(buf), _size(size), _capacity(size), _dir(direction::READ) {}
-        ~bytebuffer() {
+        ~ByteBuffer() {
             delete[] _buf;
         }
         byte *finish() {
             byte *ret = _buf;
             _buf      = nullptr;
-            _capacity = _size = 0;
+            _capacity = _size = _read_pos = 0;
             return ret;
         }
-        bytebuffer(const bytebuffer &buffer)
+        ByteBuffer(const ByteBuffer &buffer)
             : _buf(new byte[buffer._capacity]),
               _size(buffer._size),
-              _capacity(buffer._capacity) {
-            memcpy(_buf, buffer._buf, _size);
+              _read_pos(buffer._read_pos),
+              _capacity(buffer._capacity),
+              _dir(buffer._dir) {
+            memcpy(_buf, buffer._buf, buffer._capacity);
         }
 
-        bytebuffer &operator=(const bytebuffer &buffer) {
+        ByteBuffer &operator=(const ByteBuffer &buffer) {
             if (&buffer == this)
                 return *this;
             delete[] finish();
             _buf      = new byte[buffer._capacity];
             _size     = buffer._size;
+            _read_pos = buffer._read_pos;
             _capacity = buffer._capacity;
-            memcpy(_buf, buffer._buf, _size);
+            _dir      = buffer._dir;
+            memcpy(_buf, buffer._buf, buffer._capacity);
             return *this;
         }
 
-        bytebuffer(bytebuffer &&buffer)
-            : _buf(buffer.finish()),
+        ByteBuffer(ByteBuffer &&buffer)
+            : _buf(buffer._buf),
               _size(buffer._size),
-              _capacity(buffer._capacity) {}
+              _read_pos(buffer._read_pos),
+              _capacity(buffer._capacity),
+              _dir(buffer._dir) {
+            buffer._buf = nullptr;
+            buffer._size = buffer._read_pos = buffer._capacity = 0;
+        }
 
-        bytebuffer &operator=(bytebuffer &&buffer) {
+        ByteBuffer &operator=(ByteBuffer &&buffer) {
             if (&buffer == this)
                 return *this;
             delete[] finish();
-            _buf      = buffer.finish();
+            _buf      = buffer._buf;
             _size     = buffer._size;
+            _read_pos = buffer._read_pos;
             _capacity = buffer._capacity;
+            _dir      = buffer._dir;
+            buffer._buf = nullptr;
+            buffer._size = buffer._read_pos = buffer._capacity = 0;
             return *this;
         }
 
@@ -112,7 +126,7 @@ namespace rpc {
             auto check_res = M_check_size(sz);
             propagate(check_res);
 
-            for (int i = 0; i < sz; i++) {
+            for (size_t i = 0; i < sz; i++) {
                 *(_buf + _size + i) = *(b + i);
             }
             _size += sz;
@@ -139,33 +153,33 @@ namespace rpc {
             return _capacity;
         }
 
-        Result<void> reads(byte *b, size_t sz) {
+        Result<void> reads(byte *b, size_t sz) const {
             if (_dir != READ)
                 unexpect_return(ErrCode::NOT_SUPPORTED);
-            if (_size + sz > _capacity)
+            if (_read_pos + sz > _size)
                 unexpect_return(ErrCode::OUT_OF_BOUNDARY);
-            for (int i = 0; i < sz; i++) {
-                *(b + i) = *(_buf + _size + i);
+            for (size_t i = 0; i < sz; i++) {
+                *(b + i) = *(_buf + _read_pos + i);
             }
-            _size += sz;
+            _read_pos += sz;
             void_return();
         }
 
         template <typename _Tp>
-        [[nodiscard]] Result<void> _read_direct(_Tp &t)
+        [[nodiscard]] Result<void> _read_direct(_Tp &t) const
         {
             return reads(reinterpret_cast<byte *>(&t), sizeof(_Tp));
         }
 
         template <typename _Tp>
-        [[nodiscard]] Result<void> read(_Tp &t) {
+        [[nodiscard]] Result<void> read(_Tp &t) const {
             if (_dir != READ)
                 unexpect_return(ErrCode::NOT_SUPPORTED);
-            return rpc_bytebuffer_read(*this, t);
+            return rpc_ByteBuffer_read(*this, t);
         }
 
         template <typename _Tp>
-        [[nodiscard]] Result<_Tp> _read_direct()
+        [[nodiscard]] Result<_Tp> _read_direct() const
         {
             if (_dir != READ)
                 unexpect_return(ErrCode::NOT_SUPPORTED);
@@ -174,40 +188,111 @@ namespace rpc {
         }
 
         template <typename _Tp>
-        [[nodiscard]] Result<_Tp> read() {
+        [[nodiscard]] Result<_Tp> read() const {
             if (_dir != READ)
                 unexpect_return(ErrCode::NOT_SUPPORTED);
             _Tp t;
-            return rpc_bytebuffer_read(*this, &t).transform(always(t));
+            return rpc_ByteBuffer_read(*this, t).transform(always(t));
+        }
+
+        template <typename _Tp>
+        [[nodiscard]] Result<void> peek(_Tp &t, size_t offset) const {
+            if (offset > _size || sizeof(_Tp) > _size - offset)
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            memcpy(reinterpret_cast<byte *>(&t), _buf + offset, sizeof(_Tp));
+            void_return();
+        }
+
+        template <typename _Tp>
+        [[nodiscard]] Result<_Tp> peek(size_t offset) const {
+            _Tp t;
+            return peek(t, offset).transform(always(t));
+        }
+
+        [[nodiscard]]
+        constexpr byte *data() const {
+            return _buf;
         }
     };
 
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const byte &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_u8 &t) {
         return buf._write_direct(t);
     }
 
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const uint16_t &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_u16 &t) {
         return buf._write_direct(t);
     }
 
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const uint32_t &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_u32 &t) {
         return buf._write_direct(t);
     }
 
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const uint64_t &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_u64 &t) {
         return buf._write_direct(t);
     }
 
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const int &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_i8 &t) {
         return buf._write_direct(t);
     }
 
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const bool &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_i16 &t) {
+        return buf._write_direct(t);
+    }
+
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_i32 &t) {
+        return buf._write_direct(t);
+    }
+
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const sus_i64 &t) {
+        return buf._write_direct(t);
+    }
+
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const bool &t) {
         return buf._write_direct(t);
     }
 
     // other types
-    inline Result<void> rpc_bytebuffer_write(bytebuffer &buf, const ErrCode &t) {
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf, const ErrCode &t) {
         return buf._write_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_u8 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_u16 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_u32 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_u64 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_i8 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_i16 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_i32 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, sus_i64 &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, bool &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf, ErrCode &t) {
+        return buf._read_direct(t);
     }
 }  // namespace rpc

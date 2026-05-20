@@ -10,11 +10,13 @@
  */
 
 #include <env.h>
+#include <device/int.h>
 #include <mem/vma.h>
 #include <task/scheduler.h>
 #include <task/wait.h>
 
 #include <cassert>
+#include <coroutine>
 #include <functional>
 
 namespace task::wait {
@@ -28,6 +30,7 @@ namespace task::wait {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static WaitReasonManager inst_wait_reason_manager;
     static bool inst_wait_reason_manager_initialized = false;
+    static TCB *active_syscall_tcb                   = nullptr;
 
     WaitReasonManager &WaitReasonManager::inst() {
         if (!initialized()) {
@@ -165,6 +168,10 @@ namespace task::wait {
         return should_wake;
     }
 
+    static bool has_syscall_waiter(TCB *tcb) {
+        return tcb != nullptr && tcb->coroutines.ipc_handle;
+    }
+
     static bool syscall_done_for_wakeup(TCB *tcb) {
         if (tcb == nullptr) {
             return false;
@@ -180,6 +187,63 @@ namespace task::wait {
         tcb->coroutines.syscall_pending = false;
         tcb->coroutines.syscall_done    = true;
         tcb->wait_head.clear();
+    }
+
+    static void clear_queue_metadata(TCB *tcb) {
+        assert(tcb != nullptr);
+        tcb->wait_reason    = 0;
+        tcb->wait_predicate = {};
+        tcb->wait_head.clear();
+    }
+
+    static void resume_syscall_waiter(TCB *tcb) {
+        if (!has_syscall_waiter(tcb)) {
+            return;
+        }
+
+        auto *origin_tmm   = env::inst().tmm();
+        PhyAddr origin_pgd = env::inst().pgd();
+        auto *target_tmm   = tcb->task == nullptr ? nullptr : tcb->task->tmm;
+
+        if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
+            target_tmm->pgd() != origin_pgd)
+        {
+            env::inst().tmm(key::wait()) = target_tmm;
+            PageMan(target_tmm->pgd()).switch_root();
+            PageMan::flush_tlb();
+        }
+
+        TCB *previous_active_syscall_tcb = active_syscall_tcb;
+        active_syscall_tcb              = tcb;
+        tcb->coroutines.ipc_handle.resume();
+        active_syscall_tcb = previous_active_syscall_tcb;
+
+        if (target_tmm != nullptr && target_tmm->pgd().nonnull() &&
+            target_tmm->pgd() != origin_pgd)
+        {
+            env::inst().tmm(key::wait()) = origin_tmm;
+            PageMan(origin_pgd).switch_root();
+            PageMan::flush_tlb();
+        }
+    }
+
+    static size_t wake_waiter(TCB *tcb) {
+        if (tcb == nullptr) {
+            return 0;
+        }
+
+        if (has_syscall_waiter(tcb)) {
+            clear_queue_metadata(tcb);
+            resume_syscall_waiter(tcb);
+            if (tcb->coroutines.syscall_done) {
+                clear_wait_metadata(tcb);
+                return schd::Scheduler::inst().wakeup_waiting(tcb) ? 1 : 0;
+            }
+            return 0;
+        }
+
+        clear_wait_metadata(tcb);
+        return schd::Scheduler::inst().wakeup_waiting(tcb) ? 1 : 0;
     }
 
     Result<size_t> WaitReasonManager::wake_one(WaitReasonId id) {
@@ -201,10 +265,10 @@ namespace task::wait {
                 return size_t(0);
             }
 
-            if (run_wait_predicate(tcb) && syscall_done_for_wakeup(tcb)) {
-                clear_wait_metadata(tcb);
-                return schd::Scheduler::inst().wakeup_waiting(tcb) ? size_t(1)
-                                                                   : size_t(0);
+            if (run_wait_predicate(tcb) &&
+                (has_syscall_waiter(tcb) || syscall_done_for_wakeup(tcb)))
+            {
+                return wake_waiter(tcb);
             }
 
             if (first_rejected == nullptr) {
@@ -231,15 +295,14 @@ namespace task::wait {
             TCB *tcb = &queue->threads.front();
             queue->threads.pop_front();
 
-            if (!run_wait_predicate(tcb) || !syscall_done_for_wakeup(tcb)) {
+            if (!run_wait_predicate(tcb) ||
+                (!has_syscall_waiter(tcb) && !syscall_done_for_wakeup(tcb)))
+            {
                 queue->threads.push_back(*tcb);
                 continue;
             }
 
-            clear_wait_metadata(tcb);
-            if (schd::Scheduler::inst().wakeup_waiting(tcb)) {
-                ++count;
-            }
+            count += wake_waiter(tcb);
         }
         return count;
     }
@@ -257,11 +320,90 @@ namespace task::wait {
         return WaitReasonManager::inst().alloc_reason();
     }
 
-    Result<void> wait_current(WaitReasonId id) {
+    namespace {
+        /**
+         * @brief wait_current内部使用的协程挂起点.
+         *
+         * 该类型不作为公开API暴露; 调用方只能通过wait_current协程等待.
+         */
+        class CoroutineWait {
+        private:
+            WaitReasonId _reason = 0;
+            WaitPredicate _predicate;
+            WaitReadyPredicate _ready_predicate;
+            Result<void> _result{};
+
+        public:
+            explicit CoroutineWait(WaitReasonId reason,
+                                   WaitPredicate predicate = {},
+                                   WaitReadyPredicate ready_predicate = {})
+                : _reason(reason), _predicate(std::move(predicate)),
+                  _ready_predicate(std::move(ready_predicate)) {}
+
+            [[nodiscard]]
+            bool await_ready() const {
+                return false;
+            }
+
+            bool await_suspend(std::coroutine_handle<> handle) {
+                auto *tcb = active_syscall_tcb != nullptr
+                                ? active_syscall_tcb
+                                : schd::Scheduler::inst().current_tcb();
+                if (tcb == nullptr ||
+                    tcb->schd_class == schd::ClassType::IDLE)
+                {
+                    _result = std::unexpected(ErrCode::INVALID_PARAM);
+                    return false;
+                }
+
+                tcb->coroutines.ipc_handle = handle;
+
+                InterruptGuard guard;
+                guard.enter();
+                if (_ready_predicate && _ready_predicate()) {
+                    tcb->coroutines.ipc_handle = nullptr;
+                    return false;
+                }
+
+                _result = WaitReasonManager::inst().enqueue(
+                    _reason, tcb, std::move(_predicate));
+                if (!_result.has_value()) {
+                    tcb->coroutines.ipc_handle = nullptr;
+                    return false;
+                }
+                tcb->basic_entity
+                    .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+                return true;
+            }
+
+            Result<void> await_resume() const {
+                return _result;
+            }
+        };
+    }  // namespace
+
+    util::cotask<Result<void>> wait_current(WaitReasonId id) {
+        co_return co_await CoroutineWait(id);
+    }
+
+    util::cotask<Result<void>> wait_current(WaitReasonId id,
+                                            WaitPredicate predicate) {
+        co_return co_await CoroutineWait(id, std::move(predicate));
+    }
+
+    util::cotask<Result<void>> wait_current(
+        WaitReasonId id, WaitPredicate predicate,
+        WaitReadyPredicate ready_predicate) {
+        co_return co_await CoroutineWait(id, std::move(predicate),
+                                         std::move(ready_predicate));
+    }
+
+    Result<void> deprecated_wait_current(WaitReasonId id) {
         return schd::Scheduler::inst().block_current(id);
     }
 
-    Result<void> wait_current(WaitReasonId id, WaitPredicate predicate) {
+    Result<void> deprecated_wait_current(WaitReasonId id,
+                                         WaitPredicate predicate) {
         return schd::Scheduler::inst().block_current(id, std::move(predicate));
     }
 

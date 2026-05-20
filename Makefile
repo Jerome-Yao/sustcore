@@ -32,17 +32,19 @@ arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 
 -include $(path-script)/config.mk
 
-library-components := sbi basecpp kmod libfdt
-module-components := default init test_endpoint_master test_endpoint_slave test_call_service test_call_user \
-	test_fork test_execve test_thread
+library-components := sbi basecpp kmod rpc libfdt
+module-components := default init idle test_endpoint_master test_endpoint_slave test_call_service test_call_user \
+	test_fork test_execve test_thread test_rpc_server test_rpc_client
 
 library-component-makefile.sbi := $(path-e)/libs/sbi/Makefile
 library-component-makefile.basecpp := $(path-e)/libs/basecpp/Makefile
 library-component-makefile.kmod := $(path-e)/libs/kmod/Makefile
+library-component-makefile.rpc := $(path-e)/libs/rpc/Makefile
 library-component-makefile.libfdt := $(path-e)/third_party/libs/libfdt/Makefile
 
 module-component-makefile.default := $(path-e)/module/default/Makefile
 module-component-makefile.init := $(path-e)/module/init/Makefile
+module-component-makefile.idle := $(path-e)/module/idle/Makefile
 module-component-makefile.test_endpoint_master := $(path-e)/module/test_endpoint_master/Makefile
 module-component-makefile.test_endpoint_slave := $(path-e)/module/test_endpoint_slave/Makefile
 module-component-makefile.test_call_service := $(path-e)/module/test_call_service/Makefile
@@ -50,11 +52,14 @@ module-component-makefile.test_call_user := $(path-e)/module/test_call_user/Make
 module-component-makefile.test_fork := $(path-e)/module/test_fork/Makefile
 module-component-makefile.test_execve := $(path-e)/module/test_execve/Makefile
 module-component-makefile.test_thread := $(path-e)/module/test_thread/Makefile
+module-component-makefile.test_rpc_server := $(path-e)/module/test_rpc_server/Makefile
+module-component-makefile.test_rpc_client := $(path-e)/module/test_rpc_client/Makefile
 
 build-libs:
 	$(q)$(MAKE) -f $(library-component-makefile.sbi) $(arg-basic) build
 	$(q)$(MAKE) -f $(library-component-makefile.basecpp) $(arg-basic) build
 	$(q)$(MAKE) -f $(library-component-makefile.kmod) $(arg-basic) build
+	$(q)$(MAKE) -f $(library-component-makefile.rpc) $(arg-basic) build
 	$(q)$(MAKE) -f $(library-component-makefile.libfdt) $(arg-basic) build
 	$(q)echo "All libraries built successfully."
 
@@ -70,6 +75,7 @@ kernel/feature.mk: FORCE $(config-json) kernel/feature.json tools/feature_gen/fe
 build-mods: build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.default) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.init) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.idle) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_master) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_slave) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_call_service) $(arg-basic) build
@@ -77,6 +83,8 @@ build-mods: build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.test_fork) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_execve) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_thread) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_server) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_client) $(arg-basic) build
 	$(q)echo "All modules built successfully."
 
 make-initrd:

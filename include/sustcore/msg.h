@@ -11,21 +11,26 @@
 
 #pragma once
 
+#include <sus/types.h>
 #include <sustcore/capability.h>
+
+constexpr size_t MAX_MSG_SIZE = 128;
+constexpr size_t MAX_MSG_CAPS = 4;
 
 /**
  * @brief Endpoint IPC消息描述符.
  *
- * 发送时, msgsz/capsz 指向输入长度; 接收时, 内核写回实际收到的
- * 字节数与cap数量. msgbuf 和 caplist 可在对应长度为0时为空.
+ * 发送时, msgsz/capsz 是输入长度; 接收时, msgsz/capsz 是用户缓冲容量,
+ * 内核返回前会写回实际收到的字节数与cap数量.
+ * msgbuf 和 caplist 是固定容量内嵌缓冲区.
  */
 struct MsgPacket {
-    /// 消息数据缓冲区.
-    void *msgbuf;
-    /// 指向消息字节数的用户态地址.
-    size_t *msgsz;
-    /// Capability索引列表缓冲区.
-    CapIdx *caplist;
-    /// 指向Capability数量的用户态地址.
-    size_t *capsz;
+    // 消息数据缓冲区.
+    byte msgbuf[MAX_MSG_SIZE];
+    // 消息字节数或接收缓冲容量.
+    size_t msgsz = 0;
+    // Capability索引列表缓冲区.
+    CapIdx caplist[MAX_MSG_CAPS];
+    // Capability数量或接收cap列表容量.
+    size_t capsz = 0;
 };

@@ -41,9 +41,15 @@ sys_pcb_create_thread:
     .global sys_pcb_fork
     .type   sys_pcb_fork, @function
 sys_pcb_fork:
-    /* a0 = pcb cap slot */
+    /* a0 = pcb cap slot, a1 = child PCB cap out ptr */
+    mv t0, a1
     li a7, SYS_FORK
     ecall
+    beqz a1, 1f
+    beqz t0, 1f
+    li t1, -1
+    sd t1, 0(t0)
+1:
     ret
 
     .global sys_pcb_execve
@@ -89,7 +95,7 @@ sys_notif_check:
     .global sys_cap_clone
     .type sys_cap_clone, @function
 sys_cap_clone:
-    /* a0 = src cap slot, a1 = target cap slot */
+    /* a0 = src cap slot */
     li a7, SYS_CAP_CLONE
     ecall
     ret
@@ -105,7 +111,7 @@ sys_cap_downgrade:
     .global sys_cap_derive
     .type sys_cap_derive, @function
 sys_cap_derive:
-    /* a0 = src cap slot, a1 = target cap slot, a2 = new permission bits */
+    /* a0 = src cap slot, a1 = new permission bits */
     li a7, SYS_CAP_DERIVE
     ecall
     ret
@@ -137,7 +143,8 @@ sys_getpid:
     .global sys_notif_create
     .type sys_notif_create, @function
 sys_notif_create:
-    /* a0 = target cap slot */
+    /* no args */
+    li a0, 0
     li a7, SYS_NOTIF_CREATE
     ecall
     ret
@@ -145,7 +152,8 @@ sys_notif_create:
     .global sys_endpoint_create
     .type sys_endpoint_create, @function
 sys_endpoint_create:
-    /* a0 = target cap slot */
+    /* no args */
+    li a0, 0
     li a7, SYS_ENDPOINT_CREATE
     ecall
     ret
@@ -201,7 +209,12 @@ endpoint_reply:
     .global sys_mem_create
     .type sys_mem_create, @function
 sys_mem_create:
-    /* a0 = cap slot, a1 = memsz, a2 = shared, a3 = continuity, a4 = growth */
+    /* a0 = memsz, a1 = shared, a2 = continuity, a3 = growth */
+    mv a4, a3
+    mv a3, a2
+    mv a2, a1
+    mv a1, a0
+    li a0, 0
     li a7, SYS_MEM_CREATE
     ecall
     ret
@@ -233,7 +246,7 @@ sys_mem_resize:
     .global sys_mem_query
     .type sys_mem_query, @function
 sys_mem_query:
-    /* a0 = cap slot */
+    /* a0 = cap slot, a1 = MemQueryRet out ptr */
     li a7, SYS_MEM_QUERY
     ecall
     ret

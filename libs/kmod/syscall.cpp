@@ -30,13 +30,13 @@ CapIdx sys_create_thread(void (*entry)(), void *stack_addr,
     return sys_pcb_create_thread(__pcb_cap, entry, stack_addr, stack_size);
 }
 
-ForkRet fork() {
-    ForkRet ret = sys_pcb_fork(__pcb_cap);
+size_t fork(CapIdx *child_pcb_cap) {
+    size_t child_pid = sys_pcb_fork(__pcb_cap, child_pcb_cap);
     // 子进程, 更新 pcb cap index
-    if (ret.ret1 != cap::error && ret.ret2 == 0) {
-        __pcb_cap = ret.ret1;
+    if (child_pid == 0 && child_pcb_cap != nullptr) {
+        __pcb_cap = *child_pcb_cap;
     }
-    return ret;
+    return child_pid;
 }
 
 bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz) {

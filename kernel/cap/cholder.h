@@ -89,20 +89,17 @@ namespace cap {
 
         template <typename PayloadType, typename... Args>
         [[nodiscard]]
-        Result<void> internal_create(CapIdx idx, Args &&...args) {
-            if (!cap::valid(idx)) {
-                unexpect_return(ErrCode::TYPE_NOT_MATCHED);
-            }
+        Result<CapIdx> internal_create(Args &&...args) {
             auto *payload = new PayloadType(std::forward<Args>(args)...);
             if (payload == nullptr) {
                 unexpect_return(ErrCode::OUT_OF_MEMORY);
             }
-            auto insert_res = internal_insert(idx, payload);
+            auto insert_res = internal_insert_to_free(payload);
             if (!insert_res.has_value()) {
                 delete payload;
                 propagate_return(insert_res);
             }
-            void_return();
+            return insert_res.value();
         }
 
         [[nodiscard]]
@@ -111,27 +108,32 @@ namespace cap {
         void internal_clear();
 
         [[nodiscard]]
-        Result<void> internal_clone(CapIdx target_idx, CapIdx src_idx);
+        Result<CapIdx> internal_clone(CapIdx src_idx);
 
         [[nodiscard]]
-        Result<void> internal_migrate(CapIdx target_idx, CapIdx src_idx);
-
-        [[nodiscard]]
-        Result<void> internal_derive(CapIdx target_idx, CapIdx src_idx,
-                                     b64 new_perm);
+        Result<CapIdx> internal_derive(CapIdx src_idx, b64 new_perm);
 
         [[nodiscard]]
         Result<void> internal_downgrade(CapIdx idx, b64 new_perm);
+
+        /**
+         * @brief 将当前holder中的cap传递到目标holder空闲槽位.
+         *
+         * CLONE 权限会复制cap; MIGRATE/MIGRATE_ONCE 权限会在目标插入成功后
+         * 消费源slot. 目标cap不会携带 MIGRATE_ONCE 位.
+         */
+        [[nodiscard]]
+        Result<CapIdx> internal_transfer_to(CHolder &dst, CapIdx src_idx);
 
         [[nodiscard]]
         Result<void> internal_copy_all_to(CHolder &dst) const;
 
         template <typename PayloadType, typename... Args>
         [[nodiscard]]
-        static Result<void> create(CapIdx idx, Args &&...args) {
+        static Result<CapIdx> create(Args &&...args) {
             return current().and_then([&](CHolder *holder) {
                 return holder->internal_create<PayloadType>(
-                    idx, std::forward<Args>(args)...);
+                    std::forward<Args>(args)...);
             });
         }
 
@@ -157,14 +159,10 @@ namespace cap {
         static Result<void> remove(CapIdx idx);
 
         [[nodiscard]]
-        static Result<void> clone(CapIdx target_idx, CapIdx src_idx);
+        static Result<CapIdx> clone(CapIdx src_idx);
 
         [[nodiscard]]
-        static Result<void> migrate(CapIdx target_idx, CapIdx src_idx);
-
-        [[nodiscard]]
-        static Result<void> derive(CapIdx target_idx, CapIdx src_idx,
-                                   b64 new_perm);
+        static Result<CapIdx> derive(CapIdx src_idx, b64 new_perm);
 
         [[nodiscard]]
         static Result<void> downgrade(CapIdx idx, b64 new_perm);

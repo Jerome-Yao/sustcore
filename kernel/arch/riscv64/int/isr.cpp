@@ -496,7 +496,7 @@ namespace Handlers {
                     processed                               = ret.processed;
                     loggers::INTERRUPT::DEBUG(
                         "系统调用完成: name=%s, processed=%d, ret0=0x%lx, "
-                        "ret1=0x%lx",
+                        "err=0x%lx",
                         syscall::name_of(args.syscall_number), ret.processed,
                         ret.ret0, ret.ret1);
                 } else {

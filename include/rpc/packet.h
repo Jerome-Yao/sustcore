@@ -22,26 +22,15 @@
 #include <vector>
 
 namespace rpc {
-    template <typename T>
-    struct dependent_false : std::false_type {};
+    inline constexpr sus_u32 RPC_REQUEST_MAGIC =
+        (static_cast<sus_u32>('R') << 0) | (static_cast<sus_u32>('P') << 8) |
+        (static_cast<sus_u32>('C') << 16) | (static_cast<sus_u32>('C') << 24);
 
-    struct Message {
-        bytebuffer data;
-        std::vector<CapIdx> caps;
+    inline constexpr sus_u32 RPC_RESPONSE_MAGIC =
+        (static_cast<sus_u32>('R') << 0) | (static_cast<sus_u32>('P') << 8) |
+        (static_cast<sus_u32>('C') << 16) | (static_cast<sus_u32>('R') << 24);
 
-        Message(size_t capacity) : data(capacity) {}
-
-        void build(MsgPacket &packet) {
-            *packet.msgsz = data.size();
-            packet.msgbuf = data.finish();
-            if (!caps.empty()) {
-                packet.caplist = caps.data();
-                *packet.capsz  = caps.size();
-            }
-        }
-    };
-
-    enum class PacketType : b32 {
+    enum class PacketType : sus_u32 {
         CALL             = 1,
         RESPONSE         = 2,
         SESSION          = 3,
@@ -51,41 +40,121 @@ namespace rpc {
         ERROR            = 7,
     };
 
-    enum class PrimitiveTypeId : b32 {
-        u8      = 0,
-        u16     = 1,
-        u32     = 2,
-        u64     = 3,
-        i8      = 4,
-        i16     = 5,
-        i32     = 6,
-        i64     = 7,
-        f32     = 8,
-        f64     = 9,
-        size    = 10,
-        off     = 11,
-        boolean = 12,
+    enum class PrimitiveTypeId : sus_u32 {
+        u8        = 0,
+        u16       = 1,
+        u32       = 2,
+        u64       = 3,
+        i8        = 4,
+        i16       = 5,
+        i32       = 6,
+        i64       = 7,
+        f32       = 8,
+        f64       = 9,
+        size      = 10,
+        off       = 11,
+        boolean   = 12,
+        void_type = 13
     };
 
-    template <typename T>
-    struct ArrayView {
-        const T *data{};
-        b16 size{};
-    };
-
-    template <typename T>
-    ArrayView<T> array_view(const T *data, b16 size) {
-        return ArrayView<T>{data, size};
+    inline constexpr sus_u32 prim_typeid(PrimitiveTypeId t) {
+        return static_cast<sus_u32>(t);
     }
 
-    template <typename T>
-    struct is_array_view : std::false_type {};
+    enum class RPCErrorCode : sus_u32 {
+        SUCCESS       = 0,
+        UNKNOWN_ERROR = 1,
+        INVALID_MAGIC = 2
+    };
 
-    template <typename T>
-    struct is_array_view<ArrayView<T>> : std::true_type {};
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf,
+                                             const PacketType &t) {
+        return buf._write_direct(t);
+    }
 
-    template <typename T>
-    inline constexpr bool is_array_view_v =
-        is_array_view<std::remove_cvref_t<T>>::value;
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf,
+                                             const PrimitiveTypeId &t) {
+        return buf._write_direct(t);
+    }
 
+    inline Result<void> rpc_bytebuffer_write(ByteBuffer &buf,
+                                             const RPCErrorCode &t) {
+        return buf._write_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf,
+                                            PacketType &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf,
+                                            PrimitiveTypeId &t) {
+        return buf._read_direct(t);
+    }
+
+    inline Result<void> rpc_ByteBuffer_read(const ByteBuffer &buf,
+                                            RPCErrorCode &t) {
+        return buf._read_direct(t);
+    }
+
+    struct SessionPacket {
+        sus_u32 service_magic{};
+    };
+
+    struct SessionResponsePacket {
+        sus_u32 service_magic{};
+        sus_u32 session_id{};
+    };
+
+    struct ClosePacket {
+        sus_u32 service_magic{};
+        sus_u32 session_id{};
+    };
+
+    struct CloseResponsePacket {
+        sus_u32 service_magic{};
+        sus_u32 session_id{};
+    };
+
+    struct ErrorPacket {
+        sus_u32 service_magic{};
+        sus_u32 session_id{};
+        sus_u32 function_id{};
+        RPCErrorCode code{};
+    };
+
+    struct CallPacket {
+        sus_u32 service_magic{};
+        sus_u32 session_id{};
+        sus_u32 function_id{};
+        std::vector<sus_u32> types;
+        ByteBuffer argbuf;
+    };
+
+    struct ResponsePacket {
+        sus_u32 service_magic{};
+        sus_u32 session_id{};
+        sus_u32 function_id{};
+        sus_u32 return_type{};
+        ByteBuffer retbuf;
+    };
+
+    Result<MsgPacket> encode_session(const SessionPacket &packet);
+    Result<MsgPacket> encode_session_response(
+        const SessionResponsePacket &packet);
+    Result<MsgPacket> encode_close(const ClosePacket &packet);
+    Result<MsgPacket> encode_close_response(const CloseResponsePacket &packet);
+    Result<MsgPacket> encode_call(const CallPacket &packet);
+    Result<MsgPacket> encode_response(const ResponsePacket &packet);
+    Result<MsgPacket> encode_error(const ErrorPacket &packet);
+
+    bool is_rpc_message(const MsgPacket &msg);
+    PacketType peek_type(const MsgPacket &msg);
+    Result<SessionPacket> decode_session(const MsgPacket &msg);
+    Result<SessionResponsePacket> decode_session_response(const MsgPacket &msg);
+    Result<ClosePacket> decode_close(const MsgPacket &msg);
+    Result<CloseResponsePacket> decode_close_response(const MsgPacket &msg);
+    Result<CallPacket> decode_call(const MsgPacket &msg);
+    Result<ResponsePacket> decode_response(const MsgPacket &msg);
+    Result<ErrorPacket> decode_error(const MsgPacket &msg);
 }  // namespace rpc

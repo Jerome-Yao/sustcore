@@ -15,8 +15,8 @@
 #include <sustcore/capability.h>
 
 namespace syscall {
-    bool wait_notification(CapIdx capidx, size_t idx);
-    bool notification_signal(CapIdx capidx, size_t idx, bool state);
-    bool check_notification(CapIdx capidx, size_t idx);
-    bool notification_create(CapIdx capidx);
+    Result<bool> wait_notification(CapIdx capidx, size_t idx);
+    Result<bool> notification_signal(CapIdx capidx, size_t idx, bool state);
+    Result<bool> check_notification(CapIdx capidx, size_t idx);
+    Result<CapIdx> notification_create();
 }  // namespace syscall

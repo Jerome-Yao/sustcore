@@ -21,17 +21,12 @@
 namespace syscall {
     class UString;
 
-    struct ForkRet {
-        CapIdx child_pcb_cap;
-        size_t child_pid;
-    };
-
-    CapIdx pcb_create_process(CapIdx pcb_cap, const UString &path,
-                              VirAddr caps_uaddr, size_t caps_sz,
-                              size_t sched_class);
-    CapIdx pcb_create_thread(CapIdx pcb_cap, VirAddr entry, VirAddr stack_addr,
-                             size_t stack_size);
-    ForkRet pcb_fork(CapIdx pcb_cap);
+    Result<CapIdx> pcb_create_process(CapIdx pcb_cap, const UString &path,
+                                      VirAddr caps_uaddr, size_t caps_sz,
+                                      size_t sched_class);
+    Result<CapIdx> pcb_create_thread(CapIdx pcb_cap, VirAddr entry,
+                                     VirAddr stack_addr, size_t stack_size);
+    Result<size_t> pcb_fork(CapIdx pcb_cap, VirAddr child_pcb_cap_uaddr);
     /**
      * @brief 通过 PCB Capability 杀死进程. 
      *
@@ -41,7 +36,7 @@ namespace syscall {
      * @param exit_code 退出码. 
      * @return true 成功; false 失败. 
      */
-    bool pcb_kill(CapIdx pcb_cap, int exit_code);
+    Result<bool> pcb_kill(CapIdx pcb_cap, int exit_code);
     /**
      * @brief 通过 PCB Capability 将 Memory 映射到目标进程地址空间. 
      *
@@ -54,10 +49,10 @@ namespace syscall {
      * @param growth VMA 增长方式. 
      * @return true 成功; false 失败. 
      */
-    bool pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
-                 PageMan::RWX rwx, cap::MemoryGrowth growth);
-    bool pcb_execve(CapIdx pcb_cap, const UString &path,
-                    VirAddr reserved_uaddr, size_t reserved_sz);
+    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
+                         PageMan::RWX rwx, cap::MemoryGrowth growth);
+    Result<bool> pcb_execve(CapIdx pcb_cap, const UString &path,
+                            VirAddr reserved_uaddr, size_t reserved_sz);
     bool pcb_is_current(CapIdx pcb_cap);
-    size_t get_pid(CapIdx pcb_cap);
+    Result<size_t> get_pid(CapIdx pcb_cap);
 }  // namespace syscall

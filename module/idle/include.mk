@@ -1,0 +1,1 @@
+sources += idle.S

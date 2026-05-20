@@ -32,8 +32,7 @@ static CapIdx find_unique_notif_cap() {
             "test_execve: 预期找到一个 notification capability, 但是找到了 %u "
             "个\n",
             count);
-        while (true) {
-        }
+        exit(-1);
     }
     return found;
 }
@@ -57,8 +56,6 @@ int kmod_main() {
     sys_notif_unsignal(notif_cap, kSignalAck);
 
     printf("test_execve: 握手完成!\n");
-    exit(-1);
-    while (true) {
-    }
+    exit(0);
     return 0;
 }

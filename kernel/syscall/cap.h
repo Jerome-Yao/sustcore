@@ -15,9 +15,9 @@
 #include <sustcore/capability.h>
 
 namespace syscall {
-    bool cap_clone(CapIdx src, CapIdx target);
-    bool cap_downgrade(CapIdx idx, b64 new_perm);
-    bool cap_derive(CapIdx src, CapIdx target, b64 new_perm);
-    bool sys_cap_lookup(CapIdx idx, VirAddr info_uaddr);
-    bool cap_remove(CapIdx idx);
+    Result<CapIdx> cap_clone(CapIdx src);
+    Result<bool> cap_downgrade(CapIdx idx, b64 new_perm);
+    Result<CapIdx> cap_derive(CapIdx src, b64 new_perm);
+    Result<bool> sys_cap_lookup(CapIdx idx, VirAddr info_uaddr);
+    Result<bool> cap_remove(CapIdx idx);
 }  // namespace syscall

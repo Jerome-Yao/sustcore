@@ -16,12 +16,17 @@
 namespace perm::basic {
     // permissions
     constexpr b64 CLONE        = 0x0002;
+    /**
+     * @brief 允许通过Endpoint传递能力.
+     *
+     * 该权限只用于Endpoint传递cap时的权限检验, 不表示CSpace槽位移动.
+     */
     constexpr b64 MIGRATE      = 0x0004;
     /**
-     * @brief 一次性迁移权限.
+     * @brief 允许通过Endpoint传递一次能力.
      *
-     * 允许执行一次MIGRATE语义的转移; 转移完成后目标cap会自动清除此位,
-     * 避免被接收方继续二次分发.
+     * 该权限只用于Endpoint传递cap时的权限检验. 依赖该权限传递时,
+     * 接收方得到的cap会清除此位.
      */
     constexpr b64 MIGRATE_ONCE = 0x0008;
 }  // namespace perm::basic
@@ -94,9 +99,9 @@ namespace perm::notif {
 }  // namespace perm::notif
 
 namespace perm::pcb {
-    constexpr b64 GETPID    = 0x01'0000;
-    constexpr b64 KILL      = 0x02'0000;
-    constexpr b64 VMCONTEXT = 0x04'0000;
+    constexpr b64 GETPID      = 0x01'0000;
+    constexpr b64 KILL        = 0x02'0000;
+    constexpr b64 VMCONTEXT   = 0x04'0000;
     constexpr b64 NEW_THREAD  = 0x08'0000;
     constexpr b64 NEW_PROCESS = 0x10'0000;
     constexpr b64 EXECUTE     = 0x20'0000;

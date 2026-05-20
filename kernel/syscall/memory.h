@@ -29,8 +29,8 @@ namespace syscall {
      * @param growth 允许的增长/收缩方式. 
      * @return true 创建成功; false 创建失败. 
      */
-    bool mem_create(CapIdx idx, size_t memsz, bool shared, bool continuity,
-                    cap::MemoryGrowth growth);
+    Result<CapIdx> mem_create(size_t memsz, bool shared, bool continuity,
+                              cap::MemoryGrowth growth);
     /**
      * @brief 取消当前进程中某 Memory 的映射. 
      *
@@ -39,7 +39,7 @@ namespace syscall {
      * @param idx Memory capability. 
      * @param vaddr 映射地址. 
      */
-    bool mem_unmap(CapIdx idx, VirAddr vaddr);
+    Result<bool> mem_unmap(CapIdx idx, VirAddr vaddr);
     /**
      * @brief 调整当前进程中的 Memory 大小. 
      *
@@ -48,7 +48,7 @@ namespace syscall {
      * @param idx Memory capability. 
      * @param newsz 新大小. 
      */
-    bool mem_resize(CapIdx idx, size_t newsz);
+    Result<bool> mem_resize(CapIdx idx, size_t newsz);
     /**
      * @brief Memory 查询 syscall 返回值. 
      */
@@ -64,7 +64,7 @@ namespace syscall {
      * QUERY 权限检查由 MemoryObject 完成. 
      *
      * @param idx Memory capability. 
-     * @return 查询结果; 失败时两个字段均为 0. 
+     * @param out_uaddr 用户态 MemQueryRet 输出指针.
      */
-    MemQueryRet mem_query(CapIdx idx);
+    Result<void> mem_query(CapIdx idx, VirAddr out_uaddr);
 }  // namespace syscall

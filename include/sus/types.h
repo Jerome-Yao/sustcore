@@ -62,6 +62,15 @@ typedef smb_t off_t;
 
 typedef umb_t addr_t;
 
+typedef int8_t sus_i8;
+typedef int16_t sus_i16;
+typedef int32_t sus_i32;
+typedef int64_t sus_i64;
+typedef uint8_t sus_u8;
+typedef uint16_t sus_u16;
+typedef uint32_t sus_u32;
+typedef uint64_t sus_u64;
+
 // 逻辑运算符 a=>b 的实现
 // a=>b 即为 (!a | b) 相当于 (a & b) == b
 #define BOOL_IMPLIES(a, b) ((!(a)) | (b))

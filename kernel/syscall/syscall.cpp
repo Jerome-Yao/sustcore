@@ -69,8 +69,8 @@ namespace syscall {
         }
     }
 
-    static RetPack finish_syscall(const util::nonnull<Riscv64Context *> &ctx,
-                                  const util::nonnull<task::TCB *> &tcb,
+    static RetPack finish_syscall(util::nonnull<Riscv64Context *> ctx,
+                                  util::nonnull<task::TCB *> tcb,
                                   RetPack ret) {
         ctx->write_ret(ret);
         ctx->sepc                    += 4;
@@ -78,8 +78,51 @@ namespace syscall {
         return ret;
     }
 
-    util::cotask<RetPack> entrance(const util::nonnull<Riscv64Context *> &ctx,
-                                   const util::nonnull<task::TCB *> &tcb) {
+    static RetPack bool_ret(bool ok) {
+        return RetPack{.processed = true,
+                       .ret0      = static_cast<b64>(ok),
+                       .ret1      = static_cast<b64>(ErrCode::SUCCESS)};
+    }
+
+    static RetPack result_void_ret(const char *op, const Result<void> &res) {
+        if (!res.has_value()) {
+            loggers::SYSCALL::ERROR("%s失败: err=%s", op,
+                                    to_cstring(res.error()));
+            return RetPack{.processed = true,
+                           .ret0      = false,
+                           .ret1      = static_cast<b64>(res.error())};
+        }
+        return bool_ret(true);
+    }
+
+    static RetPack result_value_ret(const char *op, const Result<size_t> &res) {
+        if (!res.has_value()) {
+            loggers::SYSCALL::ERROR("%s失败: err=%s", op,
+                                    to_cstring(res.error()));
+            return RetPack{.processed = true,
+                           .ret0      = 0,
+                           .ret1      = static_cast<b64>(res.error())};
+        }
+        return RetPack{.processed = true,
+                       .ret0      = res.value(),
+                       .ret1      = static_cast<b64>(ErrCode::SUCCESS)};
+    }
+
+    static RetPack result_bool_ret(const char *op, const Result<bool> &res) {
+        if (!res.has_value()) {
+            loggers::SYSCALL::ERROR("%s失败: err=%s", op,
+                                    to_cstring(res.error()));
+            return RetPack{.processed = true,
+                           .ret0      = 0,
+                           .ret1      = static_cast<b64>(res.error())};
+        }
+        return RetPack{.processed = true,
+                       .ret0      = static_cast<b64>(res.value()),
+                       .ret1      = static_cast<b64>(ErrCode::SUCCESS)};
+    }
+
+    util::cotask<RetPack> entrance(util::nonnull<Riscv64Context *> ctx,
+                                   util::nonnull<task::TCB *> tcb) {
         ArgPack args = ctx->read_args();
 
         // 参数解包
@@ -91,9 +134,11 @@ namespace syscall {
         b64 sysno  = args.syscall_number;
         b64 capidx = args.capidx;
 
-        b64 ret0 = 0, ret1 = 0;
-
-        bool processed = true;
+        RetPack ret{
+            .processed = true,
+            .ret0      = 0,
+            .ret1      = static_cast<b64>(ErrCode::SUCCESS),
+        };
 
         // capidx (a0) is the primary capability slot; args[] carry
         // operation-specific values starting at a1.
@@ -101,185 +146,184 @@ namespace syscall {
             // Basic process / memory syscalls.
             case SYS_WRITE_SERIAL: {
                 write_serial(UString((VirAddr)arg0, arg1), arg1);
-                ret0 = ret1 = 0;
                 break;
             }
             case SYS_CREATE_PROCESS: {
-                ret0 = pcb_create_process(
-                    capidx, UString((VirAddr)arg0, MAX_SYSCALL_PATH),
-                    VirAddr(arg1), arg2, arg3);
-                ret1 = 0;
+                ret = result_value_ret(
+                    "创建进程",
+                    pcb_create_process(
+                        capidx, UString((VirAddr)arg0, MAX_SYSCALL_PATH),
+                        VirAddr(arg1), arg2, arg3));
                 break;
             }
             case SYS_CREATE_THREAD: {
-                ret0 = pcb_create_thread(capidx, VirAddr(arg0), VirAddr(arg1),
-                                         arg2);
-                ret1 = 0;
+                ret = result_value_ret(
+                    "创建线程",
+                    pcb_create_thread(capidx, VirAddr(arg0), VirAddr(arg1),
+                                      arg2));
                 break;
             }
             case SYS_FORK: {
-                auto fork_ret = pcb_fork(capidx);
-                ret0          = fork_ret.child_pcb_cap;
-                ret1          = fork_ret.child_pid;
+                ret = result_value_ret("fork", pcb_fork(capidx, VirAddr(arg0)));
                 break;
             }
             case SYS_EXECVE: {
                 bool current_target = pcb_is_current(capidx);
-                bool ok             = pcb_execve(
+                auto exec_res        = pcb_execve(
                     capidx, UString((VirAddr)arg0, MAX_SYSCALL_PATH),
                     VirAddr(arg1), arg2);
-                if (ok) {
+                if (exec_res.has_value() && exec_res.value()) {
                     if (current_target) {
-                        ret0       = ctx->regs[Context::A0_BASE];
-                        ret1       = ctx->regs[Context::A0_BASE + 1];
+                        ret.ret0  = ctx->regs[Context::A0_BASE];
+                        ret.ret1  = ctx->regs[Context::A0_BASE + 1];
                         ctx->sepc -= 4;
                     } else {
-                        ret0 = true;
-                        ret1 = 0;
+                        ret = bool_ret(true);
                     }
                 } else {
-                    ret0 = false;
-                    ret1 = 0;
+                    ret = result_bool_ret("execve", exec_res);
                 }
                 break;
             }
             case SYS_PCB_KILL: {
-                ret0 = pcb_kill(capidx, static_cast<int>(arg0));
-                ret1 = 0;
+                ret = result_bool_ret("pcb_kill",
+                                      pcb_kill(capidx, static_cast<int>(arg0)));
                 break;
             }
             case SYS_GETPID: {
-                ret0 = get_pid(capidx);
-                ret1 = 0;
+                ret = result_value_ret("get_pid", get_pid(capidx));
                 break;
             }
 
             // Notification object operations.
             case SYS_NOTIF_WAIT: {
-                ret0 = wait_notification(capidx, arg0);
-                ret1 = 0;
+                ret = result_bool_ret("等待notification",
+                                      wait_notification(capidx, arg0));
                 break;
             }
             case SYS_NOTIF_SIGNAL: {
-                ret0 = notification_signal(capidx, arg0, true);
-                ret1 = 0;
+                ret = result_bool_ret("设置notification",
+                                      notification_signal(capidx, arg0, true));
                 break;
             }
             case SYS_NOTIF_UNSIGNAL: {
-                ret0 = notification_signal(capidx, arg0, false);
-                ret1 = 0;
+                ret = result_bool_ret("取消notification",
+                                      notification_signal(capidx, arg0, false));
                 break;
             }
             case SYS_NOTIF_CHECK: {
-                ret0 = check_notification(capidx, arg0);
-                ret1 = 0;
+                ret = result_bool_ret("查询notification",
+                                      check_notification(capidx, arg0));
                 break;
             }
             case SYS_NOTIF_CREATE: {
-                ret0 = notification_create(capidx);
-                ret1 = 0;
+                ret = result_value_ret("创建notification", notification_create());
                 break;
             }
 
             // Generic capability operations.
             case SYS_CAP_CLONE: {
-                ret0 = cap_clone(capidx, arg0);
-                ret1 = 0;
+                ret = result_value_ret("clone capability", cap_clone(capidx));
                 break;
             }
             case SYS_CAP_DOWNGRADE: {
-                ret0 = cap_downgrade(capidx, arg0);
-                ret1 = 0;
+                ret = result_bool_ret("downgrade capability",
+                                      cap_downgrade(capidx, arg0));
                 break;
             }
             case SYS_CAP_DERIVE: {
-                ret0 = cap_derive(capidx, arg0, arg1);
-                ret1 = 0;
+                ret = result_value_ret("derive capability",
+                                       cap_derive(capidx, arg0));
                 break;
             }
             case SYS_CAP_LOOKUP: {
-                ret0 = sys_cap_lookup(capidx, VirAddr(arg0));
-                ret1 = 0;
+                ret = result_bool_ret("lookup capability",
+                                      sys_cap_lookup(capidx, VirAddr(arg0)));
                 break;
             }
             case SYS_CAP_REMOVE: {
-                ret0 = cap_remove(capidx);
-                ret1 = 0;
+                ret = result_bool_ret("remove capability", cap_remove(capidx));
                 break;
             }
             case SYS_ENDPOINT_CREATE: {
-                ret0 = endpoint_create(capidx);
-                ret1 = 0;
+                ret = result_value_ret("创建endpoint", endpoint_create());
                 break;
             }
             case SYS_ENDPOINT_SEND: {
-                ret0 = endpoint_send(capidx, VirAddr(arg0), true);
-                ret1 = 0;
+                auto send_task = endpoint_send_sync(capidx, VirAddr(arg0));
+                Result<void> send_res = co_await send_task;
+                ret = result_void_ret("同步发送endpoint消息", send_res);
                 break;
             }
             case SYS_ENDPOINT_RECV: {
                 auto recv_task = endpoint_recv_sync(capidx, VirAddr(arg0));
-                RetPack ret = co_await recv_task;
-                co_return finish_syscall(ctx, tcb, ret);
+                Result<void> recv_res = co_await recv_task;
+                ret = result_void_ret("接收endpoint消息", recv_res);
+                break;
             }
             case SYS_ENDPOINT_SEND_ASYNC: {
-                ret0 = endpoint_send(capidx, VirAddr(arg0), false);
-                ret1 = 0;
+                ret = result_bool_ret("异步发送endpoint消息",
+                                      endpoint_send_async(capidx,
+                                                          VirAddr(arg0)));
                 break;
             }
             case SYS_ENDPOINT_RECV_ASYNC: {
-                ret0 = endpoint_recv_async(capidx, VirAddr(arg0));
-                ret1 = 0;
+                ret = result_bool_ret("异步接收endpoint消息",
+                                      endpoint_recv_async(capidx,
+                                                          VirAddr(arg0)));
                 break;
             }
             case SYS_MEM_CREATE: {
-                ret0 = mem_create(capidx, arg0, arg1, arg2,
-                                  static_cast<cap::MemoryGrowth>(arg3));
-                ret1 = 0;
+                ret = result_value_ret(
+                    "mem_create",
+                    mem_create(arg0, arg1, arg2,
+                               static_cast<cap::MemoryGrowth>(arg3)));
                 break;
             }
             case SYS_PCB_MAP: {
-                ret0 = pcb_map(capidx, static_cast<CapIdx>(arg0), VirAddr(arg1),
-                               static_cast<PageMan::RWX>(arg2),
-                               static_cast<cap::MemoryGrowth>(arg3));
-                ret1 = 0;
+                ret = result_bool_ret(
+                    "pcb_map",
+                    pcb_map(capidx, static_cast<CapIdx>(arg0), VirAddr(arg1),
+                            static_cast<PageMan::RWX>(arg2),
+                            static_cast<cap::MemoryGrowth>(arg3)));
                 break;
             }
             case SYS_MEM_UNMAP: {
-                ret0 = mem_unmap(capidx, VirAddr(arg0));
-                ret1 = 0;
+                ret = result_bool_ret("mem_unmap",
+                                      mem_unmap(capidx, VirAddr(arg0)));
                 break;
             }
             case SYS_MEM_RESIZE: {
-                ret0 = mem_resize(capidx, arg0);
-                ret1 = 0;
+                ret = result_bool_ret("mem_resize", mem_resize(capidx, arg0));
                 break;
             }
             case SYS_MEM_QUERY: {
-                auto query = mem_query(capidx);
-                ret0       = query.memsz;
-                ret1       = query.allocated;
+                ret = result_void_ret("mem_query",
+                                      mem_query(capidx, VirAddr(arg0)));
                 break;
             }
             case SYS_ENDPOINT_CALL: {
                 auto call_task =
                     endpoint_call(capidx, VirAddr(arg0), VirAddr(arg1));
-                RetPack ret = co_await call_task;
-                co_return finish_syscall(ctx, tcb, ret);
+                Result<void> call_res = co_await call_task;
+                ret = result_void_ret("endpoint_call", call_res);
+                break;
             }
             case SYS_ENDPOINT_REPLY: {
-                ret0 = endpoint_reply(capidx, VirAddr(arg0));
-                ret1 = 0;
+                ret = result_void_ret("endpoint_reply",
+                                      endpoint_reply(capidx, VirAddr(arg0)));
                 break;
             }
             default: {
-                processed = false;
+                ret.processed = false;
                 loggers::SYSCALL::ERROR("未知的系统调用号: %d", sysno);
-                ret0 = ret1 = 0;
+                ret.ret0 = 0;
+                ret.ret1 = static_cast<b64>(ErrCode::NOT_SUPPORTED);
                 break;
             }
         }
 
-        co_return finish_syscall(ctx, tcb, RetPack{processed, ret0, ret1});
+        co_return finish_syscall(ctx, tcb, ret);
     };
+
 }  // namespace syscall
