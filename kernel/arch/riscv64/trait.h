@@ -32,6 +32,7 @@ class Riscv64Initialization {
 public:
     static void pre_init(void);
     static void post_init(void);
+    static void promote_dtb_to_kpa(void);
 };
 
 static_assert(InitializationTrait<Riscv64Initialization>);

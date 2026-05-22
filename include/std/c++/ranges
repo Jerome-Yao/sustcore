@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <type_traits>
@@ -176,6 +177,41 @@ namespace std::ranges {
     inline constexpr __cust::__empty empty{};
     inline constexpr __cust::__size size{};
     inline constexpr __cust::__data data{};
+
+    namespace __algo {
+        struct __identity {
+            template <class T>
+            [[nodiscard]]
+            constexpr T&& operator()(T&& value) const noexcept {
+                return std::forward<T>(value);
+            }
+        };
+
+        struct __find {
+            template <class I, class S, class T, class Proj = __identity>
+                requires (!range<I>)
+            [[nodiscard]]
+            constexpr I operator()(I first, S last, const T& value,
+                                   Proj proj = {}) const {
+                while (first != last) {
+                    if (std::invoke(proj, *first) == value) {
+                        return first;
+                    }
+                    ++first;
+                }
+                return first;
+            }
+
+            template <input_range R, class T, class Proj = __identity>
+            [[nodiscard]]
+            constexpr iterator_t<R> operator()(R&& r, const T& value,
+                                               Proj proj = {}) const {
+                return (*this)(ranges::begin(r), ranges::end(r), value, proj);
+            }
+        };
+    }  // namespace __algo
+
+    inline constexpr __algo::__find find{};
 
     template <range R>
     using range_size_t = decltype(ranges::size(std::declval<R&>()));

@@ -19,8 +19,37 @@
 #include <sus/logger.h>
 #include <sus/units.h>
 
+#include <cstring>
+
 int hart_id;
 void *dtb_ptr;
+
+namespace
+{
+    constexpr size_t BOOT_DTB_STORAGE_SIZE = 128 * 1024;
+    alignas(PAGESIZE) unsigned char boot_dtb_storage[BOOT_DTB_STORAGE_SIZE];
+
+    PhyAddr boot_dtb_storage_pa(void) {
+        addr_t storage_addr = reinterpret_cast<addr_t>(boot_dtb_storage);
+        if (within_scope(storage_addr, AddrType::KVA)) {
+            return PhyAddr(KVA2PA(storage_addr));
+        }
+        if (within_scope(storage_addr, AddrType::KPA)) {
+            return PhyAddr(KPA2PA(storage_addr));
+        }
+        return PhyAddr(storage_addr);
+    }
+
+    void *boot_dtb_storage_preinit_addr(void) {
+        return boot_dtb_storage_pa().addr();
+    }
+
+    [[noreturn]]
+    void halt_on_fdt_error(const char *message) {
+        loggers::DEVICE::FATAL("%s", message);
+        while (true);
+    }
+}  // namespace
 
 void Riscv64Serial::serial_write_char(char ch) {
     sbi_dbcn_console_write_byte(ch);
@@ -37,8 +66,23 @@ extern "C" void c_setup(void) {
 
 void Riscv64Initialization::pre_init(void) {
     if (FDTHelper::fdt_init(dtb_ptr) == nullptr) {
-        // FDT初始化失败
-        while (true);
+        halt_on_fdt_error("原始FDT初始化失败");
+    }
+
+    int dtb_size = fdt_totalsize(dtb_ptr);
+    if (dtb_size <= 0) {
+        halt_on_fdt_error("原始FDT大小非法");
+    }
+    if (static_cast<size_t>(dtb_size) > BOOT_DTB_STORAGE_SIZE) {
+        halt_on_fdt_error("原始FDT超过内核静态保留区容量");
+    }
+
+    void *static_dtb = boot_dtb_storage_preinit_addr();
+    memmove(static_dtb, dtb_ptr, static_cast<size_t>(dtb_size));
+    dtb_ptr = static_dtb;
+
+    if (FDTHelper::fdt_init(dtb_ptr) == nullptr) {
+        halt_on_fdt_error("静态FDT副本初始化失败");
     }
 
     units::frequency hz = get_clock_freq();
@@ -48,6 +92,14 @@ void Riscv64Initialization::pre_init(void) {
     }
 
     loggers::DEVICE::DEBUG("时钟频率为 %d Hz", hz.to_hz());
+}
+
+void Riscv64Initialization::promote_dtb_to_kpa(void) {
+    KpaAddr static_dtb = convert<KpaAddr>(boot_dtb_storage_pa());
+    dtb_ptr            = static_dtb.addr();
+    if (FDTHelper::fdt_init(dtb_ptr) == nullptr) {
+        halt_on_fdt_error("KPA高地址FDT副本初始化失败");
+    }
 }
 
 void Riscv64Idle::idle()

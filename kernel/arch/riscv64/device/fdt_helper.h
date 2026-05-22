@@ -16,9 +16,9 @@
 
 #include <cstddef>
 
-typedef void FDTDesc;
-typedef int FDTNodeDesc;
-typedef int FDTPropDesc;
+using FDTDesc = void;
+using FDTNodeDesc = int;
+using FDTPropDesc = int;
 
 namespace FDTHelper {
     extern FDTDesc *fdt;

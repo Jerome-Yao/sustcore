@@ -108,12 +108,33 @@ namespace test::ranges {
         }
     };
 
+    class CaseFind : public TestCase {
+    public:
+        CaseFind() : TestCase("find") {}
+        void _run(void* env [[maybe_unused]]) const noexcept override {
+            int values[] = {1, 2, 3, 4};
+            ttest(std::ranges::find(values, 3) == values + 2);
+            ttest(std::ranges::find(values, 8) == values + 4);
+            ttest(std::ranges::find(values + 1, values + 4, 2) == values + 1);
+
+            std::vector<std::string> names;
+            names.emplace_back("uart");
+            names.emplace_back("virtio");
+            names.emplace_back("plic");
+            ttest(std::ranges::find(names, std::string("virtio")) ==
+                  names.begin() + 1);
+            ttest(std::ranges::find(names, std::string("missing")) ==
+                  names.end());
+        }
+    };
+
     void collect_tests(TestFramework& framework) {
         auto cases = util::ArrayList<TestCase*>();
         cases.push_back(new CaseAccessArrays());
         cases.push_back(new CaseAccessContainers());
         cases.push_back(new CaseConcepts());
         cases.push_back(new CaseViews());
+        cases.push_back(new CaseFind());
 
         framework.add_category(new TestCategory("ranges", std::move(cases)));
     }

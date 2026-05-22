@@ -31,7 +31,7 @@ char *uitoa(unsigned int val, char *buffer, int base) {
         return ret;
     }
 
-    char _buffer[12];
+    char _buffer[65];
     int cnt = 0;
 
     // val仍大于0
@@ -108,7 +108,7 @@ char *ulltoa(unsigned long long val, char *buffer, int base) {
         return ret;
     }
 
-    char _buffer[12];
+    char _buffer[65];
     int cnt = 0;
 
     // val仍大于0

@@ -9,6 +9,7 @@
  *
  */
 
+#include <arch/riscv64/description.h>
 #include <arch/riscv64/device/fdt_helper.h>
 #include <arch/riscv64/trait.h>
 #include <arch/trait.h>
@@ -139,12 +140,15 @@ Result<void> Riscv64MemoryLayout::detect() {
 
     // FDT 中的内存区域使用物理地址, linker symbols 是内核高半区虚拟地址.
     // 因此这里必须先转换成物理地址, 否则 kernel/initrd 会被误加入 FREE 区域.
-    auto kernel_start_pa       = reinterpret_cast<void *>(
-        KVA2PA(reinterpret_cast<addr_t>(&skernel)));
-    size_t kernel_sz           = (size_t)(&ekernel - &skernel);
+
+
+    PhyAddr kernel_start_pa       = convert_pointer(&skernel);
+    PhyAddr kernel_end_pa         = convert_pointer(&ekernel);
+    PhyArea kernel_area(kernel_start_pa, kernel_end_pa);
+
     reserved_buf[num_reserved] = {
-        .ptr  = kernel_start_pa,
-        .size = kernel_sz,
+        .ptr  = kernel_area.begin.addr(),
+        .size = kernel_area.size(),
     };
     num_reserved++;
 

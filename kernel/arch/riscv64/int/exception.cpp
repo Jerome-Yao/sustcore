@@ -24,7 +24,9 @@ extern "C" [[noreturn]] void isr_restore_kernel(void *kstack_top);
 extern "C" void handle_trap(csr_scause_t scause, umb_t sepc, umb_t stval,
                             Riscv64Context *ctx) {
     bool from_umode = !ctx->sstatus.spp;
-    task::TaskManager::inst().reap_recycled();
+    if (task::TaskManager::initialized()) {
+        task::TaskManager::inst().reap_recycled();
+    }
     if (scause.interrupt) {
         if (scause.cause == 5) {
             Handlers::timer(scause, sepc, stval, ctx);

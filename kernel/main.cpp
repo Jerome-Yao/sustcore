@@ -18,6 +18,7 @@
 #include <cap/cholder.h>
 #include <cap/permission.h>
 #include <device/block.h>
+#include <device/config.h>
 #include <env.h>
 #include <exe/elfloader.h>
 #include <exe/task.h>
@@ -198,6 +199,45 @@ void after_init() {
 
 void init_kop();
 
+static RawConfiguration global_config;
+
+void log_raw_configuration(const RawConfiguration &config) {
+    kprintf("设备树解析结果:\n");
+    for (const auto &device : config.devices) {
+        kprintf("设备节点: %s\n", device.node_name.c_str());
+        kprintf("  兼容列表:\n");
+        for (const auto &compatible : device.compatibles) {
+            kprintf("    - %s\n", compatible.c_str());
+        }
+        kprintf("  内存区域:\n");
+        for (const auto &region : device.regions) {
+            kprintf("    - [%p, %p)\n", region.begin.addr(),
+                   region.end.addr());
+        }
+        kprintf("  默认 phandle: %u\n", device.default_phandle);
+        kprintf("  中断描述符:\n");
+        for (const auto &irq_desc : device.interrupts) {
+            kprintf("    - phandle: %u\n", irq_desc.phandle);
+            kprintf("      硬件 IRQ 列表:");
+            for (const auto &hw_irq : irq_desc.hw_irqs) {
+                kprintf("        - %u\n", hw_irq);
+            }
+        }
+        kprintf("  属性列表:");
+        for (const auto &[name, prop] : device.properties) {
+            kprintf("    - %s: %u bytes\n", name.c_str(),
+                   prop.raw.size());
+        }
+    }
+}
+
+void init_raw_configuration() {
+    new (&global_config) RawConfiguration();
+    parse_device_tree(FDTHelper::fdt, global_config);
+
+    log_raw_configuration(global_config);
+}
+
 extern "C" void post_init(void) {
     loggers::SUSTCORE::INFO("已进入 post-init 阶段");
     auto &e = env::inst();
@@ -210,11 +250,6 @@ extern "C" void post_init(void) {
 
     // 初始化中断处理程序
     Interrupt::init();
-    // TODO: 按理来说这个东西应该放在下面的
-    // 但是我忘记把device tree给提升到kernel physical address space中了
-    // 我现在也改不动了
-    // 就先放在这吧
-    Initialization::post_init();
 
     // 将低端内存设置为用户态
     auto &meminfo = e.meminfo();
@@ -222,6 +257,11 @@ extern "C" void post_init(void) {
     kernelman.modify_range_flags<PageMan::ModifyMask::U>(
         meminfo.lowvm, meminfo.uppm - meminfo.lowpm, PageMan::RWX::NONE, true,
         false);
+    Initialization::promote_dtb_to_kpa();
+
+    init_raw_configuration();
+
+    Initialization::post_init();
 
     // 初始化 kernel object pool
     loggers::SUSTCORE::INFO("初始化内核对象池");
