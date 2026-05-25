@@ -12,6 +12,7 @@
 #include <arch/riscv64/csr.h>
 #include <arch/riscv64/device/fdt_helper.h>
 #include <arch/riscv64/device/misc.h>
+#include <device/model.h>
 #include <logger.h>
 #include <sbi/sbi.h>
 #include <sus/logger.h>
@@ -21,33 +22,13 @@ TimerInfo timer_info;
 
 units::frequency get_clock_freq(void) {
     // 读取 /cpus/timebase-frequency 属性
-    FDTNodeDesc root = FDTHelper::get_root_node();
-
-    FDTNodeDesc cpus_node = FDTHelper::get_subnode(root, "cpus");
-    if (cpus_node < 0) {
-        // 未找到cpus节点
-        loggers::DEVICE::ERROR("未找到/cpus节点, 无法获取时钟频率");
+    auto cpus = device::DeviceModel::inst().cpus();
+    if (cpus == nullptr)
+    {
+        loggers::DEVICE::ERROR("未找到CPU信息, 无法获取时钟频率");
         return 0_Hz;
     }
-
-    FDTPropDesc prop_freq =
-        FDTHelper::get_property(cpus_node, "timebase-frequency");
-    if (prop_freq < 0) {
-        // 未找到timebase-frequency属性
-        loggers::DEVICE::ERROR("未找到/cpus/timebase-frequency属性, 无法获取时钟频率");
-        return 0_Hz;
-    }
-
-    int freq = FDTHelper::get_property_value_as<int, 0>(prop_freq);
-    if (freq <= 0) {
-        // 属性值无效
-        loggers::DEVICE::ERROR(
-            "/cpus/timebase-frequency不能以dword读取, 无法获取时钟频率");
-        return 0_Hz;
-    }
-
-    // 对于QEMU的virt机器, 时钟频率恒为10MHz
-    return units::frequency::from_hz(freq);
+    return cpus->freq;
 }
 
 void init_timer(units::frequency freq, units::frequency expected_freq) {

@@ -84,14 +84,6 @@ void Riscv64Initialization::pre_init(void) {
     if (FDTHelper::fdt_init(dtb_ptr) == nullptr) {
         halt_on_fdt_error("静态FDT副本初始化失败");
     }
-
-    units::frequency hz = get_clock_freq();
-    if (hz.to_hz() == 0) {
-        // 时钟频率获取失败
-        while (true);
-    }
-
-    loggers::DEVICE::DEBUG("时钟频率为 %d Hz", hz.to_hz());
 }
 
 void Riscv64Initialization::promote_dtb_to_kpa(void) {

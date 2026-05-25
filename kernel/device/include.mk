@@ -1,1 +1,1 @@
-sources += block.cpp config.cpp int.cpp
+sources += block.cpp fdt.cpp int.cpp model.cpp

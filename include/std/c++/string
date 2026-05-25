@@ -133,15 +133,25 @@ namespace std {
             return nullptr;
         }
 
-        static char_type *move(char_type *dest, const char_type *src,
-                               size_t n) {
-            memmove(dest, src, n * sizeof(char_type));
+        static constexpr char_type *move(char_type *dest, const char_type *src,
+                                         size_t n) {
+            if (dest < src) {
+                for (size_t i = 0; i < n; ++i) {
+                    dest[i] = src[i];
+                }
+            } else if (dest > src) {
+                for (size_t i = n; i > 0; --i) {
+                    dest[i - 1] = src[i - 1];
+                }
+            }
             return dest;
         }
 
-        static char_type *copy(char_type *dest, const char_type *src,
-                               size_t n) {
-            memcpy(dest, src, n * sizeof(char_type));
+        static constexpr char_type *copy(char_type *dest, const char_type *src,
+                                         size_t n) {
+            for (size_t i = 0; i < n; ++i) {
+                dest[i] = src[i];
+            }
             return dest;
         }
 
@@ -149,30 +159,30 @@ namespace std {
             c1 = c2;
         }
 
-        static char_type *assign(char_type *s, size_t n, char_type c) {
+        static constexpr char_type *assign(char_type *s, size_t n, char_type c) {
             for (size_t i = 0; i < n; ++i) {
                 s[i] = c;
             }
             return s;
         }
 
-        static int_type not_eof(int_type c) {
+        static constexpr int_type not_eof(int_type c) {
             return (c == eof()) ? 0 : c;
         }
 
-        static char_type to_char_type(int_type c) {
+        static constexpr char_type to_char_type(int_type c) {
             return static_cast<char_type>(c);
         }
 
-        static int_type to_int_type(char_type c) {
+        static constexpr int_type to_int_type(char_type c) {
             return static_cast<int_type>(c);
         }
 
-        static bool eq_int_type(int_type c1, int_type c2) {
+        static constexpr bool eq_int_type(int_type c1, int_type c2) {
             return c1 == c2;
         }
 
-        static int_type eof() {
+        static constexpr int_type eof() {
             return static_cast<int_type>(-1);
         }
     };
@@ -257,11 +267,11 @@ namespace std {
             return P_sso(D_capacity) ? (pointer)D_sso.D_buf : D_dyn.D_data;
         }
 
-        void U_assign(size_type idx, value_type c) {
+        constexpr void U_assign(size_type idx, value_type c) {
             Traits::assign(U_buf()[idx], c);
         }
 
-        void U_copy(size_type idx, const value_type *str, size_type cnt) {
+        constexpr void U_copy(size_type idx, const value_type *str, size_type cnt) {
             Traits::copy(U_buf() + idx, str, cnt);
         }
 
@@ -274,12 +284,12 @@ namespace std {
 
         static constexpr value_type empty_char = value_type();
 
-        void U_init_sso() noexcept {
+        constexpr void U_init_sso() noexcept {
             D_capacity = __SSOCAPACITY;
             U_trail(0);
         }
 
-        void U_allocate(size_type n) {
+        constexpr void U_allocate(size_type n) {
             // still in sso mode
             if (P_sso(n)) {
                 return;
@@ -289,7 +299,7 @@ namespace std {
             U_trail(0);
         }
 
-        void __U_init(void) {
+        constexpr void __U_init() {
             if (P_sso(D_size)) {
                 U_init_sso();
             } else {
@@ -1574,8 +1584,8 @@ namespace std {
         // 操作
         // compare
         int compare(const basic_string &str) const noexcept {
-            size_type s1   = size();
-            size_type s2   = str.size();
+            size_type s1   = length();
+            size_type s2   = str.length();
             size_type rlen = std::min(s1, s2);
             int res        = Traits::compare(data(), str.data(), rlen);
             if (res == 0) {

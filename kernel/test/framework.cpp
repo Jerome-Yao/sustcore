@@ -24,6 +24,7 @@
 #include <test/optional.h>
 #include <test/path.h>
 #include <test/printf.h>
+#include <test/raii.h>
 #include <test/ranges.h>
 #include <test/schd/fcfs.h>
 #include <test/schd/rr.h>
@@ -46,6 +47,7 @@ void collect_tests(TestFramework& framework) {
     test::optional::collect_tests(framework);
     test::path::collect_tests(framework);
     test::printf::collect_tests(framework);
+    test::raii::collect_tests(framework);
     test::ranges::collect_tests(framework);
     test::schd_test::fcfs::collect_tests(framework);
     test::schd_test::rr::collect_tests(framework);

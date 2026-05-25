@@ -23,6 +23,14 @@ extern "C" [[noreturn]] void isr_restore_kernel(void *kstack_top);
 
 extern "C" void handle_trap(csr_scause_t scause, umb_t sepc, umb_t stval,
                             Riscv64Context *ctx) {
+    if (!scause.interrupt) {
+        loggers::INTERRUPT::DEBUG(
+            "trap: cause=%llu sepc=%p stval=%p ctx=%p sp(before fault)=%p "
+            "kstack_sp=%p from_%s",
+            static_cast<unsigned long long>(scause.cause), (void*)sepc,
+            (void*)stval, ctx, (void*)ctx->sp(), (void*)ctx->kstack_sp,
+            ctx->sstatus.spp ? "smode" : "umode");
+    }
     bool from_umode = !ctx->sstatus.spp;
     if (task::TaskManager::initialized()) {
         task::TaskManager::inst().reap_recycled();

@@ -18,7 +18,8 @@
 #include <cap/cholder.h>
 #include <cap/permission.h>
 #include <device/block.h>
-#include <device/config.h>
+#include <device/fdt.h>
+#include <device/model.h>
 #include <env.h>
 #include <exe/elfloader.h>
 #include <exe/task.h>
@@ -198,44 +199,28 @@ void after_init() {
 }
 
 void init_kop();
+extern void *dtb_ptr;
 
-static RawConfiguration global_config;
+void init_device_model() {
+    loggers::SUSTCORE::INFO("构建设备模型");
 
-void log_raw_configuration(const RawConfiguration &config) {
-    kprintf("设备树解析结果:\n");
-    for (const auto &device : config.devices) {
-        kprintf("设备节点: %s\n", device.node_name.c_str());
-        kprintf("  兼容列表:\n");
-        for (const auto &compatible : device.compatibles) {
-            kprintf("    - %s\n", compatible.c_str());
-        }
-        kprintf("  内存区域:\n");
-        for (const auto &region : device.regions) {
-            kprintf("    - [%p, %p)\n", region.begin.addr(),
-                   region.end.addr());
-        }
-        kprintf("  默认 phandle: %u\n", device.default_phandle);
-        kprintf("  中断描述符:\n");
-        for (const auto &irq_desc : device.interrupts) {
-            kprintf("    - phandle: %u\n", irq_desc.phandle);
-            kprintf("      硬件 IRQ 列表:");
-            for (const auto &hw_irq : irq_desc.hw_irqs) {
-                kprintf("        - %u\n", hw_irq);
-            }
-        }
-        kprintf("  属性列表:");
-        for (const auto &[name, prop] : device.properties) {
-            kprintf("    - %s: %u bytes\n", name.c_str(),
-                   prop.raw.size());
-        }
+    device::DeviceModel::init();
+
+    auto &model = device::DeviceModel::inst();
+
+    model.register_provider(
+        util::owner<device::DeviceProvider *>(new fdt::FDTProvider(dtb_ptr)));
+    model.register_provider(
+        util::owner<device::DeviceProvider *>(new device::KernelProvider()));
+
+    auto regions = device::DeviceModel::inst().memory_regions();
+    for (size_t i = 0; i < regions.size(); ++i) {
+        const auto &region = regions[i];
+        loggers::SUSTCORE::INFO("设备模型内存区域 %u: [%p, %p) Status: %d", i,
+                                region.area.begin.addr(),
+                                region.area.end.addr(),
+                                static_cast<int>(region.status));
     }
-}
-
-void init_raw_configuration() {
-    new (&global_config) RawConfiguration();
-    parse_device_tree(FDTHelper::fdt, global_config);
-
-    log_raw_configuration(global_config);
 }
 
 extern "C" void post_init(void) {
@@ -252,6 +237,7 @@ extern "C" void post_init(void) {
     Interrupt::init();
 
     // 将低端内存设置为用户态
+    loggers::SUSTCORE::INFO("将低端内存设置为用户态");
     auto &meminfo = e.meminfo();
     PageMan kernelman(kernel_root);
     kernelman.modify_range_flags<PageMan::ModifyMask::U>(
@@ -259,7 +245,8 @@ extern "C" void post_init(void) {
         false);
     Initialization::promote_dtb_to_kpa();
 
-    init_raw_configuration();
+    loggers::SUSTCORE::INFO("初始化设备树配置");
+    init_device_model();
 
     Initialization::post_init();
 
@@ -306,9 +293,9 @@ void pre_init() {
 
     Initialization::pre_init();
 
-    auto &e         = env::inst();
-    auto detect_res = MemoryLayout::detect();
+    auto &e = env::inst();
 
+    auto detect_res = MemoryLayout::detect();
     if (!detect_res.has_value()) {
         loggers::SUSTCORE::FATAL("探测内存区域失败!错误码: %s",
                                  to_cstring(detect_res.error()));
@@ -356,7 +343,7 @@ void pre_init() {
     while (true);
 }
 
-void kernel_setup(void) {
+void kernel_setup() {
     pre_init();
     while (true);
 }
