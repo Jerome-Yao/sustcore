@@ -27,7 +27,7 @@ namespace {
     constexpr const char *NO_MAP_PROP        = "no-map";
     constexpr const char *STATUS_PROP        = "status";
     constexpr const char *DEVICE_TYPE_PROP   = "device_type";
-    constexpr const char *TIMEBASE_FREQ_PROP   = "timebase-frequency";
+    constexpr const char *TIMEBASE_FREQ_PROP = "timebase-frequency";
 
     constexpr const char *OKAY_STATUS        = "okay";
     constexpr const char *MEMORY_DEVICE_TYPE = "memory";
@@ -313,23 +313,25 @@ namespace fdt {
         }
     }
 
-    Result<util::owner<device::CPUS *>> FDTProvider::get_cpus() const {
+    void FDTProvider::update_cpus(device::CPUS &cpus) const {
         if (!_config.root) {
-            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            loggers::DEVICE::WARN("设备树根节点不存在, 无法获取 CPU 信息");
+            return;
         }
 
         Node *cpus_node = _config.get_node_by_path(CPUS_PATH);
         if (cpus_node == nullptr || !node_status_enabled(*cpus_node)) {
-            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            loggers::DEVICE::WARN("设备树中缺少 /cpus 节点或其状态不可用, 无法获取 CPU 信息");
+            return;
         }
 
         auto freq_prop_it = cpus_node->properties.find(TIMEBASE_FREQ_PROP);
         if (freq_prop_it == cpus_node->properties.end()) {
-            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            loggers::DEVICE::WARN("节点 /cpus 缺少 timebase-frequency 属性, 无法获取 CPU 频率");
+            return;
         }
 
-        auto cpus = util::owner(new device::CPUS());
-        cpus->freq = units::frequency::from_hz(freq_prop_it->second->as_integral());
-        return cpus;
+        cpus.freq =
+            units::frequency::from_hz(freq_prop_it->second->as_integral());
     }
 }  // namespace fdt

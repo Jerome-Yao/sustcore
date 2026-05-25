@@ -59,8 +59,7 @@ namespace device {
         virtual void collect_memory_regions(
             std::vector<MemRegion> &regions) const = 0;
 
-        [[nodiscard]]
-        virtual Result<util::owner<CPUS *>> get_cpus() const = 0;
+        virtual void update_cpus(CPUS &cpus) const = 0;
 
         [[nodiscard]]
         virtual const char *name() const = 0;
@@ -74,18 +73,15 @@ namespace device {
         }
 
         [[nodiscard]]
-        const CPUS *cpus() const {
+        const CPUS &cpus() const {
             return _cpus;
         }
 
         void register_provider(util::owner<DeviceProvider *> provider) {
             _providers.push_back(std::move(provider));
             provider->collect_memory_regions(_regions);
-            _regions     = _normalize_memory_regions(_regions);
-            auto get_res = provider->get_cpus();
-            if (get_res.has_value()) {
-                _cpus = std::move(get_res.value());
-            }
+            _regions = _normalize_memory_regions(_regions);
+            provider->update_cpus(_cpus);
             loggers::DEVICE::INFO("已注册设备提供者: %s", provider->name());
         }
 
@@ -134,17 +130,15 @@ namespace device {
         constexpr DeviceModel() = default;
         std::vector<util::owner<DeviceProvider *>> _providers;
         std::vector<MemRegion> _regions;
-        util::owner<CPUS *> _cpus{nullptr};
+        CPUS _cpus;
     };
 
     class KernelProvider : public DeviceProvider {
     public:
         void collect_memory_regions(
             std::vector<MemRegion> &regions) const override;
-
-        [[nodiscard]]
-        Result<util::owner<CPUS *>> get_cpus() const override {
-            unexpect_return(ErrCode::NOT_SUPPORTED);
+        void update_cpus(CPUS &) const override
+        {
         }
         [[nodiscard]]
         const char *name() const override {

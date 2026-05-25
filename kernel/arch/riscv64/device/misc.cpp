@@ -22,13 +22,7 @@ TimerInfo timer_info;
 
 units::frequency get_clock_freq(void) {
     // 读取 /cpus/timebase-frequency 属性
-    auto cpus = device::DeviceModel::inst().cpus();
-    if (cpus == nullptr)
-    {
-        loggers::DEVICE::ERROR("未找到CPU信息, 无法获取时钟频率");
-        return 0_Hz;
-    }
-    return cpus->freq;
+    return device::DeviceModel::inst().cpus().freq;
 }
 
 void init_timer(units::frequency freq, units::frequency expected_freq) {

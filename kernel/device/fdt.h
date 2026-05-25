@@ -282,8 +282,7 @@ namespace fdt {
         }
         void collect_memory_regions(
             std::vector<device::MemRegion> &regions) const override;
-        [[nodiscard]]
-        Result<util::owner<device::CPUS *>> get_cpus() const override;
+        void update_cpus(device::CPUS &cpus) const override;
         [[nodiscard]]
         const char *name() const override {
             return "fdt";
