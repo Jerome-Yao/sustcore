@@ -16,6 +16,7 @@
 #include <logger.h>
 #include <sus/owner.h>
 #include <sus/units.h>
+#include <device/device.h>
 #include <sustcore/errcode.h>
 
 #include <functional>
@@ -59,16 +60,6 @@ namespace device {
      * @brief 中断触发方式.
      */
     enum class IrqTrigger { EDGE_RISING, EDGE_FALLING, LEVEL_HIGH, LEVEL_LOW };
-
-    using irq_prio_t                            = b32;
-    using cpu_mask_t                            = b64;
-    using virq_t                                = b64;
-    using hwirq_t                               = b32;
-    using intc_t                                = b32;
-    using domain_t                              = b32;
-    using cpuid_t                               = b32;
-    inline constexpr intc_t INVALID_ICTRL_ID    = static_cast<intc_t>(-1);
-    inline constexpr domain_t INVALID_DOMAIN_ID = static_cast<domain_t>(-1);
 
     /**
      * @brief 中断控制器抽象接口.
@@ -538,30 +529,31 @@ namespace device {
     public:
         static constexpr hwirq_t SOFTWARE_LOCAL_IRQ = 3;
         static constexpr hwirq_t CLOCK_LOCAL_IRQ    = 7;
+        static constexpr hwirq_t EXTERNAL_LOCAL_IRQ = 9;
 
         /**
-         * @brief 构造一个 CPU 本地中断控制器后端.
+         * @brief 创建一个 CPU 本地中断控制器后端.
          *
+         * @param node 统一设备语义节点.
          * @param name 控制器名称.
          * @param identifier 控制器 ID.
          * @param hart_id 该中断控制器所属 hart.
+         * @return Result<util::owner<RiscVIntC*>> 构造结果.
          */
-        RiscVIntC(std::string name, intc_t identifier, cpuid_t hart_id) noexcept
-            : _name(std::move(name)),
-              _identifier(identifier),
-              _hart_id(hart_id) {}
+        [[nodiscard]]
+        static Result<util::owner<RiscVIntC *>> create(
+            util::owner<DeviceNode *> node, std::string name,
+            intc_t identifier, cpuid_t hart_id) noexcept;
 
         ~RiscVIntC() override = default;
 
         [[nodiscard]]
-        const char *name() const override {
+        const char *name() const noexcept override {
             return _name.c_str();
         }
 
         [[nodiscard]]
-        std::vector<PhyArea> mmio_regions() const override {
-            return {};
-        }
+        std::vector<PhyArea> mmio_regions() const override;
 
         [[nodiscard]]
         Result<void> enable_irq(hwirq_t hw_irq) override;
@@ -592,6 +584,22 @@ namespace device {
         }
 
     private:
+        /**
+         * @brief 构造一个 CPU 本地中断控制器后端.
+         *
+         * @param node 统一设备语义节点.
+         * @param name 控制器名称.
+         * @param identifier 控制器 ID.
+         * @param hart_id 所属 hart.
+         */
+        RiscVIntC(util::owner<DeviceNode *> node, std::string name,
+                  intc_t identifier, cpuid_t hart_id) noexcept
+            : _node(std::move(node)),
+              _name(std::move(name)),
+              _identifier(identifier),
+              _hart_id(hart_id) {}
+
+        util::owner<DeviceNode *> _node = util::owner<DeviceNode *>(nullptr);
         std::string _name;
         intc_t _identifier = INVALID_ICTRL_ID;
         cpuid_t _hart_id   = 0;
@@ -602,6 +610,39 @@ namespace device {
      */
     class Clint : public IrqChip {
     private:
+        /**
+         * @brief 从统一设备节点读取 MMIO 区域.
+         *
+         * @return Result<std::vector<PhyArea>> MMIO 区域列表.
+         */
+        [[nodiscard]]
+        static Result<std::vector<PhyArea>> load_mmio_regions(
+            const DeviceNode &node) noexcept;
+
+        /**
+         * @brief 从统一设备节点读取 CLINT 所需 virq 列表.
+         *
+         * @return Result<std::pair<virq_t, virq_t>> software/timer virq.
+         */
+        [[nodiscard]]
+        static Result<std::pair<virq_t, virq_t>> load_clint_virqs(
+            const DeviceNode &node) noexcept;
+
+        /**
+         * @brief 构造一个 CLINT 控制器对象.
+         *
+         * @param node 统一设备语义节点.
+         * @param name 控制器名称.
+         * @param identifier 控制器 ID.
+         * @param hart_id 默认 hart.
+         * @param target_harts 目标 hart 集合.
+         */
+        Clint(util::owner<DeviceNode *> node, std::string name,
+              intc_t identifier, cpuid_t hart_id,
+              std::vector<cpuid_t> target_harts) noexcept;
+
+    private:
+        util::owner<DeviceNode *> _node = util::owner<DeviceNode *>(nullptr);
         std::string _name;
         intc_t _identifier;
         std::vector<PhyArea> _mmio_regions;
@@ -612,20 +653,21 @@ namespace device {
 
     public:
         /**
-         * @brief 由 CLINT 节点构造的 RISC-V CLINT 后端.
+         * @brief 由统一设备节点创建 RISC-V CLINT 后端.
          *
+         * @param node 统一设备语义节点.
          * @param name 控制器名称.
          * @param identifier 控制器 ID.
-         * @param mmio_regions MMIO 区域列表.
          * @param hart_id 默认使用的目标 hart.
          * @param target_harts 该 CLINT 通过 interrupts-extended 解析到的目标
          * hart 集合.
-         * @param virqs 该 CLINT 通过 interrupts-extended 解析到的 virq 列表
+         * @return Result<util::owner<Clint*>> 创建结果.
          */
-        Clint(std::string name, intc_t identifier,
-              std::vector<PhyArea> mmio_regions, cpuid_t hart_id,
-              std::vector<cpuid_t> target_harts,
-              std::vector<virq_t> virqs) noexcept;
+        [[nodiscard]]
+        static Result<util::owner<Clint *>> create(
+            util::owner<DeviceNode *> node, std::string name,
+            intc_t identifier, cpuid_t hart_id,
+            std::vector<cpuid_t> target_harts) noexcept;
 
         /**
          * @brief 销毁控制器对象.
@@ -728,6 +770,244 @@ namespace device {
         virq_t clock_virq() const noexcept {
             return _clock_virq;
         }
+    };
+
+    /**
+     * @brief RISC-V PLIC 上下文描述.
+     */
+    struct PlicContext {
+        cpuid_t hart_id       = 0;
+        intc_t parent_intc    = INVALID_ICTRL_ID;
+        virq_t external_virq  = 0;
+        size_t context_index  = 0;
+    };
+
+    /**
+     * @brief RISC-V PLIC 控制器实现.
+     */
+    class Plic final : public IrqChip {
+    public:
+        /**
+         * @brief 构造一个 PLIC 控制器后端.
+         *
+         * @param node 统一设备语义节点.
+         * @param name 控制器名称.
+         * @param identifier 控制器 ID.
+         * @param source_count 可管理的外部中断源数量.
+         * @param contexts PLIC context 与 hart 的映射.
+         * @return Result<util::owner<Plic*>> 创建结果.
+         */
+        [[nodiscard]]
+        static Result<util::owner<Plic *>> create(
+            util::owner<DeviceNode *> node, std::string name,
+            intc_t identifier, hwirq_t source_count,
+            std::vector<PlicContext> contexts) noexcept;
+
+        /**
+         * @brief 销毁 PLIC 对象.
+         */
+        ~Plic() override = default;
+
+        /**
+         * @brief 获取控制器名称.
+         */
+        [[nodiscard]]
+        const char *name() const noexcept override;
+
+        /**
+         * @brief 获取 MMIO 区域列表.
+         */
+        [[nodiscard]]
+        std::vector<PhyArea> mmio_regions() const override;
+
+        /**
+         * @brief 使能指定外部中断源.
+         */
+        [[nodiscard]]
+        Result<void> enable_irq(hwirq_t hw_irq) override;
+
+        /**
+         * @brief 屏蔽指定外部中断源.
+         */
+        [[nodiscard]]
+        Result<void> disable_irq(hwirq_t hw_irq) override;
+
+        /**
+         * @brief 设置指定外部中断源优先级.
+         */
+        [[nodiscard]]
+        Result<void> set_priority(hwirq_t hw_irq, irq_prio_t prio) override;
+
+        /**
+         * @brief 设置指定外部中断源亲和性.
+         */
+        [[nodiscard]]
+        Result<void> set_affinity(hwirq_t hw_irq, cpu_mask_t mask) override;
+
+        /**
+         * @brief 完成当前 hart 上已 claim 的中断源.
+         */
+        [[nodiscard]]
+        Result<void> ack_irq(hwirq_t hw_irq) override;
+
+        /**
+         * @brief 设置指定外部中断源触发方式.
+         */
+        [[nodiscard]]
+        Result<void> set_trigger(hwirq_t hw_irq, IrqTrigger trigger) override;
+
+        /**
+         * @brief 从当前 hart 所属 context claim 一个待处理外部中断源.
+         *
+         * @return Result<hwirq_t> claim 得到的外部中断源编号.
+         */
+        [[nodiscard]]
+        Result<hwirq_t> resolve_claim_for_current_hart() noexcept;
+
+        /**
+         * @brief 获取控制器 ID.
+         *
+         * @return intc_t 控制器 ID.
+         */
+        [[nodiscard]]
+        intc_t identifier() const noexcept {
+            return _identifier;
+        }
+
+        /**
+         * @brief 获取可管理的外部中断源数量.
+         *
+         * @return hwirq_t 外部中断源数量.
+         */
+        [[nodiscard]]
+        hwirq_t source_count() const noexcept {
+            return _source_count;
+        }
+
+        /**
+         * @brief 获取 PLIC context 列表.
+         *
+         * @return const std::vector<PlicContext>& context 描述列表.
+         */
+        [[nodiscard]]
+        const std::vector<PlicContext> &contexts() const noexcept {
+            return _contexts;
+        }
+
+    private:
+        /**
+         * @brief 从统一设备节点读取 MMIO 区域.
+         *
+         * @return Result<std::vector<PhyArea>> MMIO 区域列表.
+         */
+        [[nodiscard]]
+        static Result<std::vector<PhyArea>> load_mmio_regions(
+            const DeviceNode &node) noexcept;
+
+        /**
+         * @brief 使用统一设备节点构造 PLIC 对象.
+         *
+         * @param node 统一设备语义节点.
+         * @param name 控制器名称.
+         * @param identifier 控制器 ID.
+         * @param source_count 中断源数量.
+         * @param contexts 上下文列表.
+         */
+        Plic(util::owner<DeviceNode *> node, std::string name, intc_t identifier,
+             hwirq_t source_count, std::vector<PlicContext> contexts) noexcept;
+
+        /**
+         * @brief 获取指定 hart 对应的 context.
+         *
+         * @param hart_id 目标 hart ID.
+         * @return Result<const PlicContext&> 对应的 context 引用.
+         */
+        [[nodiscard]]
+        Result<const PlicContext &> context_for_hart(cpuid_t hart_id) const noexcept;
+
+        /**
+         * @brief 校验外部中断源编号是否合法.
+         *
+         * @param hw_irq 待校验的外部中断源编号.
+         * @return Result<void> 校验结果.
+         */
+        [[nodiscard]]
+        Result<void> validate_source(hwirq_t hw_irq) const noexcept;
+
+        /**
+         * @brief 读取 PLIC 32 位寄存器.
+         *
+         * @param offset 相对 PLIC 基地址的偏移.
+         * @return sus_u32 读取到的寄存器值.
+         */
+        [[nodiscard]]
+        sus_u32 read32(size_t offset) const noexcept;
+
+        /**
+         * @brief 向 PLIC 32 位寄存器写入值.
+         *
+         * @param offset 相对 PLIC 基地址的偏移.
+         * @param value 待写入的寄存器值.
+         */
+        void write32(size_t offset, sus_u32 value) noexcept;
+
+        /**
+         * @brief 获取指定 source 的 priority 寄存器偏移.
+         *
+         * @param hw_irq 外部中断源编号.
+         * @return size_t 寄存器偏移.
+         */
+        [[nodiscard]]
+        static constexpr size_t priority_offset(hwirq_t hw_irq) noexcept {
+            return static_cast<size_t>(hw_irq) * sizeof(sus_u32);
+        }
+
+        /**
+         * @brief 获取指定 context 下 source enable bit 的寄存器偏移.
+         *
+         * @param context_index context 编号.
+         * @param hw_irq 外部中断源编号.
+         * @return size_t 寄存器偏移.
+         */
+        [[nodiscard]]
+        static constexpr size_t enable_offset(size_t context_index,
+                                              hwirq_t hw_irq) noexcept {
+            return 0x002000 + context_index * 0x80 +
+                   static_cast<size_t>(hw_irq / 32) * sizeof(sus_u32);
+        }
+
+        /**
+         * @brief 获取指定 context 的 threshold 寄存器偏移.
+         *
+         * @param context_index context 编号.
+         * @return size_t 寄存器偏移.
+         */
+        [[nodiscard]]
+        static constexpr size_t threshold_offset(size_t context_index) noexcept {
+            return 0x200000 + context_index * 0x1000;
+        }
+
+        /**
+         * @brief 获取指定 context 的 claim/complete 寄存器偏移.
+         *
+         * @param context_index context 编号.
+         * @return size_t 寄存器偏移.
+         */
+        [[nodiscard]]
+        static constexpr size_t claim_complete_offset(
+            size_t context_index) noexcept {
+            return threshold_offset(context_index) + sizeof(sus_u32);
+        }
+
+        std::string _name;
+        intc_t _identifier = INVALID_ICTRL_ID;
+        util::owner<DeviceNode *> _node = util::owner<DeviceNode *>(nullptr);
+        std::vector<PhyArea> _mmio_regions;
+        hwirq_t _source_count = 0;
+        std::vector<PlicContext> _contexts;
+        std::unordered_map<cpuid_t, size_t> _context_indices;
+        std::unordered_map<cpuid_t, hwirq_t> _claimed_sources;
+        volatile sus_u32 *_base = nullptr;
     };
 
     class ClintAlarm : public Alarm {

@@ -210,8 +210,6 @@ namespace device {
      */
     enum class CpuTopoLevel { THREAD, CORE, CLUSTER, PACKAGE, NUMA };
 
-    using topo_t = b32;
-
     /**
      * @brief CPU 拓扑节点.
      */

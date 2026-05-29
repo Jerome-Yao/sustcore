@@ -1,1 +1,1 @@
-sources += exception.cpp isr.cpp trap.S
+sources += exception.cpp trap.S

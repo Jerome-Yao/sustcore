@@ -20,9 +20,6 @@
 
 #include <cassert>
 #include <cstddef>
-#include <memory>
-#include <optional>
-#include <ranges>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -266,7 +263,90 @@ namespace fdt {
 
     void make_config(void *dtb, Configuration &config);
 
+    class FDTProvider;
+
+    /**
+     * @brief 将 FDT 原始节点暴露为统一设备语义接口.
+     */
+    class FDTDeviceNode final : public device::DeviceNode {
+    public:
+        /**
+         * @brief 使用 FDT 上下文构造统一设备节点包装器.
+         *
+         * @param provider 所属 FDT provider.
+         * @param config FDT 配置树.
+         * @param node 目标原始节点.
+         */
+        FDTDeviceNode(const FDTProvider &provider, const Configuration &config,
+                      const Node &node) noexcept;
+
+        /**
+         * @brief 销毁节点包装器.
+         */
+        ~FDTDeviceNode() override = default;
+
+        /**
+         * @brief 获取节点所属平台名称.
+         *
+         * @return const char* 固定返回 "fdt".
+         */
+        [[nodiscard]]
+        const char *platform() const noexcept override;
+
+        /**
+         * @brief 查询统一语义下的节点属性.
+         *
+         * @param name 统一属性名.
+         * @return Optional<device::DevicePropView> 查询结果.
+         */
+        [[nodiscard]]
+        Optional<device::DevicePropView> property(
+            const std::string &name) const override;
+
+    private:
+        /**
+         * @brief 读取原始 FDT 属性并包装为统一属性视图.
+         *
+         * @param prop_name FDT 原始属性名.
+         * @return Optional<device::DevicePropView> 查询结果.
+         */
+        [[nodiscard]]
+        Optional<device::DevicePropView> raw_property(
+            const char *prop_name) const noexcept;
+
+        /**
+         * @brief 解析当前节点的 MMIO 区域列表.
+         *
+         * @return Optional<device::DevicePropView> 结构化 MMIO 结果.
+         */
+        [[nodiscard]]
+        Optional<device::DevicePropView> mmio_property() const noexcept;
+
+        /**
+         * @brief 解析当前节点的统一 IRQ 列表.
+         *
+         * @return Optional<device::DevicePropView> 结构化 IRQ 结果.
+         */
+        [[nodiscard]]
+        Optional<device::DevicePropView> irq_property() const noexcept;
+
+        /**
+         * @brief 解析当前节点的中断父节点标识.
+         *
+         * @return Optional<device::DevicePropView> 中断父节点结果.
+         */
+        [[nodiscard]]
+        Optional<device::DevicePropView> interrupt_parent_property()
+            const noexcept;
+
+        const FDTProvider *_provider = nullptr;
+        const Configuration *_config = nullptr;
+        const Node *_node            = nullptr;
+    };
+
     class FDTProvider : public device::DeviceProvider {
+        friend class FDTDeviceNode;
+
     private:
         using InterruptRef = std::pair<phandle_t, device::hwirq_t>;
 
@@ -378,6 +458,7 @@ namespace fdt {
         void register_memory_regions(device::DeviceModel &model) const;
         void register_cpus(device::DeviceModel &model) const;
         void register_clint(device::DeviceModel &model) const;
+        void register_plic(device::DeviceModel &model) const;
         void register_clock_virq(device::DeviceModel &model) const;
 
     public:

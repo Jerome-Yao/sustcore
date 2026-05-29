@@ -22,7 +22,7 @@ namespace units {
 
     public:
         explicit constexpr frequency() : milihertz(0) {}
-        constexpr operator uint64_t() const {
+        explicit constexpr operator uint64_t() const {
             return to_hz();
         }
 
@@ -90,7 +90,7 @@ namespace units {
 
     public:
         explicit constexpr time() : nanoseconds(0) {}
-        constexpr operator int64_t() const {
+        explicit constexpr operator int64_t() const {
             return to_nanoseconds();
         }
 

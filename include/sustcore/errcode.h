@@ -16,6 +16,7 @@
 
 #include <expected>
 #include <functional>
+#include <optional>
 
 enum class ErrCode : int {
     GENERIC_ERROR            = 0x00'0000,
@@ -56,6 +57,7 @@ enum class ErrCode : int {
     // device errors
     DEVICE_ERROR             = 0x06'0000,
     FDT_ERROR                = DEVICE_ERROR | 0x0001,
+    INVALID_PROPERTY_TYPE    = DEVICE_ERROR | 0x0002,
     // 别名
     SLOT_BUSY                = BUSY,
 };
@@ -135,7 +137,27 @@ constexpr auto unwrap_owner() {
 
 template <typename T, typename F>
 constexpr auto this_call(T *self, F &&func) {
-    return [self, func = std::forward<F>(func)](auto &&...args) -> decltype(auto) {
-        return (self->*func)(std::forward<decltype(args)>(args)...);
-    };
+    return
+        [self, func = std::forward<F>(func)](auto &&...args) -> decltype(auto) {
+            return (self->*func)(std::forward<decltype(args)>(args)...);
+        };
 }
+
+namespace __helper {
+    template <typename T>
+    struct __Optional {
+        using type = std::optional<T>;
+    };
+
+    template <typename T>
+    struct __Optional<T &> {
+        using type = std::optional<std::reference_wrapper<T>>;
+    };
+    template <typename T>
+    struct __Optional<const T &> {
+        using type = std::optional<std::reference_wrapper<const T>>;
+    };
+}  // namespace __helper
+
+template <typename T>
+using Optional = typename __helper::__Optional<T>::type;

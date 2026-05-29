@@ -103,7 +103,7 @@ void Riscv64Idle::idle()
 
 void Riscv64Initialization::post_init(void) {
     units::frequency freq = get_clock_freq();
-    if (freq < 0) {
+    if (freq.to_mhz() == 0) {
         // 使用QEMU virt机器的默认值10MHz
         freq = 10_MHz;
         loggers::DEVICE::ERROR("获取时钟频率失败, 使用默认值 %d Hz", freq);

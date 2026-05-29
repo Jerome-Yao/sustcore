@@ -241,6 +241,29 @@ namespace std::ranges {
             }
         };
 
+        struct __contains {
+            template <class I, class S, class T, class Proj = __identity>
+                requires(!range<I>)
+            [[nodiscard]]
+            constexpr bool operator()(I first, S last, const T& value,
+                                      Proj proj = {}) const {
+                while (first != last) {
+                    if (std::invoke(proj, *first) == value) {
+                        return true;
+                    }
+                    ++first;
+                }
+                return false;
+            }
+
+            template <input_range R, class T, class Proj = __identity>
+            [[nodiscard]]
+            constexpr bool operator()(R&& r, const T& value,
+                                      Proj proj = {}) const {
+                return (*this)(ranges::begin(r), ranges::end(r), value, proj);
+            }
+        };
+
         struct __find_if {
             template <class I, class S, class Pred, class Proj = __identity>
                 requires(!range<I>)
@@ -399,6 +422,7 @@ namespace std::ranges {
     inline constexpr __algo::__max max{};
     inline constexpr __algo::__abs abs{};
     inline constexpr __algo::__clamp clamp{};
+    inline constexpr __algo::__contains contains{};
 
     template <range R>
     using range_size_t = decltype(ranges::size(std::declval<R&>()));
