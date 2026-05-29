@@ -36,9 +36,7 @@ extern "C" void handle_trap(csr_scause_t scause, umb_t sepc, umb_t stval,
         task::TaskManager::inst().reap_recycled();
     }
     if (scause.interrupt) {
-        if (scause.cause == 5) {
-            Handlers::timer(scause, sepc, stval, ctx);
-        }
+        Handlers::interrupt(scause, sepc, stval, ctx);
     } else {
         // 异常
         Handlers::exception(scause, sepc, stval, ctx);

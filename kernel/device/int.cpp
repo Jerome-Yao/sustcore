@@ -11,27 +11,94 @@
 
 #include <arch/riscv64/csr.h>
 #include <device/int.h>
+#include <device/model.h>
 #include <sbi/sbi.h>
 
 namespace device {
+    Result<void> RiscVIntC::enable_irq(hwirq_t hw_irq) {
+        csr_sie_t sie = csr_get_sie();
+        switch (hw_irq) {
+            case SOFTWARE_LOCAL_IRQ:
+                sie.ssie = 1;
+                csr_set_sie(sie);
+                void_return();
+            case CLOCK_LOCAL_IRQ:
+                sie.stie = 1;
+                csr_set_sie(sie);
+                void_return();
+            default: unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+    }
+
+    Result<void> RiscVIntC::disable_irq(hwirq_t hw_irq) {
+        csr_sie_t sie = csr_get_sie();
+        switch (hw_irq) {
+            case SOFTWARE_LOCAL_IRQ:
+                sie.ssie = 0;
+                csr_set_sie(sie);
+                void_return();
+            case CLOCK_LOCAL_IRQ:
+                sie.stie = 0;
+                csr_set_sie(sie);
+                void_return();
+            default: unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+    }
+
+    Result<void> RiscVIntC::set_priority(hwirq_t hw_irq, irq_prio_t prio) {
+        (void)hw_irq;
+        (void)prio;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<void> RiscVIntC::set_affinity(hwirq_t hw_irq, cpu_mask_t mask) {
+        (void)hw_irq;
+        (void)mask;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<void> RiscVIntC::ack_irq(hwirq_t hw_irq) {
+        (void)hw_irq;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<void> RiscVIntC::set_trigger(hwirq_t hw_irq, IrqTrigger trigger) {
+        (void)hw_irq;
+        (void)trigger;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
     /**
      * @brief 编程下一次 CLINT 定时器事件.
      */
-    void ClintTimer::setNextEvent(units::time delta) noexcept {
+    void ClintAlarm::set_next_event(units::time delta) noexcept {
         // 获取当前 mtime，计算绝对计数值，调用 SBI
         units::tick now  = _clksrc->now();
         units::tick gaps = delta * _clksrc->frequency();
         sbi_legacy_set_timer(now + gaps);
     }
 
-    /**
-     * @brief 处理一次 CLINT 定时器中断并触发回调.
-     */
-    void ClintTimer::onTimerIrq() noexcept
-    {
+    ClintAlarm::ClintAlarm(ClockSource *clksrc, virq_t clock_virq) noexcept
+        : Alarm(clksrc), _clock_virq(clock_virq) {
+        _last_recorded_time = _clksrc->to_ns(_clksrc->now());
+        assert(DeviceModel::initialized());
+        auto &irqman = DeviceModel::inst().interrupt();
+        auto register_res = irqman.register_handler(
+            clock_virq, this_call(this, &ClintAlarm::handle_irq));
+        assert (register_res.has_value());
+    }
+
+    void ClintAlarm::handle_irq(const IrqEvent &event) noexcept {
+        if (event.virq != _clock_virq) {
+            loggers::INTERRUPT::ERROR(
+                "ClintAlarm 收到不匹配的 virq: got=%llu expect=%llu",
+                static_cast<unsigned long long>(event.virq),
+                static_cast<unsigned long long>(_clock_virq));
+            return;
+        }
         units::time now = _clksrc->to_ns(_clksrc->now());
         if (_handler) {
-            _handler({ .last = _last_recorded_time, .now = now });
+            _handler(ClockEvent{.last = _last_recorded_time, .now = now});
         }
         _last_recorded_time = now;
     }
@@ -39,12 +106,14 @@ namespace device {
     /**
      * @brief 构造一个 CLINT 控制器对象.
      */
-    Clint::Clint(std::string name, ictrl_t identifier,
-                 std::vector<PhyArea> mmio_regions, cpuid_t hart_id) noexcept
+    Clint::Clint(std::string name, intc_t identifier,
+                 std::vector<PhyArea> mmio_regions, cpuid_t hart_id,
+                 std::vector<cpuid_t> target_harts) noexcept
         : _name(std::move(name)),
           _identifier(identifier),
           _mmio_regions(std::move(mmio_regions)),
-          _hart_id(hart_id) {}
+          _hart_id(hart_id),
+          _target_harts(std::move(target_harts)) {}
 
     /**
      * @brief 获取控制器名称.
@@ -66,23 +135,21 @@ namespace device {
     Result<void> Clint::enable_irq(hwirq_t hw_irq) {
         loggers::INTERRUPT::DEBUG("Clint[%u] enable_irq hwirq=%u", _identifier,
                                   hw_irq);
-
         // 根据 IRQ 编号打开对应的 S 态本地中断位.
         csr_sie_t sie = csr_get_sie();
-        switch (hw_irq) {
-            case S_SOFT_IRQ:
-                sie.ssie = 1;
-                csr_set_sie(sie);
-                void_return();
-            case S_TIMER_IRQ:
-                sie.stie = 1;
-                csr_set_sie(sie);
-                void_return();
-            default:
-                loggers::INTERRUPT::ERROR("Clint[%u] 不支持启用 hwirq=%u",
-                                          _identifier, hw_irq);
-                unexpect_return(ErrCode::NOT_SUPPORTED);
+        if (hw_irq == _software_irq) {
+            sie.ssie = 1;
+            csr_set_sie(sie);
+            void_return();
+        } else if (hw_irq == _clock_irq) {
+            sie.stie = 1;
+            csr_set_sie(sie);
+            void_return();
         }
+
+        loggers::INTERRUPT::ERROR("Clint[%u] 不支持启用 hwirq=%u", _identifier,
+                                  hw_irq);
+        unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
     /**
@@ -91,25 +158,21 @@ namespace device {
     Result<void> Clint::disable_irq(hwirq_t hw_irq) {
         loggers::INTERRUPT::DEBUG("Clint[%u] disable_irq hwirq=%u", _identifier,
                                   hw_irq);
-
         // 根据 IRQ 编号关闭对应的 S 态本地中断位.
         csr_sie_t sie = csr_get_sie();
-        switch (hw_irq) {
-            case S_SOFT_IRQ: {
-                sie.ssie = 0;
-                csr_set_sie(sie);
-                [[maybe_unused]] SBIRet ret = sbi_legacy_clear_ipi();
-                void_return();
-            }
-            case S_TIMER_IRQ:
-                sie.stie = 0;
-                csr_set_sie(sie);
-                void_return();
-            default:
-                loggers::INTERRUPT::ERROR("Clint[%u] 不支持关闭 hwirq=%u",
-                                          _identifier, hw_irq);
-                unexpect_return(ErrCode::NOT_SUPPORTED);
+        if (hw_irq == _software_irq) {
+            sie.ssie = 0;
+            csr_set_sie(sie);
+            void_return();
+        } else if (hw_irq == _clock_irq) {
+            sie.stie = 0;
+            csr_set_sie(sie);
+            void_return();
         }
+
+        loggers::INTERRUPT::ERROR("Clint[%u] 不支持关闭 hwirq=%u", _identifier,
+                                  hw_irq);
+        unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
     /**
@@ -130,5 +193,27 @@ namespace device {
             "Clint[%u] set_affinity hwirq=%u mask=0x%llx 不支持", _identifier,
             hw_irq, static_cast<unsigned long long>(mask));
         unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<void> Clint::ack_irq(hwirq_t hw_irq) {
+        loggers::INTERRUPT::DEBUG("Clint[%u] ack_irq hwirq=%u 不支持",
+                                  _identifier, hw_irq);
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<void> Clint::set_trigger(hwirq_t hw_irq, IrqTrigger trigger) {
+        loggers::INTERRUPT::DEBUG(
+            "Clint[%u] set_trigger hwirq=%u trigger=%d 不支持", _identifier,
+            hw_irq, static_cast<int>(trigger));
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    bool Clint::supports_hart(cpuid_t hart_id) const noexcept {
+        for (cpuid_t target : _target_harts) {
+            if (target == hart_id) {
+                return true;
+            }
+        }
+        return false;
     }
 }  // namespace device

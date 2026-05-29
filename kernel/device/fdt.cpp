@@ -46,6 +46,7 @@ namespace {
     constexpr const char *MEMORY_DEVICE_TYPE = "memory";
     constexpr const char *CPU_DEVICE_TYPE    = "cpu";
     constexpr const char *CLINT_COMPATIBLE   = "riscv,clint0";
+    constexpr size_t CLINT_MAX_HW_IRQ        = 16;
 
     constexpr const char *RESERVED_MEMORY_PATH = "/reserved-memory";
     constexpr const char *CPUS_PATH            = "/cpus";
@@ -57,15 +58,24 @@ namespace {
         std::string mmu_type;
         fdt::phandle_t cpu_phandle;
         fdt::phandle_t local_intc_phandle;
+        fdt::phandle_t cpu_intc_phandle;
     };
 
-    struct ClintDescriptor {
-        bool found                 = false;
-        device::ictrl_t identifier = device::INVALID_ICTRL_ID;
+    struct ClintBackendDescriptor {
+        bool found                = false;
+        device::intc_t identifier = device::INVALID_ICTRL_ID;
         std::string name;
         std::vector<PhyArea> mmio_regions;
         std::vector<device::cpuid_t> target_harts;
+        std::optional<device::hwirq_t> software_hwirq;
+        std::optional<device::hwirq_t> clock_hwirq;
     };
+
+    /**
+     * @brief 本地中断端点 phandle 到目标 hart 的映射.
+     */
+    using LocalInterruptTargetMap =
+        std::unordered_map<fdt::phandle_t, device::cpuid_t>;
 
     /**
      * @brief 判断节点状态是否为启用.
@@ -535,6 +545,7 @@ namespace {
                                       : "",
             .cpu_phandle        = cpu_node.phandle,
             .local_intc_phandle = *local_intc,
+            .cpu_intc_phandle   = *local_intc,
         };
         return parsed;
     }
@@ -542,17 +553,15 @@ namespace {
     /**
      * @brief 扫描并提取 CLINT 描述信息.
      */
-    void find_clint_recursive(
-        const fdt::Node &node,
-        const std::unordered_map<fdt::phandle_t, device::cpuid_t>
-            &local_intc_map,
-        ClintDescriptor &descriptor) {
+    void find_clint_recursive(const fdt::Node &node,
+                              const LocalInterruptTargetMap &local_intc_map,
+                              ClintBackendDescriptor &descriptor) {
         if (!descriptor.found && compatible_contains(node, CLINT_COMPATIBLE)) {
             // 记录控制器基础信息.
             descriptor.found = true;
             descriptor.identifier =
-                node.phandle != 0 ? static_cast<device::ictrl_t>(node.phandle)
-                                  : static_cast<device::ictrl_t>(1);
+                node.phandle != 0 ? static_cast<device::intc_t>(node.phandle)
+                                  : static_cast<device::intc_t>(1);
             descriptor.name = node.name;
 
             // 解析 MMIO 区域.
@@ -574,9 +583,17 @@ namespace {
                         "CLINT 节点 %s 的 interrupts-extended 非法",
                         node.name.c_str());
                 } else {
+
+                    std::vector<std::pair<fdt::phandle_t, device::hwirq_t>> intc_refs;
+
                     for (size_t i = 0; i < cells.size(); i += 2) {
                         fdt::phandle_t phandle = cells[i];
-                        auto cpu_it            = local_intc_map.find(phandle);
+                        auto irq = static_cast<device::hwirq_t>(cells[i + 1]);
+                        intc_refs.emplace_back(phandle, irq);
+                    }
+
+                    for (const auto &[phandle, _] : intc_refs) {
+                        auto cpu_it = local_intc_map.find(phandle);
                         if (cpu_it == local_intc_map.end()) {
                             loggers::DEVICE::WARN(
                                 "CLINT 节点 %s 引用了未知本地中断 phandle=%u",
@@ -585,6 +602,23 @@ namespace {
                         }
                         descriptor.target_harts.push_back(cpu_it->second);
                     }
+
+                    if (intc_refs.size() < 2) {
+                        loggers::DEVICE::ERROR(
+                            "CLINT 节点 %s 的 interrupts-extended 长度不足",
+                            node.name.c_str());
+                        return;
+                    }
+
+                    if (intc_refs.size() > 2) {
+                        loggers::DEVICE::WARN(
+                            "CLINT 节点 %s 的 interrupts-extended 长度超过预期",
+                            node.name.c_str());
+                    }
+
+                    descriptor.software_hwirq = intc_refs[0].second;
+                    descriptor.clock_hwirq    = intc_refs[1].second;
+
                     std::ranges::sort(descriptor.target_harts);
                     descriptor.target_harts.erase(
                         std::ranges::unique(
@@ -759,11 +793,12 @@ namespace fdt {
         return is_string_prop_equal(node, DEVICE_TYPE_PROP, MEMORY_DEVICE_TYPE);
     }
 
-    void FDTProvider::collect_memory_regions(
-        std::vector<device::MemRegion> &regions) const {
+    void FDTProvider::register_memory_regions(device::DeviceModel &model) const {
         if (!_config.root) {
             return;
         }
+
+        std::vector<device::MemRegion> regions;
 
         // 加入所有 device_type = memory 的节点下的区域作为FREE区域
         for (const auto &[_, node] : _config.root->children) {
@@ -796,9 +831,12 @@ namespace fdt {
                                   device::MemRegion::MemoryStatus::RESERVED);
             }
         }
+        model.collect_memory_regions(&regions);
     }
 
-    void FDTProvider::update_cpus(device::CpuGroupInfo &cpus) const {
+    void FDTProvider::register_cpus(device::DeviceModel &model) const {
+        auto &cpus = model.cpus();
+
         // 清理旧的 CPU 组信息.
         loggers::DEVICE::DEBUG("开始更新 CPU 组信息");
         cpus.cleanup();
@@ -817,9 +855,7 @@ namespace fdt {
             return;
         }
 
-        auto freq_prop_it            = cpus_node->properties.find(TIMEBASE_FREQ_PROP);
-        bool clint_registered        = false;
-        device::ictrl_t clint_ictrl  = device::INVALID_ICTRL_ID;
+        auto freq_prop_it = cpus_node->properties.find(TIMEBASE_FREQ_PROP);
         if (freq_prop_it == cpus_node->properties.end()) {
             loggers::DEVICE::WARN(
                 "节点 /cpus 缺少 timebase-frequency 属性, CPU 频率保留为 0");
@@ -827,20 +863,21 @@ namespace fdt {
             auto timebase_freq = freq_prop_it->second->as_integral();
             if (timebase_freq == 0) {
                 loggers::DEVICE::ERROR(
-                    "节点 /cpus 的 timebase-frequency 为 0, 无法创建 ClockSource");
+                    "节点 /cpus 的 timebase-frequency 为 0, 无法创建 "
+                    "ClockSource");
             } else {
-                cpus.freq = units::frequency::from_hz(timebase_freq);
+                cpus.freq          = units::frequency::from_hz(timebase_freq);
                 cpus._clock_source = new device::CSRTimeClockSource(cpus.freq);
-                loggers::DEVICE::INFO("已创建 CSRTimeClockSource, freq=%lluHz",
-                                      static_cast<unsigned long long>(
-                                          cpus.freq.to_hz()));
+                loggers::DEVICE::INFO(
+                    "已创建 CSRTimeClockSource, freq=%lluHz",
+                    static_cast<unsigned long long>(cpus.freq.to_hz()));
             }
         }
 
         std::vector<ParsedCpu> parsed_cpus;
         parsed_cpus.reserve(cpus_node->children.size());
         std::unordered_map<fdt::phandle_t, device::cpuid_t> cpu_phandle_map;
-        std::unordered_map<fdt::phandle_t, device::cpuid_t> local_intc_map;
+        LocalInterruptTargetMap local_intc_map;
 
         // 扫描并解析每个 CPU 节点.
         for (const auto *child : sorted_children(*cpus_node)) {
@@ -884,63 +921,51 @@ namespace fdt {
                               return lhs.id < rhs.id;
                           });
 
-        // 扫描并注册 CLINT.
-        ClintDescriptor clint_desc;
-        find_clint_recursive(*_config.root, local_intc_map, clint_desc);
-
-        if (clint_desc.found) {
-            if (cpus._clock_source == nullptr) {
-                loggers::DEVICE::ERROR(
-                    "检测到 CLINT 节点 %s, 但缺少全局 ClockSource, 跳过 CLINT 注册",
-                    clint_desc.name.c_str());
-            } else if (clint_desc.target_harts.empty()) {
-                loggers::DEVICE::ERROR(
-                    "CLINT 节点 %s 未解析到任何目标 hart, 跳过 CLINT 注册",
-                    clint_desc.name.c_str());
-            } else {
-                auto register_res =
-                    device::DeviceModel::inst().interrupt().register_controller(
-                        util::owner<device::IntCtrl *>(new device::Clint(
-                            clint_desc.name.empty() ? "clint" : clint_desc.name,
-                            clint_desc.identifier, clint_desc.mmio_regions,
-                            clint_desc.target_harts.front())
-                        ),
-                        clint_desc.identifier);
-                if (!register_res.has_value()) {
-                    loggers::DEVICE::ERROR("注册 CLINT 失败: %s",
-                                           to_cstring(register_res.error()));
-                    return;
-                }
-                clint_registered = true;
-                clint_ictrl      = clint_desc.identifier;
-                loggers::DEVICE::INFO(
-                    "已注册 CLINT 控制器: %s (id=%u, harts=%u)",
-                    clint_desc.name.c_str(), clint_desc.identifier,
-                    static_cast<unsigned>(clint_desc.target_harts.size()));
+        // 先为每个 CPU 注册根中断域, 供后续 CLINT 绑定本地中断线使用.
+        for (const auto &parsed : parsed_cpus) {
+            auto *root_chip = new device::RiscVIntC(
+                "riscv,cpu-intc",
+                static_cast<device::intc_t>(parsed.cpu_intc_phandle),
+                parsed.id);
+            if (root_chip == nullptr) {
+                loggers::DEVICE::ERROR("分配 RiscVIntC 失败: cpu=%u",
+                                       parsed.id);
+                return;
             }
-        } else {
-            loggers::DEVICE::WARN(
-                "设备树中未找到 riscv,clint0, CPU 本地中断控制器将标记为无效");
+
+            auto *root_domain = new device::LinearIrqDomain<CLINT_MAX_HW_IRQ>(
+                static_cast<device::domain_t>(parsed.cpu_intc_phandle),
+                "riscv,cpu-intc", util::owner<device::IrqChip *>(root_chip));
+            if (root_domain == nullptr) {
+                delete root_chip;
+                loggers::DEVICE::ERROR("分配 RiscVIntC 根域失败: cpu=%u",
+                                       parsed.id);
+                return;
+            }
+
+            auto register_root_res =
+                model.interrupt().register_domain(
+                    util::owner<device::IrqDomain *>(root_domain));
+            if (!register_root_res.has_value()) {
+                loggers::DEVICE::ERROR("注册 RiscVIntC 根域失败: cpu=%u err=%s",
+                                       parsed.id,
+                                       to_cstring(register_root_res.error()));
+                return;
+            }
         }
 
         // 构造 CPU 对象列表.
         std::vector<device::cpuid_t> cpu_ids;
         cpu_ids.reserve(parsed_cpus.size());
         for (const auto &parsed : parsed_cpus) {
-            // 关联本地中断控制器 ID
-            device::ictrl_t local_ctrl = clint_registered
-                                             ? clint_ictrl
-                                             : device::INVALID_ICTRL_ID;
-
-            // 构建 CPU 对象
-            // TODO: 我不太清楚缓存数据应如何解析出来
             auto cpu_res = device::RiscV64Cpu::Builder()
                                .id(parsed.id)
                                .model(parsed.model)
                                .frequency(cpus.freq)
                                .isa_string(parsed.isa_string)
                                .mmu_type(parsed.mmu_type)
-                               .local_intc(local_ctrl)
+                               .local_intc(static_cast<device::intc_t>(
+                                   parsed.cpu_intc_phandle))
                                .build();
             if (!cpu_res.has_value()) {
                 loggers::DEVICE::ERROR("构建 CPU %u 失败: %s", parsed.id,
@@ -951,7 +976,6 @@ namespace fdt {
             cpus.cpus.emplace_back(cpu_res.value().get());
         }
 
-        // 构建拓扑，失败时降级为保底拓扑.
         auto cpu_map_it = cpus_node->children.find(CPU_MAP_NODE);
         Result<device::CpuTopology> topology_res =
             cpu_map_it != cpus_node->children.end()
@@ -970,7 +994,6 @@ namespace fdt {
             return;
         }
 
-        // 回填最终 CPU 组信息.
         cpus.topology = std::move(topology_res.value());
         loggers::DEVICE::INFO(
             "CPU 信息更新完成: freq=%lluHz count=%u topo_cpus=%u",
@@ -978,4 +1001,176 @@ namespace fdt {
             static_cast<unsigned>(cpus.cpus.size()),
             static_cast<unsigned>(cpus.topology.logical_cpus().size()));
     }
+
+    void FDTProvider::register_clint(device::DeviceModel &model) const {
+        auto &cpus = model.cpus();
+        if (!_config.root) {
+            return;
+        }
+
+        Node *cpus_node = _config.get_node_by_path(CPUS_PATH);
+        if (cpus_node == nullptr || !node_status_enabled(*cpus_node)) {
+            return;
+        }
+
+        std::vector<ParsedCpu> parsed_cpus;
+        std::unordered_map<fdt::phandle_t, device::cpuid_t> cpu_phandle_map;
+        LocalInterruptTargetMap local_intc_map;
+        for (const auto *child : sorted_children(*cpus_node)) {
+            auto parsed_res = parse_cpu_node(*child);
+            if (!parsed_res.has_value()) {
+                if (parsed_res.error() == ErrCode::BUSY ||
+                    parsed_res.error() == ErrCode::INVALID_PARAM)
+                {
+                    continue;
+                }
+                return;
+            }
+            const auto &parsed = parsed_res.value();
+            cpu_phandle_map[parsed.cpu_phandle]       = parsed.id;
+            local_intc_map[parsed.local_intc_phandle] = parsed.id;
+            parsed_cpus.push_back(parsed);
+        }
+
+        // 扫描并注册 CLINT.
+        ClintBackendDescriptor clint_desc;
+        find_clint_recursive(*_config.root, local_intc_map, clint_desc);
+
+        if (clint_desc.found) {
+            if (cpus._clock_source == nullptr) {
+                loggers::DEVICE::ERROR(
+                    "检测到 CLINT 节点 %s, 但缺少全局 ClockSource, 跳过 CLINT "
+                    "注册",
+                    clint_desc.name.c_str());
+            } else if (clint_desc.target_harts.empty()) {
+                loggers::DEVICE::ERROR(
+                    "CLINT 节点 %s 未解析到任何目标 hart, 跳过 CLINT 注册",
+                    clint_desc.name.c_str());
+            } else if (!clint_desc.software_hwirq.has_value() ||
+                       !clint_desc.clock_hwirq.has_value())
+            {
+                loggers::DEVICE::ERROR(
+                    "CLINT 节点 %s 缺少 interrupts-extended 中的 "
+                    "software/clock 中断号",
+                    clint_desc.name.c_str());
+            } else {
+                auto *chip = new device::Clint(
+                    clint_desc.name.empty() ? "clint" : clint_desc.name,
+                    clint_desc.identifier, clint_desc.mmio_regions,
+                    clint_desc.target_harts.front(), clint_desc.target_harts);
+                if (chip == nullptr) {
+                    loggers::DEVICE::ERROR("分配 CLINT 后端失败");
+                    return;
+                }
+
+                auto *domain = new device::LinearIrqDomain<CLINT_MAX_HW_IRQ>(
+                    static_cast<device::domain_t>(clint_desc.identifier),
+                    clint_desc.name.empty() ? "clint-domain" : clint_desc.name,
+                    util::owner<device::IrqChip *>(chip));
+                if (domain == nullptr) {
+                    delete chip;
+                    loggers::DEVICE::ERROR("分配 CLINT 中断域失败");
+                    return;
+                }
+
+                auto register_res =
+                    model.interrupt().register_domain(
+                        util::owner<device::IrqDomain *>(domain));
+                if (!register_res.has_value()) {
+                    loggers::DEVICE::ERROR("注册 CLINT 域失败: %s",
+                                           to_cstring(register_res.error()));
+                    return;
+                }
+
+                auto timer_virq_res =
+                    model.interrupt().allocate_virq(
+                        domain->id(), *clint_desc.clock_hwirq);
+                if (!timer_virq_res.has_value()) {
+                    loggers::DEVICE::ERROR("为 CLINT timer 分配 virq 失败: %s",
+                                           to_cstring(timer_virq_res.error()));
+                    return;
+                }
+                auto soft_virq_res =
+                    model.interrupt().allocate_virq(
+                        domain->id(), *clint_desc.software_hwirq);
+                if (!soft_virq_res.has_value()) {
+                    loggers::DEVICE::ERROR(
+                        "为 CLINT software interrupt 分配 virq 失败: %s",
+                        to_cstring(soft_virq_res.error()));
+                    return;
+                }
+                chip->set_hw_irqs(*clint_desc.software_hwirq,
+                                  *clint_desc.clock_hwirq);
+
+                for (const auto &parsed : parsed_cpus) {
+                    if (std::ranges::find(clint_desc.target_harts, parsed.id) ==
+                        clint_desc.target_harts.end())
+                    {
+                        continue;
+                    }
+
+                    auto root_domain_res =
+                        model.interrupt().get_domain(
+                            static_cast<device::domain_t>(
+                                parsed.cpu_intc_phandle));
+                    if (!root_domain_res.has_value()) {
+                        loggers::DEVICE::ERROR(
+                            "获取 CPU 根域失败: cpu=%u err=%s", parsed.id,
+                            to_cstring(root_domain_res.error()));
+                        return;
+                    }
+
+                    auto bind_soft_res = root_domain_res.value().get().bind(
+                        *clint_desc.software_hwirq, soft_virq_res.value());
+                    if (!bind_soft_res.has_value()) {
+                        loggers::DEVICE::ERROR(
+                            "绑定 software 本地中断线失败: cpu=%u err=%s",
+                            parsed.id, to_cstring(bind_soft_res.error()));
+                        return;
+                    }
+
+                    auto bind_clock_res = root_domain_res.value().get().bind(
+                        *clint_desc.clock_hwirq, timer_virq_res.value());
+                    if (!bind_clock_res.has_value()) {
+                        loggers::DEVICE::ERROR(
+                            "绑定 clock 本地中断线失败: cpu=%u err=%s",
+                            parsed.id, to_cstring(bind_clock_res.error()));
+                        return;
+                    }
+                }
+                loggers::DEVICE::INFO(
+                    "已注册 CLINT 后端与中断域: %s (domain=%u, "
+                    "software_hwirq=%u -> software_virq=%llu, clock_hwirq=%u -> "
+                    "clock_virq=%llu, harts=%u)",
+                    clint_desc.name.c_str(), clint_desc.identifier,
+                    static_cast<unsigned>(*clint_desc.software_hwirq),
+                    static_cast<unsigned long long>(soft_virq_res.value()),
+                    static_cast<unsigned>(*clint_desc.clock_hwirq),
+                    static_cast<unsigned long long>(timer_virq_res.value()),
+                    static_cast<unsigned>(clint_desc.target_harts.size()));
+                model.set_clock_virq(timer_virq_res.value());
+            }
+        } else {
+            loggers::DEVICE::WARN(
+                "设备树中未找到 riscv,clint0, 仅保留 CPU 本地中断端点信息");
+        }
+    }
+
+    void FDTProvider::register_clock_virq(device::DeviceModel &model) const {
+        loggers::DEVICE::DEBUG("FDTProvider clock_virq=%llu",
+                               static_cast<unsigned long long>(
+                                   model.clock_virq()));
+    }
+
+    void FDTProvider::register_device(device::DeviceModel &model) const {
+        register_memory_regions(model);
+        register_cpus(model);
+        register_clint(model);
+        register_clock_virq(model);
+    }
 }  // namespace fdt
+/**
+ * @brief 用于 CLINT 后端构造的本地中断目标映射.
+ */
+using LocalInterruptTargetMap =
+    std::unordered_map<fdt::phandle_t, device::cpuid_t>;

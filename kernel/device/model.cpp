@@ -210,12 +210,13 @@ namespace device {
         return merge_same_status_regions(std::move(normalized));
     }
 
-    void KernelProvider::collect_memory_regions(
-        std::vector<MemRegion> &regions) const {
+    void KernelProvider::register_device(DeviceModel &model) const {
         PhyAddr kernel_start = convert_pointer(&skernel);
         PhyAddr kernel_end   = convert_pointer(&ekernel);
+        std::vector<MemRegion> regions;
         regions.emplace_back(PhyArea(kernel_start, kernel_end),
                              MemRegion::MemoryStatus::RESERVED);
+        model.collect_memory_regions(&regions);
     }
 
     DeviceModel DeviceModel::_INSTANCE;

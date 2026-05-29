@@ -13,6 +13,7 @@
 
 #include <arch/riscv64/ctxlayout.h>
 #include <arch/riscv64/description.h>
+#include <device/cpu.h>
 #include <device/int.h>
 #include <mem/vma.h>
 #include <schd/schdbase.h>
@@ -243,23 +244,63 @@ namespace env {
         }
 
         /**
-         * @brief 获取当前 hart 的 CLINT 定时器.
+         * @brief 获取当前 hart 的定时器.
          *
-         * @return device::ClintTimer* 当前 hart 的定时器
+         * @return device::Alarm* 当前 的定时器
          */
         [[nodiscard]]
-        constexpr device::ClintTimer *timer() const noexcept {
-            return _timer;
+        constexpr device::Alarm *alarm() const noexcept {
+            return _alarm;
         }
 
         /**
-         * @brief 获取当前 hart 的 CLINT 定时器引用槽.
+         * @brief 获取当前 hart 的定时器引用槽.
          *
-         * @return device::ClintTimer*& 当前 hart 的定时器引用槽
+         * @return device::Alarm*& 当前 hart 的定时器引用槽
          */
         [[nodiscard]]
-        constexpr device::ClintTimer *&timer() noexcept {
-            return _timer;
+        constexpr device::Alarm *&alarm() noexcept {
+            return _alarm;
+        }
+
+        /**
+         * @brief 获取当前 hart 的 TimeKeeper.
+         *
+         * @return device::TimeKeeper* 当前 hart 的 TimeKeeper.
+         */
+        [[nodiscard]]
+        constexpr device::TimeKeeper *time_keeper() const noexcept {
+            return _time_keeper;
+        }
+
+        /**
+         * @brief 获取当前 hart 的 TimeKeeper 引用槽.
+         *
+         * @return device::TimeKeeper*& 当前 hart 的 TimeKeeper 引用槽.
+         */
+        [[nodiscard]]
+        constexpr device::TimeKeeper *&time_keeper() noexcept {
+            return _time_keeper;
+        }
+
+        /**
+         * @brief 获取当前 hart 绑定的 CPU 对象.
+         *
+         * @return device::Cpu* 当前 hart 的 CPU 对象.
+         */
+        [[nodiscard]]
+        constexpr device::Cpu *cpu() const noexcept {
+            return _cpu;
+        }
+
+        /**
+         * @brief 获取当前 hart 绑定 CPU 对象的引用槽.
+         *
+         * @return device::Cpu*& 当前 hart 的 CPU 引用槽.
+         */
+        [[nodiscard]]
+        constexpr device::Cpu *&cpu() noexcept {
+            return _cpu;
         }
 
         /**
@@ -271,9 +312,14 @@ namespace env {
             _current_pcb  = nullptr;
             _tmm          = nullptr;
             _trap_context = nullptr;
-            if (_timer != nullptr) {
-                delete _timer;
-                _timer = nullptr;
+            _cpu          = nullptr;
+            if (_alarm != nullptr) {
+                delete _alarm;
+                _alarm = nullptr;
+            }
+            if (_time_keeper != nullptr) {
+                delete _time_keeper;
+                _time_keeper = nullptr;
             }
         }
 
@@ -284,7 +330,9 @@ namespace env {
         task::PCB *_current_pcb       = nullptr;
         TaskMemoryManager *_tmm       = nullptr;
         Context *_trap_context        = nullptr;
-        device::ClintTimer *_timer    = nullptr;
+        device::Cpu *_cpu             = nullptr;
+        device::Alarm *_alarm         = nullptr;
+        device::TimeKeeper *_time_keeper = nullptr;
     };
 
     /**

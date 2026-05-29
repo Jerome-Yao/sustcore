@@ -379,6 +379,11 @@ namespace schd {
 
     // RR > FCFS
     void Scheduler::do_tick(const TimerTickEvent &e) {
+        loggers::SUSTCORE::DEBUG(
+            "调度 tick: last=%llu now=%llu delta=%llu",
+            static_cast<unsigned long long>(e.last.to_nanoseconds()),
+            static_cast<unsigned long long>(e.now.to_nanoseconds()),
+            static_cast<unsigned long long>(e.delta.to_nanoseconds()));
         auto *current = current_tcb();
         if (current == nullptr) {
             return;

@@ -14,9 +14,12 @@
 #include <arch/description.h>
 #include <device/clock.h>
 #include <logger.h>
+#include <sus/owner.h>
 #include <sus/units.h>
 #include <sustcore/errcode.h>
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -57,20 +60,22 @@ namespace device {
      */
     enum class IrqTrigger { EDGE_RISING, EDGE_FALLING, LEVEL_HIGH, LEVEL_LOW };
 
-    using irq_prio_t = b32;
-    using cpu_mask_t = b64;
-    using virq_t     = b64;
-    using hwirq_t    = b32;
-    using ictrl_t    = b32;
-    using cpuid_t                             = b32;
-    inline constexpr ictrl_t INVALID_ICTRL_ID = static_cast<ictrl_t>(-1);
+    using irq_prio_t                            = b32;
+    using cpu_mask_t                            = b64;
+    using virq_t                                = b64;
+    using hwirq_t                               = b32;
+    using intc_t                                = b32;
+    using domain_t                              = b32;
+    using cpuid_t                               = b32;
+    inline constexpr intc_t INVALID_ICTRL_ID    = static_cast<intc_t>(-1);
+    inline constexpr domain_t INVALID_DOMAIN_ID = static_cast<domain_t>(-1);
 
     /**
      * @brief 中断控制器抽象接口.
      */
-    class IntCtrl {
+    class IrqChip {
     public:
-        virtual ~IntCtrl() = default;
+        virtual ~IrqChip() = default;
         [[nodiscard]]
         virtual const char *name() const = 0;
         [[nodiscard]]
@@ -83,170 +88,464 @@ namespace device {
         virtual Result<void> set_priority(hwirq_t hw_irq, irq_prio_t prio) = 0;
         [[nodiscard]]
         virtual Result<void> set_affinity(hwirq_t hw_irq, cpu_mask_t mask) = 0;
+        [[nodiscard]]
+        virtual Result<void> ack_irq(hwirq_t hw_irq) = 0;
+        [[nodiscard]]
+        virtual Result<void> set_trigger(hwirq_t hw_irq,
+                                         IrqTrigger trigger) = 0;
     };
 
     /**
-     * @brief 中断控制器注册与查询
+     * @brief 中断域与硬件中断号的解析结果.
      */
-    class IntCtrlManager {
-    private:
-        std::unordered_map<ictrl_t, util::owner<IntCtrl *>> _controllers;
+    struct IrqResolveResult {
+        domain_t domain = INVALID_DOMAIN_ID;
+        hwirq_t hw_irq  = 0;
+    };
 
-        [[nodiscard]]
-        constexpr hwirq_t extract_hwirq(virq_t virq) const {
-            return static_cast<hwirq_t>(virq & 0xFFFFFFFF);
-        }
+    /**
+     * @brief 一次 virq 分发时传递给处理函数的上下文.
+     */
+    struct IrqEvent {
+        virq_t virq    = 0;
+        hwirq_t hw_irq = 0;
+        umb_t scause   = 0;
+        umb_t sepc     = 0;
+        umb_t stval    = 0;
+        void *context  = nullptr;
+    };
 
-        [[nodiscard]]
-        constexpr ictrl_t extract_ictrl(virq_t virq) const {
-            return static_cast<ictrl_t>((virq >> 32) & 0xFFFFFFFF);
-        }
-
-        [[nodiscard]]
-        constexpr virq_t assemble_virq(ictrl_t ictrl, hwirq_t hw_irq) const {
-            return static_cast<virq_t>(hw_irq |
-                                       (static_cast<virq_t>(ictrl) << 32));
-        }
-
+    /**
+     * @brief 中断域抽象接口.
+     */
+    class IrqDomain {
     public:
-        IntCtrlManager() = default;
+        virtual ~IrqDomain() = default;
+        [[nodiscard]]
+        virtual domain_t id() const noexcept = 0;
+        [[nodiscard]]
+        virtual const char *name() const noexcept = 0;
+        [[nodiscard]]
+        virtual IrqChip &chip() const noexcept = 0;
+        [[nodiscard]]
+        virtual Result<virq_t> bind(hwirq_t hw_irq, virq_t virq) = 0;
+        [[nodiscard]]
+        virtual Result<virq_t> to_virq(hwirq_t hw_irq) const = 0;
+        [[nodiscard]]
+        virtual Result<hwirq_t> to_hwirq(virq_t virq) const = 0;
+        [[nodiscard]]
+        virtual bool contains(virq_t virq) const noexcept = 0;
+        [[nodiscard]]
+        virtual bool supports(hwirq_t hw_irq) const noexcept = 0;
+        [[nodiscard]]
+        virtual Result<void> enable(hwirq_t hw_irq) = 0;
+        [[nodiscard]]
+        virtual Result<void> disable(hwirq_t hw_irq) = 0;
+        [[nodiscard]]
+        virtual Result<void> ack(hwirq_t hw_irq) = 0;
+        [[nodiscard]]
+        virtual Result<void> set_priority(hwirq_t hw_irq, irq_prio_t prio) = 0;
+        [[nodiscard]]
+        virtual Result<void> set_affinity(hwirq_t hw_irq, cpu_mask_t mask) = 0;
+        [[nodiscard]]
+        virtual Result<void> set_trigger(hwirq_t hw_irq,
+                                         IrqTrigger trigger) = 0;
+    };
 
+    /**
+     * @brief 线性 hw_irq 编号的固定大小中断域.
+     *
+     * @tparam MAX_HW_IRQ 域内可支持的最大硬件中断号数量.
+     */
+    template <size_t MAX_HW_IRQ>
+    class LinearIrqDomain final : public IrqDomain {
+    public:
         /**
-         * @brief 注册中断控制器.
+         * @brief 构造一个线性中断域.
+         *
+         * @param identifier 域 ID.
+         * @param domain_name 域名称.
+         * @param chip 后端中断芯片所有权.
          */
-        Result<void> register_controller(util::owner<IntCtrl *> controller,
-                                         ictrl_t identifier) {
-            if (_controllers.find(identifier) != _controllers.end()) {
-                loggers::INTERRUPT::ERROR("中断控制器 ID: %u 已存在!",
-                                          controller->name(), identifier);
+        LinearIrqDomain(domain_t identifier, std::string domain_name,
+                        util::owner<IrqChip *> chip) noexcept
+            : _id(identifier),
+              _name(std::move(domain_name)),
+              _chip(std::move(chip)),
+              _virq_to_hwirq() {
+            for (auto &slot : _virqs) {
+                slot = std::nullopt;
+            }
+        }
+
+        [[nodiscard]]
+        domain_t id() const noexcept override {
+            return _id;
+        }
+
+        [[nodiscard]]
+        const char *name() const noexcept override {
+            return _name.c_str();
+        }
+
+        [[nodiscard]]
+        IrqChip &chip() const noexcept override {
+            return *_chip;
+        }
+
+        [[nodiscard]]
+        Result<virq_t> bind(hwirq_t hw_irq, virq_t virq) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+
+            auto &slot = _virqs[hw_irq];
+            if (slot.has_value()) {
+                if (*slot != virq) {
+                    unexpect_return(ErrCode::KEY_DUPLICATED);
+                }
+                return *slot;
+            }
+            if (_virq_to_hwirq.contains(virq)) {
                 unexpect_return(ErrCode::KEY_DUPLICATED);
             }
-            loggers::INTERRUPT::INFO("注册中断控制器: %s (ID: %u)",
-                                     controller->name(), identifier);
 
-            _controllers[identifier] = std::move(controller);
+            slot                 = virq;
+            _virq_to_hwirq[virq] = hw_irq;
+            return virq;
+        }
+
+        [[nodiscard]]
+        Result<virq_t> to_virq(hwirq_t hw_irq) const override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            if (!_virqs[hw_irq].has_value()) {
+                unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            }
+            return *_virqs[hw_irq];
+        }
+
+        [[nodiscard]]
+        Result<hwirq_t> to_hwirq(virq_t virq) const override {
+            auto it = _virq_to_hwirq.find(virq);
+            if (it == _virq_to_hwirq.end()) {
+                unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            }
+            return it->second;
+        }
+
+        [[nodiscard]]
+        bool contains(virq_t virq) const noexcept override {
+            return _virq_to_hwirq.contains(virq);
+        }
+
+        [[nodiscard]]
+        bool supports(hwirq_t hw_irq) const noexcept override {
+            return static_cast<size_t>(hw_irq) < MAX_HW_IRQ;
+        }
+
+        [[nodiscard]]
+        Result<void> enable(hwirq_t hw_irq) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return _chip->enable_irq(hw_irq);
+        }
+
+        [[nodiscard]]
+        Result<void> disable(hwirq_t hw_irq) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return _chip->disable_irq(hw_irq);
+        }
+
+        [[nodiscard]]
+        Result<void> ack(hwirq_t hw_irq) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return _chip->ack_irq(hw_irq);
+        }
+
+        [[nodiscard]]
+        Result<void> set_priority(hwirq_t hw_irq, irq_prio_t prio) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return _chip->set_priority(hw_irq, prio);
+        }
+
+        [[nodiscard]]
+        Result<void> set_affinity(hwirq_t hw_irq, cpu_mask_t mask) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return _chip->set_affinity(hw_irq, mask);
+        }
+
+        [[nodiscard]]
+        Result<void> set_trigger(hwirq_t hw_irq, IrqTrigger trigger) override {
+            if (!supports(hw_irq)) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return _chip->set_trigger(hw_irq, trigger);
+        }
+
+    private:
+        domain_t _id = INVALID_DOMAIN_ID;
+        std::string _name;
+        util::owner<IrqChip *> _chip = util::owner<IrqChip *>(nullptr);
+        std::optional<virq_t> _virqs[MAX_HW_IRQ]{};
+        std::unordered_map<virq_t, hwirq_t> _virq_to_hwirq;
+    };
+
+    /**
+     * @brief 全局中断管理器.
+     */
+    class IrqManager {
+    private:
+        using IrqHandler = std::function<void(const IrqEvent &)>;
+
+        std::unordered_map<domain_t, util::owner<IrqDomain *>> _domains;
+        std::unordered_map<virq_t, IrqResolveResult> _virq_map;
+        std::unordered_map<virq_t, IrqHandler> _handlers;
+        virq_t _next_virq = 1;
+
+    public:
+        IrqManager() = default;
+
+        /**
+         * @brief 注册一个中断域.
+         */
+        Result<void> register_domain(util::owner<IrqDomain *> domain) {
+            if (domain == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+            if (_domains.find(domain->id()) != _domains.end()) {
+                loggers::INTERRUPT::ERROR("中断域 ID: %u 已存在!",
+                                          domain->id());
+                unexpect_return(ErrCode::KEY_DUPLICATED);
+            }
+            loggers::INTERRUPT::INFO("注册中断域: %s (ID: %u)", domain->name(),
+                                     domain->id());
+            _domains[domain->id()] = std::move(domain);
             void_return();
         }
 
         /**
-         * @brief 按控制器 ID 获取控制器.
+         * @brief 为指定域中的 hw_irq 分配稳定 virq.
+         *
+         * @param domain_id 中断域 ID.
+         * @param hw_irq 域内硬件中断号.
+         * @return Result<virq_t> 对应的全局 virq.
          */
         [[nodiscard]]
-        Result<IntCtrl &> get_controller(ictrl_t identifier) const {
-            auto it = _controllers.find(identifier);
-            if (it == _controllers.end()) {
+        Result<virq_t> allocate_virq(domain_t domain_id, hwirq_t hw_irq) {
+            auto domain_res = get_domain(domain_id);
+            propagate(domain_res);
+
+            auto current_res = domain_res.value().get().to_virq(hw_irq);
+            if (current_res.has_value()) {
+                return current_res.value();
+            }
+            if (current_res.error() != ErrCode::ENTRY_NOT_FOUND) {
+                propagate_return(current_res);
+            }
+
+            virq_t virq   = _next_virq++;
+            auto bind_res = domain_res.value().get().bind(hw_irq, virq);
+            propagate(bind_res);
+            _virq_map[virq] = IrqResolveResult{
+                .domain = domain_id,
+                .hw_irq = hw_irq,
+            };
+            return virq;
+        }
+
+        /**
+         * @brief 按域 ID 获取域.
+         */
+        [[nodiscard]]
+        Result<IrqDomain &> get_domain(domain_t identifier) const {
+            auto it = _domains.find(identifier);
+            if (it == _domains.end()) {
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
             }
             return std::ref(*it->second);
         }
 
         /**
-         * @brief 从虚拟中断号中解析控制器 ID.
+         * @brief 通过 virq 解析所属中断域.
          */
         [[nodiscard]]
-        Result<ictrl_t> find_controller(virq_t virq) const {
-            ictrl_t ictrl_id = extract_ictrl(virq);
-            if (_controllers.find(ictrl_id) == _controllers.end()) {
+        Result<IrqDomain &> find_domain(virq_t virq) const {
+            auto resolve_res = resolve(virq);
+            propagate(resolve_res);
+            return get_domain(resolve_res.value().domain);
+        }
+
+        /**
+         * @brief 解析 virq 到 domain 与 hw_irq.
+         */
+        [[nodiscard]]
+        Result<IrqResolveResult> resolve(virq_t virq) const {
+            auto it = _virq_map.find(virq);
+            if (it == _virq_map.end()) {
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
             }
-            return ictrl_id;
+            return it->second;
         }
 
         /**
-         * @brief 从虚拟中断号获取控制器.
-         */
-        [[nodiscard]]
-        Result<IntCtrl &> get_controller_from_virq(virq_t virq) const {
-            return find_controller(virq).and_then(
-                [this](ictrl_t ictrl_id) { return get_controller(ictrl_id); });
-        }
-
-        /**
-         * @brief 组合虚拟中断号.
-         */
-        [[nodiscard]]
-        Result<virq_t> make_virq(ictrl_t ictrl, hwirq_t hw_irq) {
-            if (_controllers.find(ictrl) == _controllers.end()) {
-                unexpect_return(ErrCode::ENTRY_NOT_FOUND);
-            }
-            return assemble_virq(ictrl, hw_irq);
-        }
-
-        /**
-         * @brief 使能虚拟中断.
+         * @brief 使能全局 virq.
          */
         [[nodiscard]]
         Result<void> enable_irq(virq_t virq) {
-            auto ictrl_id = extract_ictrl(virq);
-            auto hw_irq   = extract_hwirq(virq);
-            auto ctrl_res = get_controller(ictrl_id);
-            if (!ctrl_res.has_value()) {
-                propagate_return(ctrl_res);
-            }
-            return ctrl_res.value().get().enable_irq(hw_irq);
+            auto resolved = resolve(virq);
+            propagate(resolved);
+            auto domain = get_domain(resolved.value().domain);
+            propagate(domain);
+            return domain.value().get().enable(resolved.value().hw_irq);
         }
 
         /**
-         * @brief 屏蔽虚拟中断.
+         * @brief 屏蔽全局 virq.
          */
         [[nodiscard]]
         Result<void> disable_irq(virq_t virq) {
-            auto ictrl_id = extract_ictrl(virq);
-            auto hw_irq   = extract_hwirq(virq);
-            auto ctrl_res = get_controller(ictrl_id);
-            if (!ctrl_res.has_value()) {
-                propagate_return(ctrl_res);
-            }
-            return ctrl_res.value().get().disable_irq(hw_irq);
+            auto resolved = resolve(virq);
+            propagate(resolved);
+            auto domain = get_domain(resolved.value().domain);
+            propagate(domain);
+            return domain.value().get().disable(resolved.value().hw_irq);
         }
 
         /**
-         * @brief 设置虚拟中断优先级.
+         * @brief 应答全局 virq.
+         */
+        [[nodiscard]]
+        Result<void> ack_irq(virq_t virq) {
+            auto resolved = resolve(virq);
+            propagate(resolved);
+            auto domain = get_domain(resolved.value().domain);
+            propagate(domain);
+            return domain.value().get().ack(resolved.value().hw_irq);
+        }
+
+        /**
+         * @brief 设置全局 virq 优先级.
          */
         [[nodiscard]]
         Result<void> set_priority(virq_t virq, irq_prio_t prio) {
-            auto ictrl_id = extract_ictrl(virq);
-            auto hw_irq   = extract_hwirq(virq);
-            auto ctrl_res = get_controller(ictrl_id);
-            if (!ctrl_res.has_value()) {
-                propagate_return(ctrl_res);
-            }
-            return ctrl_res.value().get().set_priority(hw_irq, prio);
+            auto resolved = resolve(virq);
+            propagate(resolved);
+            auto domain = get_domain(resolved.value().domain);
+            propagate(domain);
+            return domain.value().get().set_priority(resolved.value().hw_irq,
+                                                     prio);
         }
 
         /**
-         * @brief 设置虚拟中断亲和性.
+         * @brief 设置全局 virq 亲和性.
          */
         [[nodiscard]]
         Result<void> set_affinity(virq_t virq, cpu_mask_t mask) {
-            auto ictrl_id = extract_ictrl(virq);
-            auto hw_irq   = extract_hwirq(virq);
-            auto ctrl_res = get_controller(ictrl_id);
-            if (!ctrl_res.has_value()) {
-                propagate_return(ctrl_res);
+            auto resolved = resolve(virq);
+            propagate(resolved);
+            auto domain = get_domain(resolved.value().domain);
+            propagate(domain);
+            return domain.value().get().set_affinity(resolved.value().hw_irq,
+                                                     mask);
+        }
+
+        /**
+         * @brief 设置全局 virq 的触发方式.
+         */
+        [[nodiscard]]
+        Result<void> set_trigger(virq_t virq, IrqTrigger trigger) {
+            auto resolved = resolve(virq);
+            propagate(resolved);
+            auto domain = get_domain(resolved.value().domain);
+            propagate(domain);
+            return domain.value().get().set_trigger(resolved.value().hw_irq,
+                                                    trigger);
+        }
+
+        /**
+         * @brief 为指定 virq 注册处理函数.
+         *
+         * @param virq 目标 virq.
+         * @param handler 处理函数.
+         * @return Result<void> 注册结果.
+         */
+        Result<void> register_handler(virq_t virq, IrqHandler handler) {
+            auto resolve_res = resolve(virq);
+            propagate(resolve_res);
+            if (_handlers.contains(virq)) {
+                unexpect_return(ErrCode::KEY_DUPLICATED);
             }
-            return ctrl_res.value().get().set_affinity(hw_irq, mask);
+            _handlers[virq] = std::move(handler);
+            void_return();
+        }
+
+        /**
+         * @brief 注销指定 virq 的处理函数.
+         *
+         * @param virq 目标 virq.
+         * @return Result<void> 注销结果.
+         */
+        Result<void> unregister_handler(virq_t virq) {
+            if (!_handlers.contains(virq)) {
+                unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            }
+            _handlers.erase(virq);
+            void_return();
+        }
+
+        /**
+         * @brief 分发一次 virq 到对应处理函数.
+         *
+         * @param event 待分发中断事件.
+         * @return Result<void> 分发结果.
+         */
+        Result<void> dispatch(const IrqEvent &event) {
+            auto resolve_res = resolve(event.virq);
+            propagate(resolve_res);
+
+            auto ack_res = ack_irq(event.virq);
+            if (!ack_res.has_value() &&
+                ack_res.error() != ErrCode::NOT_SUPPORTED)
+            {
+                propagate_return(ack_res);
+            }
+
+            auto it = _handlers.find(event.virq);
+            if (it == _handlers.end()) {
+                unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+            }
+
+            it->second(event);
+            void_return();
         }
     };
 
-    class ClintTimer : public ClockEvent {
+    class ClintAlarm : public Alarm {
     public:
         /**
          * @brief 构造绑定到指定时钟源的 CLINT 定时事件设备.
          *
          * @param clksrc 供定时器换算 tick 的时钟源
          */
-        explicit ClintTimer(ClockSource *clksrc) noexcept
-            : ClockEvent(clksrc) {
-            _last_recorded_time = _clksrc->to_ns(_clksrc->now());
-        }
+        explicit ClintAlarm(ClockSource *clksrc, virq_t clock_virq) noexcept;
 
         /**
          * @brief 安排下一次定时事件.
          *
          * @param delta 相对当前时刻的触发延迟
          */
-        void setNextEvent(units::time delta) noexcept override;
+        void set_next_event(units::time delta) noexcept override;
 
         /**
          * @brief 获取该定时器支持的最大触发延迟.
@@ -254,7 +553,7 @@ namespace device {
          * @return units::time 最大延迟
          */
         [[nodiscard]]
-        units::time maxDelta() const noexcept override {
+        units::time max_delta() const noexcept override {
             return UINT64_MAX / _clksrc->frequency();
         }
 
@@ -263,46 +562,126 @@ namespace device {
          *
          * @param handler 到期时调用的回调函数
          */
-        void setHandler(Handler &&handler) noexcept override
-        {
+        void set_handler(Handler &&handler) noexcept override {
             _handler = std::move(handler);
         }
 
         /**
-         * @brief 在定时器中断到来时触发事件回调.
+         * @brief 作为中断系统 handler 处理 clock_virq.
+         *
+         * @param event 当前 virq 事件.
          */
-        void onTimerIrq() noexcept;
+        void handle_irq(const IrqEvent &event) noexcept;
+
+        /**
+         * @brief 获取该定时器绑定的 clock virq.
+         *
+         * @return virq_t clock virq.
+         */
+        [[nodiscard]]
+        virq_t clock_virq() const noexcept {
+            return _clock_virq;
+        }
 
     private:
         Handler _handler;
         units::time _last_recorded_time;
+        virq_t _clock_virq = 0;
+    };
+
+    /**
+     * @brief RISC-V CPU 本地中断控制器后端.
+     */
+    class RiscVIntC : public IrqChip {
+    public:
+        static constexpr hwirq_t SOFTWARE_LOCAL_IRQ = 3;
+        static constexpr hwirq_t CLOCK_LOCAL_IRQ    = 7;
+
+        /**
+         * @brief 构造一个 CPU 本地中断控制器后端.
+         *
+         * @param name 控制器名称.
+         * @param identifier 控制器 ID.
+         * @param hart_id 该中断控制器所属 hart.
+         */
+        RiscVIntC(std::string name, intc_t identifier, cpuid_t hart_id) noexcept
+            : _name(std::move(name)),
+              _identifier(identifier),
+              _hart_id(hart_id) {}
+
+        ~RiscVIntC() override = default;
+
+        [[nodiscard]]
+        const char *name() const override {
+            return _name.c_str();
+        }
+
+        [[nodiscard]]
+        std::vector<PhyArea> mmio_regions() const override {
+            return {};
+        }
+
+        [[nodiscard]]
+        Result<void> enable_irq(hwirq_t hw_irq) override;
+
+        [[nodiscard]]
+        Result<void> disable_irq(hwirq_t hw_irq) override;
+
+        [[nodiscard]]
+        Result<void> set_priority(hwirq_t hw_irq, irq_prio_t prio) override;
+
+        [[nodiscard]]
+        Result<void> set_affinity(hwirq_t hw_irq, cpu_mask_t mask) override;
+
+        [[nodiscard]]
+        Result<void> ack_irq(hwirq_t hw_irq) override;
+
+        [[nodiscard]]
+        Result<void> set_trigger(hwirq_t hw_irq, IrqTrigger trigger) override;
+
+        /**
+         * @brief 获取该控制器所属 hart.
+         *
+         * @return cpuid_t 所属 hart ID.
+         */
+        [[nodiscard]]
+        cpuid_t hart_id() const noexcept {
+            return _hart_id;
+        }
+
+    private:
+        std::string _name;
+        intc_t _identifier = INVALID_ICTRL_ID;
+        cpuid_t _hart_id   = 0;
     };
 
     /**
      * @brief RISC-V CLINT 控制器实现.
      */
-    class Clint : public IntCtrl {
-    public:
-        static constexpr hwirq_t S_SOFT_IRQ  = 1;
-        static constexpr hwirq_t S_TIMER_IRQ = 5;
-
+    class Clint : public IrqChip {
     private:
         std::string _name;
-        ictrl_t _identifier;
+        intc_t _identifier;
         std::vector<PhyArea> _mmio_regions;
         cpuid_t _hart_id;
+        std::vector<cpuid_t> _target_harts;
+        hwirq_t _software_irq = 0;
+        hwirq_t _clock_irq    = 0;
+
     public:
         /**
-         * @brief RISC-V CLINT 控制器.
+         * @brief 由 CLINT 节点构造的 RISC-V CLINT 后端.
          *
-         * @param clksrc 定时器使用的时钟源.
          * @param name 控制器名称.
          * @param identifier 控制器 ID.
          * @param mmio_regions MMIO 区域列表.
-         * @param hart_id 该CLINT所属的hart.
+         * @param hart_id 默认使用的目标 hart.
+         * @param target_harts 该 CLINT 通过 interrupts-extended 解析到的目标
+         * hart 集合.
          */
-        Clint(std::string name, ictrl_t identifier,
-              std::vector<PhyArea> mmio_regions, cpuid_t hart_id) noexcept;
+        Clint(std::string name, intc_t identifier,
+              std::vector<PhyArea> mmio_regions, cpuid_t hart_id,
+              std::vector<cpuid_t> target_harts) noexcept;
 
         /**
          * @brief 销毁控制器对象.
@@ -339,12 +718,22 @@ namespace device {
          */
         [[nodiscard]]
         Result<void> set_affinity(hwirq_t hw_irq, cpu_mask_t mask) override;
+        /**
+         * @brief 应答中断.
+         */
+        [[nodiscard]]
+        Result<void> ack_irq(hwirq_t hw_irq) override;
+        /**
+         * @brief 设置中断触发方式.
+         */
+        [[nodiscard]]
+        Result<void> set_trigger(hwirq_t hw_irq, IrqTrigger trigger) override;
 
         /**
          * @brief 获取控制器 ID.
          */
         [[nodiscard]]
-        ictrl_t identifier() const noexcept {
+        intc_t identifier() const noexcept {
             return _identifier;
         }
 
@@ -354,6 +743,57 @@ namespace device {
         [[nodiscard]]
         cpuid_t hart_id() const noexcept {
             return _hart_id;
+        }
+
+        /**
+         * @brief 获取该 CLINT 后端覆盖的目标 hart 集合.
+         *
+         * @return const std::vector<cpuid_t>& 目标 hart 列表.
+         */
+        [[nodiscard]]
+        const std::vector<cpuid_t> &target_harts() const noexcept {
+            return _target_harts;
+        }
+
+        /**
+         * @brief 判断指定 hart 是否由该 CLINT 后端覆盖.
+         *
+         * @param hart_id 待检查 hart.
+         * @return true 该 hart 在目标集合中.
+         * @return false 该 hart 不在目标集合中.
+         */
+        [[nodiscard]]
+        bool supports_hart(cpuid_t hart_id) const noexcept;
+
+        /**
+         * @brief 回填 CLINT 解析得到的 software/clock hwirq.
+         *
+         * @param software_irq software interrupt 的 hwirq.
+         * @param clock_irq clock interrupt 的 hwirq.
+         */
+        void set_hw_irqs(hwirq_t software_irq, hwirq_t clock_irq) noexcept {
+            _software_irq = software_irq;
+            _clock_irq    = clock_irq;
+        }
+
+        /**
+         * @brief 获取 software interrupt 的 hwirq.
+         *
+         * @return hwirq_t software hwirq.
+         */
+        [[nodiscard]]
+        hwirq_t software_hwirq() const noexcept {
+            return _software_irq;
+        }
+
+        /**
+         * @brief 获取 clock interrupt 的 hwirq.
+         *
+         * @return hwirq_t clock hwirq.
+         */
+        [[nodiscard]]
+        hwirq_t clock_hwirq() const noexcept {
+            return _clock_irq;
         }
     };
 }  // namespace device

@@ -19,6 +19,7 @@
 #include <cap/permission.h>
 #include <device/block.h>
 #include <device/fdt.h>
+#include <device/int.h>
 #include <device/model.h>
 #include <env.h>
 #include <exe/elfloader.h>
@@ -51,6 +52,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <unordered_map>
 
 env::PaddedHartContext __hart_context[MAX_HARTS] = {};
@@ -76,36 +78,256 @@ namespace env {
         _env_initialized = true;
     }
 
+    Result<void> init_clock() {
+        [[maybe_unused]] auto &device_model = device::DeviceModel::inst();
+        [[maybe_unused]] auto &irqman       = device_model.interrupt();
+        [[maybe_unused]] auto &cpus         = device_model.cpus();
+        [[maybe_unused]] auto *ctx          = hart_ctx;
+
+        assert(ctx != nullptr);
+
+        // 初始化 CLINT 定时器, 供调度器 tick 使用.
+        loggers::SUSTCORE::INFO("初始化 hart Clint Timer%u",
+                                static_cast<unsigned>(hart_ctx->hart_id()));
+        auto *clock_source = cpus._clock_source;
+        if (clock_source == nullptr) {
+            loggers::SUSTCORE::ERROR("全局 ClockSource 不可用!");
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        // 获得时钟中断 virq
+        auto clock_virq = device_model.clock_virq();
+        if (clock_virq == 0) {
+            loggers::SUSTCORE::ERROR("DeviceModel 未提供有效 clock_virq");
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        ctx->alarm()       = new device::ClintAlarm(clock_source, clock_virq);
+        ctx->time_keeper() = new device::TimeKeeper(clock_source, ctx->alarm());
+        auto enable_timer_res = irqman.enable_irq(clock_virq);
+        if (!enable_timer_res.has_value()) {
+            loggers::SUSTCORE::ERROR("启用 CLINT timer 中断失败!");
+            propagate_return(enable_timer_res);
+        }
+        loggers::SUSTCORE::INFO("hart %u 已初始化 ClintAlarm",
+                                static_cast<unsigned>(ctx->hart_id()));
+        void_return();
+    }
+
     /**
      * @brief 初始化当前 hart 的运行时状态与定时器.
      */
     void init_hart() {
-        loggers::SUSTCORE::INFO("初始化 hart %u", static_cast<unsigned>(hart_ctx->hart_id()));
-        auto *ctx = hart_ctx;
+        if (!device::DeviceModel::initialized()) {
+            panic("DeviceModel 尚未初始化, 当前 hart 上下文失败!");
+            return;
+        }
+
+        [[maybe_unused]] auto &device_model = device::DeviceModel::inst();
+        [[maybe_unused]] auto &irqman       = device_model.interrupt();
+        [[maybe_unused]] auto &cpus         = device_model.cpus();
+        [[maybe_unused]] auto *ctx          = hart_ctx;
+
         if (ctx == nullptr) {
             panic("当前 hart 上下文无效");
         }
         ctx->reset_runtime();
+        loggers::SUSTCORE::INFO("初始化 hart %u",
+                                static_cast<unsigned>(ctx->hart_id()));
 
-        if (!device::DeviceModel::initialized()) {
-            loggers::SUSTCORE::WARN(
-                "DeviceModel 尚未初始化, 跳过当前 hart 定时器构造");
-            return;
+        // 设置当前 hart 的 CPU 对象指针, 供后续 CLINT 定时器使用.
+        device::Cpu *cpu = nullptr;
+        for (auto &cpu_owner : cpus.cpus) {
+            if (cpu_owner != nullptr &&
+                cpu_owner->id() == static_cast<device::cpuid_t>(ctx->hart_id()))
+            {
+                cpu = cpu_owner.get();
+                break;
+            }
         }
-
-        loggers::SUSTCORE::INFO("初始化 hart Clint Timer%u", static_cast<unsigned>(hart_ctx->hart_id()));
-        auto *clock_source = device::DeviceModel::inst().cpus()._clock_source;
-        if (clock_source == nullptr) {
-            loggers::SUSTCORE::WARN(
-                "全局 ClockSource 不可用, 当前 hart 不构造 ClintTimer");
-            return;
+        if (cpu == nullptr) {
+            loggers::SUSTCORE::FATAL("无法为 hart %u 找到 CPU 对象",
+                                     static_cast<unsigned>(ctx->hart_id()));
+            panic("无法为 hart 找到 CPU 对象");
         }
+        ctx->cpu() = cpu;
 
-        ctx->timer() = new device::ClintTimer(clock_source);
-        loggers::SUSTCORE::INFO("hart %u 已初始化 ClintTimer",
-                              static_cast<unsigned>(ctx->hart_id()));
+        auto ret = init_clock();
+        if (!ret.has_value()) {
+            loggers::SUSTCORE::FATAL("初始化时钟失败: %s",
+                                     to_cstring(ret.error()));
+            panic("初始化时钟失败");
+        }
     }
 }  // namespace env
+
+namespace {
+    /**
+     * @brief 固定周期触发调度器 tick 的到期动作.
+     */
+    class SchedulerTickAction final : public device::ExpireAction {
+    public:
+        /**
+         * @brief 使用当前 deadline 与周期构造 tick 动作.
+         *
+         * @param deadline 首次到期时间.
+         * @param period 周期长度.
+         */
+        SchedulerTickAction(units::time deadline, units::time period) noexcept
+            : device::ExpireAction(deadline), _period(period) {}
+
+        /**
+         * @brief 处理一次调度 tick 并重新安排下一次到期时间.
+         *
+         * @param event 本次时钟事件.
+         */
+        void expire(const device::ClockEvent &event) noexcept override {
+            TimerTickEvent tick_event{
+                .last  = event.last,
+                .now   = event.now,
+                .delta = event.now - event.last,
+            };
+            schd::Scheduler::inst().do_tick(tick_event);
+
+            auto *time_keeper = env::hart_ctx != nullptr
+                                    ? env::hart_ctx->time_keeper()
+                                    : nullptr;
+            if (time_keeper == nullptr) {
+                loggers::SUSTCORE::ERROR("SchedulerTickAction 缺少 TimeKeeper");
+                return;
+            }
+
+            auto next_deadline = event.now + _period;
+            auto *next_action = new SchedulerTickAction(next_deadline, _period);
+            if (next_action == nullptr) {
+                loggers::SUSTCORE::FATAL("无法分配下一次 SchedulerTickAction");
+                panic("无法分配下一次 SchedulerTickAction");
+            }
+            time_keeper->enqueue(
+                util::owner<device::ExpireAction *>(next_action));
+        }
+
+    private:
+        units::time _period{};
+    };
+
+#ifdef __CONF_KERNEL_TIMEKEEPER_TEST
+    /**
+     * @brief 指数级增长延迟的 TimeKeeper 调试动作.
+     */
+    class TimeKeeperLogAction final : public device::ExpireAction {
+    public:
+        /**
+         * @brief 构造一个时间记录动作.
+         *
+         * @param deadline 首次到期时间.
+         * @param interval 本次触发间隔.
+         */
+        TimeKeeperLogAction(units::time lasttime, units::time deadline,
+                            units::time interval) noexcept
+            : device::ExpireAction(deadline),
+              _interval(interval),
+              _lasttime(lasttime) {}
+
+        /**
+         * @brief 打印当前时间并安排下一次指数级触发.
+         *
+         * @param event 本次时钟事件.
+         */
+        void expire(const device::ClockEvent &event) noexcept override {
+            // 计算实际触发间隔, 以验证 timer 的准确性.
+            units::time real_interval = event.now - _lasttime;
+
+            // 计算相对误差万分比
+            // (real_interval - _interval) / _interval * 10000 => (real_interval
+            // - _interval) * 10000 / _interval
+            int64_t error_ppm = (real_interval - _interval) * 10000 / _interval;
+            int64_t integral_part   = error_ppm / 100;
+            int64_t fractional_part = error_ppm % 100;
+
+            loggers::SUSTCORE::INFO(
+                "TimeKeeper 测试触发: 现在 = %llu ns, 计划间隔 = %llu ns, "
+                "实际间隔 = %llu ns, 相对误差 = %d.%04d%%",
+                static_cast<unsigned long long>(event.now.to_nanoseconds()),
+                static_cast<unsigned long long>(_interval.to_nanoseconds()),
+                static_cast<unsigned long long>(real_interval.to_nanoseconds()),
+                static_cast<int>(integral_part),
+                static_cast<int>(fractional_part));
+
+            auto *time_keeper = env::hart_ctx != nullptr
+                                    ? env::hart_ctx->time_keeper()
+                                    : nullptr;
+            if (time_keeper == nullptr) {
+                loggers::SUSTCORE::ERROR("TimeKeeperLogAction 缺少 TimeKeeper");
+                return;
+            }
+
+            units::time next_interval = _interval;
+            auto *next_action         = new TimeKeeperLogAction(
+                event.now, event.now + next_interval, next_interval);
+            if (next_action == nullptr) {
+                loggers::SUSTCORE::FATAL("无法分配下一次 TimeKeeperLogAction");
+                panic("无法分配下一次 TimeKeeperLogAction");
+            }
+            time_keeper->enqueue(
+                util::owner<device::ExpireAction *>(next_action));
+        }
+
+    private:
+        units::time _interval{};
+        units::time _lasttime{};
+    };
+#endif
+
+    /**
+     * @brief 注册当前 hart 的周期性调度 tick 动作.
+     */
+    void register_scheduler_tick_action() {
+        auto *time_keeper =
+            env::hart_ctx != nullptr ? env::hart_ctx->time_keeper() : nullptr;
+        if (time_keeper == nullptr || time_keeper->source() == nullptr) {
+            loggers::SUSTCORE::FATAL("无法注册调度 tick 动作: TimeKeeper 无效");
+            panic("无法注册调度 tick 动作");
+        }
+
+        constexpr units::time kTickPeriod = units::time::from_milliseconds(10);
+        units::time now =
+            time_keeper->source()->to_ns(time_keeper->source()->now());
+        auto *action = new SchedulerTickAction(now + kTickPeriod, kTickPeriod);
+        if (action == nullptr) {
+            loggers::SUSTCORE::FATAL("无法分配 SchedulerTickAction");
+            panic("无法分配 SchedulerTickAction");
+        }
+        time_keeper->enqueue(util::owner<device::ExpireAction *>(action));
+    }
+
+#ifdef __CONF_KERNEL_TIMEKEEPER_TEST
+    /**
+     * @brief 注册指数级增长的 TimeKeeper 日志测试动作.
+     */
+    void register_timekeeper_log_test() {
+        auto *time_keeper =
+            env::hart_ctx != nullptr ? env::hart_ctx->time_keeper() : nullptr;
+        if (time_keeper == nullptr || time_keeper->source() == nullptr) {
+            loggers::SUSTCORE::ERROR(
+                "TimeKeeper 测试注册失败: TimeKeeper 无效");
+            return;
+        }
+
+        constexpr units::time first_interval =
+            units::time::from_milliseconds(10);
+        units::time now =
+            time_keeper->source()->to_ns(time_keeper->source()->now());
+        auto *action =
+            new TimeKeeperLogAction(now, now + first_interval, first_interval);
+        if (action == nullptr) {
+            loggers::SUSTCORE::FATAL("无法分配 TimeKeeperLogAction");
+            panic("无法分配 TimeKeeperLogAction");
+        }
+        time_keeper->enqueue(util::owner<device::ExpireAction *>(action));
+    }
+#endif
+}  // namespace
 
 namespace key {
     using namespace env::key;
@@ -205,6 +427,10 @@ Result<void> init_scheduler() {
     env::hart_ctx->current_pcb() = idle_res.value()->task;
     schd::Scheduler::init(idle_res.value(), task->threads.front());
     schd::Scheduler::inst().init();
+    register_scheduler_tick_action();
+#ifdef __CONF_KERNEL_TIMEKEEPER_TEST
+    register_timekeeper_log_test();
+#endif
 #ifdef __CONF_KERNEL_TESTS
     auto kthread_test_res = test::kthread::start_logger_yield_test();
     propagate(kthread_test_res);
@@ -278,7 +504,7 @@ extern "C" void post_init(void) {
 
     // 将 tp 寄存器中的指针更新为内核虚拟地址空间中的环境实例
     PhyAddr old_tp = convert_pointer(env::hart_ctx);
-    env::hart_ctx = convert<KvaAddr>(old_tp).as<env::HartContext>();
+    env::hart_ctx  = convert<KvaAddr>(old_tp).as<env::HartContext>();
 
     Allocator::init();
 

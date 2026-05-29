@@ -276,13 +276,16 @@ namespace fdt {
 
         bool is_memory_node(Node &node) const;
 
+        void register_memory_regions(device::DeviceModel &model) const;
+        void register_cpus(device::DeviceModel &model) const;
+        void register_clint(device::DeviceModel &model) const;
+        void register_clock_virq(device::DeviceModel &model) const;
+
     public:
         FDTProvider(void *dtb) {
             make_config(dtb, _config);
         }
-        void collect_memory_regions(
-            std::vector<device::MemRegion> &regions) const override;
-        void update_cpus(device::CpuGroupInfo &cpus) const override;
+        void register_device(device::DeviceModel &model) const override;
         [[nodiscard]]
         const char *name() const override {
             return "fdt";

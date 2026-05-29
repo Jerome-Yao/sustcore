@@ -85,42 +85,42 @@ namespace units {
 
     struct time {
     protected:
-        uint64_t nanoseconds;
-        explicit constexpr time(uint64_t ns) : nanoseconds(ns) {}
+        int64_t nanoseconds;
+        explicit constexpr time(int64_t ns) : nanoseconds(ns) {}
 
     public:
         explicit constexpr time() : nanoseconds(0) {}
-        constexpr operator uint64_t() const {
+        constexpr operator int64_t() const {
             return to_nanoseconds();
         }
 
         [[nodiscard]]
-        constexpr uint64_t to_nanoseconds() const {
+        constexpr int64_t to_nanoseconds() const {
             return nanoseconds;
         }
         [[nodiscard]]
-        constexpr uint64_t to_microseconds() const {
+        constexpr int64_t to_microseconds() const {
             return nanoseconds / 1'000;
         }
         [[nodiscard]]
-        constexpr uint64_t to_milliseconds() const {
+        constexpr int64_t to_milliseconds() const {
             return nanoseconds / 1'000'000;
         }
         [[nodiscard]]
-        constexpr uint64_t to_seconds() const {
+        constexpr int64_t to_seconds() const {
             return to_milliseconds() / 1'000;
         }
 
-        static constexpr time from_nanoseconds(uint64_t ns) {
+        static constexpr time from_nanoseconds(int64_t ns) {
             return time(ns);
         }
-        static constexpr time from_microseconds(uint64_t us) {
+        static constexpr time from_microseconds(int64_t us) {
             return from_nanoseconds(us * 1'000);
         }
-        static constexpr time from_milliseconds(uint64_t ms) {
+        static constexpr time from_milliseconds(int64_t ms) {
             return from_microseconds(ms * 1'000);
         }
-        static constexpr time from_seconds(uint64_t s) {
+        static constexpr time from_seconds(int64_t s) {
             return from_milliseconds(s * 1'000);
         }
 
@@ -132,19 +132,19 @@ namespace units {
             return time(nanoseconds - other.nanoseconds);
         }
 
-        constexpr time operator*(uint64_t multiplier) const {
+        constexpr time operator*(int64_t multiplier) const {
             return time(nanoseconds * multiplier);
         }
 
-        constexpr time operator/(uint64_t divisor) const {
+        constexpr time operator/(int64_t divisor) const {
             return time(nanoseconds / divisor);
         }
 
-        constexpr uint64_t operator/(const time &other) const {
+        constexpr int64_t operator/(const time &other) const {
             return nanoseconds / other.nanoseconds;
         }
 
-        constexpr uint64_t operator*(const frequency &f) const {
+        constexpr int64_t operator*(const frequency &f) const {
             // time * frequency = (ns) * (mili Hz) = (ns) * (1000/s) = 10^(-12)
             // s
             return (nanoseconds * f.to_milihz()) / NANOSECONDS_PER_MILLIHERTZ;

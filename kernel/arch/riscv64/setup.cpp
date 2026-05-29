@@ -13,6 +13,7 @@
 #include <arch/riscv64/device/fdt_helper.h>
 #include <arch/riscv64/device/misc.h>
 #include <arch/riscv64/trait.h>
+#include <device/int.h>
 #include <logger.h>
 #include <libfdt.h>
 #include <sbi/sbi.h>
@@ -101,7 +102,6 @@ void Riscv64Idle::idle()
 }
 
 void Riscv64Initialization::post_init(void) {
-    // 我们希望50ms触发1次时钟中断(调试用)
     units::frequency freq = get_clock_freq();
     if (freq < 0) {
         // 使用QEMU virt机器的默认值10MHz
@@ -109,5 +109,4 @@ void Riscv64Initialization::post_init(void) {
         loggers::DEVICE::ERROR("获取时钟频率失败, 使用默认值 %d Hz", freq);
     }
     loggers::DEVICE::INFO("时钟频率: %d Hz = %d KHz = %d MHz", freq.to_hz(), freq.to_khz(), freq.to_mhz());
-    init_timer(freq, 100_Hz); // 100Hz的时钟频率意味着每10ms触发一次时钟中断
 }

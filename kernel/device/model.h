@@ -21,6 +21,7 @@
 #include <vector>
 
 namespace device {
+    class DeviceModel;
     /**
      * @brief 内存区域
      *
@@ -48,15 +49,11 @@ namespace device {
         virtual ~DeviceProvider() = default;
 
         /**
-         * @brief 收集设备模型中所有的内存区域信息
+         * @brief 向设备模型注册当前提供者暴露的全部设备信息.
          *
-         * @param regions 输出参数, 用于存储收集到的内存区域列表.
-         * 每个区域包含起始地址、大小和状态等信息.
+         * @param model 目标设备模型.
          */
-        virtual void collect_memory_regions(
-            std::vector<MemRegion> &regions) const = 0;
-
-        virtual void update_cpus(CpuGroupInfo &cpus) const = 0;
+        virtual void register_device(DeviceModel &model) const = 0;
 
         [[nodiscard]]
         virtual const char *name() const = 0;
@@ -75,15 +72,45 @@ namespace device {
         }
 
         [[nodiscard]]
-        IntCtrlManager &interrupt() {
+        IrqManager &interrupt() {
             return _interrupt;
+        }
+
+        /**
+         * @brief 将一批内存区域并入设备模型.
+         *
+         * @param regs 待加入的内存区域集合.
+         */
+        void collect_memory_regions(std::vector<MemRegion> *regs) {
+            if (regs == nullptr) {
+                return;
+            }
+            _regions.insert(_regions.end(), regs->begin(), regs->end());
+            _regions = _normalize_memory_regions(_regions);
+        }
+
+        /**
+         * @brief 回写当前系统的 clock virq.
+         *
+         * @param virq 时钟中断对应的全局 virq.
+         */
+        void set_clock_virq(virq_t virq) {
+            _clock_virq = virq;
+        }
+
+        /**
+         * @brief 获取当前系统的 clock virq.
+         *
+         * @return virq_t clock virq.
+         */
+        [[nodiscard]]
+        virq_t clock_virq() const {
+            return _clock_virq;
         }
 
         void register_provider(util::owner<DeviceProvider *> provider) {
             _providers.push_back(std::move(provider));
-            provider->collect_memory_regions(_regions);
-            _regions = _normalize_memory_regions(_regions);
-            provider->update_cpus(_cpus);
+            provider->register_device(*this);
             loggers::DEVICE::INFO("已注册设备提供者: %s", provider->name());
         }
 
@@ -133,14 +160,13 @@ namespace device {
         std::vector<util::owner<DeviceProvider *>> _providers;
         std::vector<MemRegion> _regions;
         CpuGroupInfo _cpus;
-        IntCtrlManager _interrupt;
+        IrqManager _interrupt;
+        virq_t _clock_virq = 0;
     };
 
     class KernelProvider : public DeviceProvider {
     public:
-        void collect_memory_regions(
-            std::vector<MemRegion> &regions) const override;
-        void update_cpus(CpuGroupInfo &) const override {}
+        void register_device(DeviceModel &model) const override;
         [[nodiscard]]
         const char *name() const override {
             return "kernel";

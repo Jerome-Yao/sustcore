@@ -20,20 +20,3 @@
  * @return units::frequency 时钟频率
  */
 units::frequency get_clock_freq(void);
-
-struct TimerInfo {
-    units::frequency freq;
-    units::frequency expected_freq;
-    units::tick last_ticks;
-    units::tick increment;
-};
-
-extern TimerInfo timer_info;
-
-/**
-* @brief 初始化计时器
-*
-* @param freq 计时器频率
-* @param expected_freq 期望频率
-*/
-void init_timer(units::frequency freq, units::frequency expected_freq);

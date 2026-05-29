@@ -13,6 +13,17 @@
 
 namespace Handlers {
     /**
+     * @brief 架构级中断分发入口.
+     *
+     * @param scause scause寄存器 存放中断原因
+     * @param sepc   sepc寄存器   存放中断发生时的指令地址
+     * @param stval  stval寄存器  存放中断相关的地址或信息
+     * @param ctx    指向中断上下文寄存器列表的指针
+     */
+    void interrupt(csr_scause_t scause, umb_t sepc, umb_t stval,
+                   Riscv64Context *ctx);
+
+    /**
      * @brief 通用异常处理程序
      *
      * @param scause scause寄存器 存放异常原因
@@ -22,15 +33,4 @@ namespace Handlers {
      */
     void exception(csr_scause_t scause, umb_t sepc, umb_t stval,
                            Riscv64Context *ctx);
-
-    /**
-     * @brief 定时器中断处理程序
-     *
-     * @param scause scause寄存器 存放中断原因
-     * @param sepc   sepc寄存器   存放中断发生时的指令地址
-     * @param stval  stval寄存器  存放中断相关的地址或信息
-     * @param reglist_ptr 指向中断上下文寄存器列表的指针
-     */
-    void timer(csr_scause_t scause, umb_t sepc, umb_t stval,
-                       Riscv64Context *ctx);
 }  // namespace Handlers

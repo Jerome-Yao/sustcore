@@ -132,3 +132,10 @@ template <typename T>
 constexpr auto unwrap_owner() {
     return std::mem_fn(&util::owner<T>::get);
 }
+
+template <typename T, typename F>
+constexpr auto this_call(T *self, F &&func) {
+    return [self, func = std::forward<F>(func)](auto &&...args) -> decltype(auto) {
+        return (self->*func)(std::forward<decltype(args)>(args)...);
+    };
+}

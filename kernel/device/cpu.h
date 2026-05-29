@@ -68,7 +68,7 @@ namespace device {
         [[nodiscard]]
         virtual Result<void> send_ipi() = 0;
         [[nodiscard]]
-        virtual ictrl_t local_intc() const = 0;
+        virtual intc_t local_intc() const = 0;
     };
 
     /**
@@ -133,10 +133,10 @@ namespace device {
         [[nodiscard]]
         std::string isa_string() const;
         /**
-         * @brief 获取本地中断控制器 ID.
+         * @brief 获取 CPU 本地中断端点标识.
          */
         [[nodiscard]]
-        ictrl_t local_intc() const noexcept override;
+        intc_t local_intc() const noexcept override;
 
     private:
         cpuid_t _id;
@@ -145,11 +145,12 @@ namespace device {
         std::string _isa_string;
         std::string _mmu_type;
         std::vector<CacheInfo> _caches;
-        ictrl_t _local_intc;
+        intc_t _local_intc;
 
         RiscV64Cpu(cpuid_t id, std::string model, units::frequency freq,
                    std::string isa_string, std::string mmu_type,
-                   std::vector<CacheInfo> caches, ictrl_t local_intc) noexcept;
+                   std::vector<CacheInfo> caches,
+                   intc_t local_intc) noexcept;
 
     public:
         /**
@@ -163,7 +164,7 @@ namespace device {
             std::optional<std::string> _isa_string;
             std::optional<std::string> _mmu_type;
             std::vector<CacheInfo> _caches;
-            std::optional<ictrl_t> _local_intc;
+            std::optional<intc_t> _local_intc;
 
         public:
             /**
@@ -191,9 +192,9 @@ namespace device {
              */
             Builder &caches(std::vector<CacheInfo> caches);
             /**
-             * @brief 设置本地中断控制器 ID.
+             * @brief 设置 CPU 本地中断端点标识.
              */
-            Builder &local_intc(ictrl_t local_intc) noexcept;
+            Builder &local_intc(intc_t local_intc) noexcept;
             /**
              * @brief 构建 CPU 对象.
              *

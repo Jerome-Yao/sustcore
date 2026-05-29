@@ -10,5 +10,11 @@
         "mode": "debug",
         "description": "Enables running modules in kernel.",
         "dependencies": []
+    },
+    "kernel-timekeeper-test": {
+        "macro": "__CONF_KERNEL_TIMEKEEPER_TEST",
+        "mode": "debug",
+        "description": "Enables TimeKeeper alarm logging test.",
+        "dependencies": []
     }
 }

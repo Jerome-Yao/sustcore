@@ -16,9 +16,9 @@
 
 // Timer Tick Event Pack
 struct TimerTickEvent {
-    units::tick last_tick;
-    units::tick increment;
-    units::tick gap_ticks;
+    units::time last;
+    units::time now;
+    units::time delta;
 };
 
 // No Present Event Pack

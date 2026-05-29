@@ -13,6 +13,8 @@
 #include <arch/riscv64/device/misc.h>
 #include <arch/riscv64/int/isr.h>
 #include <arch/riscv64/trait.h>
+#include <device/int.h>
+#include <device/model.h>
 #include <env.h>
 #include <logger.h>
 #include <mem/kaddr.h>
@@ -455,6 +457,52 @@ namespace handlers::paging {
 
 namespace Handlers {
 
+    void interrupt(csr_scause_t scause, umb_t sepc, umb_t stval,
+                   Riscv64Context *ctx) {
+        auto &irq_manager = device::DeviceModel::inst().interrupt();
+        auto *cpu = env::hart_ctx != nullptr ? env::hart_ctx->cpu() : nullptr;
+        if (cpu == nullptr) {
+            loggers::INTERRUPT::ERROR("当前 hart 缺少 CPU, 无法分发中断");
+            return;
+        }
+
+        // 把 S-Mode 的 scause.cause 转为 M-Mode 的 mcause.cause,
+        // 以便传递给根中断域
+        // 根据规范, m-mode 下的中断号 = s-mode 下的中断号 | 0x2
+        device::hwirq_t hwirq = (scause.cause | 0x2);
+
+        auto root_domain_res = irq_manager.get_domain(cpu->local_intc());
+        if (!root_domain_res.has_value()) {
+            loggers::INTERRUPT::ERROR("获取根中断域失败: %s",
+                                      to_cstring(root_domain_res.error()));
+            return;
+        }
+        auto &root_domain = root_domain_res.value().get();
+
+        auto root_virq_res = root_domain.to_virq(hwirq);
+        if (!root_virq_res.has_value()) {
+            loggers::INTERRUPT::ERROR("根中断域解析 virq 失败: %s, hw_irq = %d",
+                                      to_cstring(root_virq_res.error()), hwirq);
+            return;
+        }
+        auto virq = root_virq_res.value();
+
+        auto dispatch_res = irq_manager.dispatch(device::IrqEvent{
+            .virq    = virq,
+            .hw_irq  = hwirq,
+            .scause  = scause.value,
+            .sepc    = sepc,
+            .stval   = stval,
+            .context = ctx,
+        });
+        if (!dispatch_res.has_value()) {
+            loggers::INTERRUPT::ERROR(
+                "分发 irq 失败: %s, virq = %lu, hw_irq = %d",
+                to_cstring(dispatch_res.error()), virq, hwirq);
+        }
+        return;
+    }
+
     bool illegal_instruction(csr_scause_t scause, umb_t sepc, umb_t stval,
                              Riscv64Context *ctx) {
         loggers::INTERRUPT::DEBUG(
@@ -499,21 +547,28 @@ namespace Handlers {
                     current_tcb->syscall_info.complete(ret);
                     loggers::INTERRUPT::DEBUG(
                         "同步 syscall 立即完成: pid=%lu tid=%lu sysno=0x%lx",
-                        current_tcb->task != nullptr ? current_tcb->task->pid : 0,
+                        current_tcb->task != nullptr ? current_tcb->task->pid
+                                                     : 0,
                         current_tcb->tid, args.syscall_number);
                 } else {
                     auto task = syscall::dispatch_async(*current_tcb);
                     if (current_tcb->syscall_info.completed()) {
                         loggers::INTERRUPT::DEBUG(
-                            "异步 syscall 立即完成, 不进入协程队列: pid=%lu tid=%lu",
-                            current_tcb->task != nullptr ? current_tcb->task->pid : 0,
+                            "异步 syscall 立即完成, 不进入协程队列: pid=%lu "
+                            "tid=%lu",
+                            current_tcb->task != nullptr
+                                ? current_tcb->task->pid
+                                : 0,
                             current_tcb->tid);
                     } else if (current_tcb->basic_entity.state ==
-                           ThreadState::WAITING)
+                               ThreadState::WAITING)
                     {
                         loggers::INTERRUPT::DEBUG(
-                            "syscall 已进入等待, 由等待系统负责恢复: pid=%lu tid=%lu sysno=0x%lx",
-                            current_tcb->task != nullptr ? current_tcb->task->pid : 0,
+                            "syscall 已进入等待, 由等待系统负责恢复: pid=%lu "
+                            "tid=%lu sysno=0x%lx",
+                            current_tcb->task != nullptr
+                                ? current_tcb->task->pid
+                                : 0,
                             current_tcb->tid,
                             current_tcb->syscall_info.syscall_number);
                         task.detach();
@@ -521,17 +576,20 @@ namespace Handlers {
                         if (current_tcb->syscall_info.handle == nullptr) {
                             current_tcb->syscall_info.handle = task.handle();
                         }
-                        current_tcb->basic_entity
-                            .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+                        current_tcb->basic_entity.template flags_set<
+                            schd::SchedMeta::FLAGS_NEED_RESCHED>();
                         loggers::INTERRUPT::INFO(
-                            "syscall 协程延后到调度前继续执行: pid=%lu tid=%lu sysno=0x%lx",
-                            current_tcb->task != nullptr ? current_tcb->task->pid : 0,
+                            "syscall 协程延后到调度前继续执行: pid=%lu tid=%lu "
+                            "sysno=0x%lx",
+                            current_tcb->task != nullptr
+                                ? current_tcb->task->pid
+                                : 0,
                             current_tcb->tid,
                             current_tcb->syscall_info.syscall_number);
                         task.detach();
                     }
                 }
-                processed = true;
+                processed                                          = true;
                 env::inst().trap_context(env::key::trap_context()) = nullptr;
                 break;
             }
@@ -545,7 +603,7 @@ namespace Handlers {
                     handlers::paging::paging_fault(scause, sepc, stval, ctx);
                 break;
             default:
-                loggers::INTERRUPT::INFO("无异常处理程序!");
+                loggers::INTERRUPT::ERROR("无异常处理程序!");
                 processed = false;
                 break;
         }
@@ -564,22 +622,5 @@ namespace Handlers {
             }
             while (true);
         }
-    }
-
-    void timer(csr_scause_t scause, umb_t sepc, umb_t stval,
-               Riscv64Context *ctx) {
-        // 计算时间差
-        units::tick current_ticks = csr_get_time();
-        units::tick gap_ticks     = current_ticks - timer_info.last_ticks;
-
-        TimerTickEvent e = {.last_tick = timer_info.last_ticks,
-                            .increment = timer_info.increment,
-                            .gap_ticks = gap_ticks};
-
-        timer_info.last_ticks = current_ticks;
-        schd::Scheduler::inst().do_tick(e);
-
-        // 重新设置下一次时钟中断
-        sbi_legacy_set_timer(current_ticks + timer_info.increment);
     }
 }  // namespace Handlers
