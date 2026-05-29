@@ -82,10 +82,10 @@ namespace device {
         : Alarm(clksrc), _clock_virq(clock_virq) {
         _last_recorded_time = _clksrc->to_ns(_clksrc->now());
         assert(DeviceModel::initialized());
-        auto &irqman = DeviceModel::inst().interrupt();
+        auto &irqman      = DeviceModel::inst().interrupt();
         auto register_res = irqman.register_handler(
             clock_virq, this_call(this, &ClintAlarm::handle_irq));
-        assert (register_res.has_value());
+        assert(register_res.has_value());
     }
 
     void ClintAlarm::handle_irq(const IrqEvent &event) noexcept {
@@ -108,12 +108,14 @@ namespace device {
      */
     Clint::Clint(std::string name, intc_t identifier,
                  std::vector<PhyArea> mmio_regions, cpuid_t hart_id,
-                 std::vector<cpuid_t> target_harts) noexcept
+                 std::vector<cpuid_t> target_harts, std::vector<virq_t> virqs) noexcept
         : _name(std::move(name)),
           _identifier(identifier),
           _mmio_regions(std::move(mmio_regions)),
           _hart_id(hart_id),
-          _target_harts(std::move(target_harts)) {}
+          _target_harts(std::move(target_harts)),
+          _software_virq(virqs[0]),
+          _clock_virq(virqs[1]) {}
 
     /**
      * @brief 获取控制器名称.
@@ -133,22 +135,7 @@ namespace device {
      * @brief 使能本地中断.
      */
     Result<void> Clint::enable_irq(hwirq_t hw_irq) {
-        loggers::INTERRUPT::DEBUG("Clint[%u] enable_irq hwirq=%u", _identifier,
-                                  hw_irq);
-        // 根据 IRQ 编号打开对应的 S 态本地中断位.
-        csr_sie_t sie = csr_get_sie();
-        if (hw_irq == _software_irq) {
-            sie.ssie = 1;
-            csr_set_sie(sie);
-            void_return();
-        } else if (hw_irq == _clock_irq) {
-            sie.stie = 1;
-            csr_set_sie(sie);
-            void_return();
-        }
-
-        loggers::INTERRUPT::ERROR("Clint[%u] 不支持启用 hwirq=%u", _identifier,
-                                  hw_irq);
+        loggers::INTERRUPT::ERROR("Clint 不支持启用 irq", _identifier, hw_irq);
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
@@ -156,21 +143,7 @@ namespace device {
      * @brief 屏蔽本地中断.
      */
     Result<void> Clint::disable_irq(hwirq_t hw_irq) {
-        loggers::INTERRUPT::DEBUG("Clint[%u] disable_irq hwirq=%u", _identifier,
-                                  hw_irq);
-        // 根据 IRQ 编号关闭对应的 S 态本地中断位.
-        csr_sie_t sie = csr_get_sie();
-        if (hw_irq == _software_irq) {
-            sie.ssie = 0;
-            csr_set_sie(sie);
-            void_return();
-        } else if (hw_irq == _clock_irq) {
-            sie.stie = 0;
-            csr_set_sie(sie);
-            void_return();
-        }
-
-        loggers::INTERRUPT::ERROR("Clint[%u] 不支持关闭 hwirq=%u", _identifier,
+        loggers::INTERRUPT::ERROR("Clint[%u] 不支持关闭 hwirq", _identifier,
                                   hw_irq);
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }

@@ -531,64 +531,6 @@ namespace device {
         }
     };
 
-    class ClintAlarm : public Alarm {
-    public:
-        /**
-         * @brief 构造绑定到指定时钟源的 CLINT 定时事件设备.
-         *
-         * @param clksrc 供定时器换算 tick 的时钟源
-         */
-        explicit ClintAlarm(ClockSource *clksrc, virq_t clock_virq) noexcept;
-
-        /**
-         * @brief 安排下一次定时事件.
-         *
-         * @param delta 相对当前时刻的触发延迟
-         */
-        void set_next_event(units::time delta) noexcept override;
-
-        /**
-         * @brief 获取该定时器支持的最大触发延迟.
-         *
-         * @return units::time 最大延迟
-         */
-        [[nodiscard]]
-        units::time max_delta() const noexcept override {
-            return UINT64_MAX / _clksrc->frequency();
-        }
-
-        /**
-         * @brief 设置定时事件到期处理函数.
-         *
-         * @param handler 到期时调用的回调函数
-         */
-        void set_handler(Handler &&handler) noexcept override {
-            _handler = std::move(handler);
-        }
-
-        /**
-         * @brief 作为中断系统 handler 处理 clock_virq.
-         *
-         * @param event 当前 virq 事件.
-         */
-        void handle_irq(const IrqEvent &event) noexcept;
-
-        /**
-         * @brief 获取该定时器绑定的 clock virq.
-         *
-         * @return virq_t clock virq.
-         */
-        [[nodiscard]]
-        virq_t clock_virq() const noexcept {
-            return _clock_virq;
-        }
-
-    private:
-        Handler _handler;
-        units::time _last_recorded_time;
-        virq_t _clock_virq = 0;
-    };
-
     /**
      * @brief RISC-V CPU 本地中断控制器后端.
      */
@@ -665,8 +607,8 @@ namespace device {
         std::vector<PhyArea> _mmio_regions;
         cpuid_t _hart_id;
         std::vector<cpuid_t> _target_harts;
-        hwirq_t _software_irq = 0;
-        hwirq_t _clock_irq    = 0;
+        virq_t _software_virq = 0;
+        virq_t _clock_virq    = 0;
 
     public:
         /**
@@ -678,10 +620,12 @@ namespace device {
          * @param hart_id 默认使用的目标 hart.
          * @param target_harts 该 CLINT 通过 interrupts-extended 解析到的目标
          * hart 集合.
+         * @param virqs 该 CLINT 通过 interrupts-extended 解析到的 virq 列表
          */
         Clint(std::string name, intc_t identifier,
               std::vector<PhyArea> mmio_regions, cpuid_t hart_id,
-              std::vector<cpuid_t> target_harts) noexcept;
+              std::vector<cpuid_t> target_harts,
+              std::vector<virq_t> virqs) noexcept;
 
         /**
          * @brief 销毁控制器对象.
@@ -766,34 +710,81 @@ namespace device {
         bool supports_hart(cpuid_t hart_id) const noexcept;
 
         /**
-         * @brief 回填 CLINT 解析得到的 software/clock hwirq.
+         * @brief 获取 software interrupt 的 virq.
          *
-         * @param software_irq software interrupt 的 hwirq.
-         * @param clock_irq clock interrupt 的 hwirq.
+         * @return virq_t software virq.
          */
-        void set_hw_irqs(hwirq_t software_irq, hwirq_t clock_irq) noexcept {
-            _software_irq = software_irq;
-            _clock_irq    = clock_irq;
+        [[nodiscard]]
+        virq_t software_virq() const noexcept {
+            return _software_virq;
         }
 
         /**
-         * @brief 获取 software interrupt 的 hwirq.
+         * @brief 获取 clock interrupt 的 virq.
          *
-         * @return hwirq_t software hwirq.
+         * @return virq_t clock virq.
          */
         [[nodiscard]]
-        hwirq_t software_hwirq() const noexcept {
-            return _software_irq;
+        virq_t clock_virq() const noexcept {
+            return _clock_virq;
+        }
+    };
+
+    class ClintAlarm : public Alarm {
+    public:
+        /**
+         * @brief 构造绑定到指定时钟源的 CLINT 定时事件设备.
+         *
+         * @param clksrc 供定时器换算 tick 的时钟源
+         */
+        explicit ClintAlarm(ClockSource *clksrc, virq_t clock_virq) noexcept;
+
+        /**
+         * @brief 安排下一次定时事件.
+         *
+         * @param delta 相对当前时刻的触发延迟
+         */
+        void set_next_event(units::time delta) noexcept override;
+
+        /**
+         * @brief 获取该定时器支持的最大触发延迟.
+         *
+         * @return units::time 最大延迟
+         */
+        [[nodiscard]]
+        units::time max_delta() const noexcept override {
+            return UINT64_MAX / _clksrc->frequency();
         }
 
         /**
-         * @brief 获取 clock interrupt 的 hwirq.
+         * @brief 设置定时事件到期处理函数.
          *
-         * @return hwirq_t clock hwirq.
+         * @param handler 到期时调用的回调函数
+         */
+        void set_handler(Handler &&handler) noexcept override {
+            _handler = std::move(handler);
+        }
+
+        /**
+         * @brief 作为中断系统 handler 处理 clock_virq.
+         *
+         * @param event 当前 virq 事件.
+         */
+        void handle_irq(const IrqEvent &event) noexcept;
+
+        /**
+         * @brief 获取该定时器绑定的 clock virq.
+         *
+         * @return virq_t clock virq.
          */
         [[nodiscard]]
-        hwirq_t clock_hwirq() const noexcept {
-            return _clock_irq;
+        virq_t clock_virq() const noexcept {
+            return _clock_virq;
         }
+
+    private:
+        Handler _handler;
+        units::time _last_recorded_time;
+        virq_t _clock_virq = 0;
     };
 }  // namespace device

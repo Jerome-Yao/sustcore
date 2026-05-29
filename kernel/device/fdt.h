@@ -268,7 +268,106 @@ namespace fdt {
 
     class FDTProvider : public device::DeviceProvider {
     private:
+        using InterruptRef = std::pair<phandle_t, device::hwirq_t>;
+
         Configuration _config;
+        mutable std::unordered_map<phandle_t, device::domain_t> _irq_domains;
+
+        /**
+         * @brief 在 FDT 解析器内部登记 phandle 到中断域的映射.
+         *
+         * @param phandle 中断控制器节点的 phandle.
+         * @param domain 已注册的中断域对象.
+         * @return Result<void> 登记结果.
+         */
+        [[nodiscard]]
+        Result<void> register_irq_domain(phandle_t phandle,
+                                         const device::IrqDomain &domain) const;
+
+        /**
+         * @brief 通过 phandle 解析对应的中断域.
+         *
+         * @param phandle 中断控制器节点的 phandle.
+         * @param irqman 全局中断管理器.
+         * @return Result<device::IrqDomain&> 对应的中断域引用.
+         */
+        [[nodiscard]]
+        Result<device::IrqDomain &> resolve_irq_domain(
+            phandle_t phandle, device::IrqManager &irqman) const;
+
+        /**
+         * @brief 解析中断控制器的 #interrupt-cells 配置.
+         *
+         * @param controller_phandle 中断控制器节点的 phandle.
+         * @return Result<size_t> 中断描述占用的 cell 数.
+         */
+        [[nodiscard]]
+        Result<size_t> interrupt_cells_for_controller(
+            phandle_t controller_phandle) const;
+
+        /**
+         * @brief 沿父节点链查找节点生效的 interrupt-parent.
+         *
+         * @param node 待查询节点.
+         * @return Result<phandle_t> 继承解析后的 interrupt-parent phandle.
+         */
+        [[nodiscard]]
+        Result<phandle_t> resolve_interrupt_parent(const Node &node) const;
+
+        /**
+         * @brief 将 interrupts-extended 属性解析为中断引用列表.
+         *
+         * 返回值顺序与属性中的条目顺序一致. 当前仅支持
+         * `#interrupt-cells == 1` 的中断控制器编码.
+         *
+         * @param node 待解析节点.
+         * @return Result<std::vector<InterruptRef>> 解析得到的中断引用列表.
+         */
+        [[nodiscard]]
+        Result<std::vector<InterruptRef>> parse_interrupts_extended(
+            const Node &node) const;
+
+        /**
+         * @brief 将 interrupt-parent + interrupts 解析为中断引用列表.
+         *
+         * 返回值顺序与属性中的条目顺序一致. 当前仅支持
+         * `#interrupt-cells == 1` 的中断控制器编码.
+         *
+         * @param node 待解析节点.
+         * @return Result<std::vector<InterruptRef>> 解析得到的中断引用列表.
+         */
+        [[nodiscard]]
+        Result<std::vector<InterruptRef>> parse_interrupts(
+            const Node &node) const;
+
+        /**
+         * @brief 将一组中断引用解析为稳定的 virq 列表.
+         *
+         * 解析时会根据 FDT 内部维护的 phandle -> IrqDomain 映射查找目标域,
+         * 再由 IrqManager 为域内 hwirq 分配或复用稳定 virq.
+         *
+         * @param refs 待解析的中断引用列表.
+         * @param irqman 全局中断管理器.
+         * @return Result<std::vector<device::virq_t>> 对应的 virq 列表.
+         */
+        [[nodiscard]]
+        Result<std::vector<device::virq_t>> resolve_interrupt_refs_to_virqs(
+            const std::vector<InterruptRef> &refs,
+            device::IrqManager &irqman) const;
+
+        /**
+         * @brief 优先按 interrupts-extended, 否则按 interrupt-parent +
+         * interrupts 解析节点中断.
+         *
+         * 返回值顺序与设备树属性中的中断声明顺序一致.
+         *
+         * @param node 待解析节点.
+         * @param irqman 全局中断管理器.
+         * @return Result<std::vector<device::virq_t>> 解析得到的 virq 列表.
+         */
+        [[nodiscard]]
+        Result<std::vector<device::virq_t>> parse_interrupt_virqs(
+            const Node &node, device::IrqManager &irqman) const;
 
         void append_as_regions(std::vector<device::MemRegion> &regions,
                                const RegionCells &cells, const Property &prop,
