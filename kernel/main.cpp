@@ -48,6 +48,7 @@
 #include <task/wait.h>
 #include <test/framework.h>
 #include <test/kthread.h>
+#include <vfs/device.h>
 #include <vfs/ops.h>
 #include <vfs/tarfs.h>
 #include <vfs/vfs.h>
@@ -345,6 +346,10 @@ constexpr const char *INITMOD_PATH    = "/initrd/init.mod";
 constexpr const char *SETUPMOD_PATH   = "/initrd/setup.mod";
 constexpr const char *DEFAULTMOD_PATH = "/initrd/default.mod";
 
+namespace {
+    devfs::DevFSDriver *g_devfs_driver = nullptr;
+}
+
 util::owner<RamDiskDevice *> make_initrd() {
     auto e_initrd_ptr = reinterpret_cast<char *>(&e_initrd);
     auto s_initrd_ptr = reinterpret_cast<char *>(&s_initrd);
@@ -392,10 +397,16 @@ Result<void> init_vfs() {
     auto tarfs        = util::owner(new tarfs::TarFSDriver());
     auto register_res = vfs.register_fs(tarfs);
     propagate(register_res);
+    auto devfs_driver = util::owner(new devfs::DevFSDriver());
+    g_devfs_driver    = devfs_driver.get();
+    register_res      = vfs.register_fs(std::move(devfs_driver));
+    propagate(register_res);
 
     auto initrd_device = make_initrd();
     auto mount_res     = vfs.mount("tarfs", initrd_device, INITRD_PATH,
                                    MountFlags::NONE, nullptr);
+    propagate(mount_res);
+    mount_res = vfs.mount("devfs", "/sys/", nullptr);
     propagate(mount_res);
     void_return();
 }
@@ -455,6 +466,34 @@ void after_init() {
             auto *driver =
                 static_cast<driver::SerialDevice *>(create_res.value());
             driver->write("Hello, Sustcore!\n", strlen("Hello, Sustcore!\n"));
+            if (g_devfs_driver != nullptr) {
+                auto devfs_res = g_devfs_driver->mounted_superblock();
+                if (!devfs_res.has_value()) {
+                    loggers::SUSTCORE::ERROR("获取 DevFS 超级块失败: %s",
+                                             to_cstring(devfs_res.error()));
+                } else {
+                    auto mount_res = driver->mount(*devfs_res.value(), nullptr);
+                    if (!mount_res.has_value()) {
+                        loggers::SUSTCORE::ERROR("挂载串口设备文件失败: %s",
+                                                 to_cstring(mount_res.error()));
+                    }
+                }
+
+                auto serial_file =
+                    VFS::inst().__debug_open("/sys/serial/serial");
+                if (!serial_file.has_value()) {
+                    loggers::SUSTCORE::ERROR("调试打开串口设备文件失败: %s",
+                                             to_cstring(serial_file.error()));
+                } else {
+                    auto write_res = VFS::inst().write(
+                        *serial_file.value(), 0, "Debug Hello!\n",
+                        strlen("Debug Hello!\n"));
+                    if (!write_res.has_value()) {
+                        loggers::SUSTCORE::ERROR("调试写入串口设备文件失败: %s",
+                                                 to_cstring(write_res.error()));
+                    }
+                }
+            }
         }
     }
 
@@ -491,9 +530,11 @@ void after_init() {
             auto alarm_time = time + units::time::from_seconds(2);
 
             ticker = [driver](units::time now) {
-                auto alarm_ft = units::rt_time::from_time(now).to_formatted_time();
+                auto alarm_ft =
+                    units::rt_time::from_time(now).to_formatted_time();
                 loggers::SUSTCORE::INFO(
-                    "Goldfish RTC alarm 触发: %04lld-%02lld-%02lld %02lld:%02lld:%02lld",
+                    "Goldfish RTC alarm 触发: %04lld-%02lld-%02lld "
+                    "%02lld:%02lld:%02lld",
                     static_cast<long long>(alarm_ft.year),
                     static_cast<long long>(alarm_ft.month),
                     static_cast<long long>(alarm_ft.day),

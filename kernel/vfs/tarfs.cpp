@@ -162,8 +162,6 @@ namespace tarfs {
 		void_return();
 	}
 
-	static size_t g_next_sb_id = 1;
-
 	Result<util::owner<ISuperblock *>> TarFSDriver::mount(
 		IBlockDevice *device, const char *options) {
 		(void)options;
@@ -184,9 +182,8 @@ namespace tarfs {
 			}
 		}
 
-		size_t sbid = g_next_sb_id++;
 		TarSuperblock *sb_impl =
-			new TarSuperblock(data, size, this, device, sbid);
+			new TarSuperblock(data, size, this, device, 0);
 		if (!sb_impl) {
 			if (!device->is<RamDiskDevice>()) {
 				delete[] data;

@@ -15,6 +15,7 @@
 #include <driver/base.h>
 #include <driver/factory.h>
 #include <driver/int/base.h>
+#include <vfs/device.h>
 
 #include <optional>
 #include <string>
@@ -68,6 +69,10 @@ namespace driver {
          * @param len 缓冲区长度.
          */
         void write(const char *str, size_t len) noexcept;
+
+        [[nodiscard]]
+        Result<void> mount(devfs::DevFSSuperblock &devfs,
+                           const char *options) noexcept;
 
     private:
         /**

@@ -238,7 +238,7 @@ namespace tarfs {
 			return meta_;
 		}
 
-		Result<size_t> sb_id() const override {
+		size_t sb_id() const override {
 			return sb_id_;
 		}
 

@@ -18,6 +18,7 @@
 #include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/path.h>
+#include <sus/refcount.h>
 #include <sustcore/errcode.h>
 #include <vfs/ops.h>
 
@@ -52,7 +53,6 @@ public:
 
 class VSuperblock : public util::refc<VSuperblock> {
 public:
-    constexpr void on_death() {}
     constexpr bool closable() const {
         return !alive();
     }
@@ -60,22 +60,23 @@ public:
 private:
     util::owner<ISuperblock *> _sb;
     util::refc_ptr<VFsDriver> _fsd;
+    std::unordered_map<inode_t, VINode *> _inode_cache;
 
 public:
     VSuperblock(util::owner<ISuperblock *> sb, VFsDriver &fsd)
         : _sb(sb), _fsd(&fsd) {}
-    virtual ~VSuperblock() {
-        delete _sb;
-    }
+    virtual ~VSuperblock();
     constexpr ISuperblock *sb() const {
         return _sb.get();
     }
     constexpr VFsDriver &vfsd() const {
         return *_fsd;
     }
+    Result<util::refc_ptr<VINode>> get_vnode(inode_t inode_id);
+    void on_death();
 };
 
-class VINode {
+class VINode : public util::refc<VINode> {
 public:
     static constexpr PayloadType IDENTIFIER = PayloadType::VFILE;
 
@@ -85,6 +86,10 @@ private:
     util::refc_ptr<VSuperblock> _vsb;
 
 public:
+    void on_death() {
+        delete this;
+    }
+
     constexpr IINode *inode() const {
         return _inode.get();
     }
@@ -105,13 +110,13 @@ public:
 
 class VFile : public cap::_PayloadHelper<PayloadType::VFILE> {
 private:
-    util::owner<VINode *> _vind;
+    util::refc_ptr<VINode> _vind;
     util::Path _mount_path;
     VFS *_vfs;
 
 public:
-    VFile(util::owner<VINode *> vind, const util::Path &mount_path, VFS &vfs);
-    ~VFile() override;
+    VFile(VINode &vind, const util::Path &mount_path, VFS &vfs);
+    ~VFile() override = default;
     void destruct() override;
 
     [[nodiscard]]
@@ -136,8 +141,8 @@ private:
         const util::Path &path);
 
     [[nodiscard]]
-    Result<util::owner<VINode *>> _resolve_inode(const util::Path &path,
-                                                 util::Path &mount_path);
+    Result<util::refc_ptr<VINode>> _resolve_inode(const util::Path &path,
+                                                  util::Path &mount_path);
 
     void _on_vfile_destroy(const util::Path &mount_path) noexcept;
 
@@ -160,6 +165,8 @@ public:
     // 挂载文件系统
     Result<void> mount(const char *fs_name, IBlockDevice *device,
                        const char *mountpoint, MountFlags flags,
+                       const char *options);
+    Result<void> mount(const char *fs_name, const char *mountpoint,
                        const char *options);
     Result<void> umount(const char *mountpoint);
     // 打开文件并直接插入到指定 holder 中

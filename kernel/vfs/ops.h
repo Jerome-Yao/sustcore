@@ -12,16 +12,26 @@
 #pragma once
 
 #include <device/block.h>
-#include <sus/types.h>
-#include <sustcore/errcode.h>
 #include <sus/owner.h>
 #include <sus/rtti.h>
+#include <sus/types.h>
+#include <sustcore/errcode.h>
 
 #include <concepts>
 #include <cstddef>
 #include <string_view>
 
 enum class SeekWhence { SET = 0, CUR = 1, END = 2 };
+enum class INodeCachePolicy {
+    NONE,  // 绝不缓存，每次 open 创建新实例，关闭即销毁（如设备会话）
+    SHARED,  // 可共享的普通缓存，引用计数归零后可以回收（如常规磁盘文件）
+    PERMANENT,  // 持久缓存，即使引用计数归零也不回收，直到文件系统卸载（如设备目录）
+};
+enum class FileCachePolicy {
+    NONE,  // 绝不缓存，每次 write 立即 sync
+    SHARED,
+    PERMANENT, 
+};
 
 class IFile;
 class IDirectory;
@@ -42,7 +52,7 @@ template <typename T>
 concept IMetadataProvider = requires(T a) {
     {
         a.metadata()
-    } -> std::same_as<IMetadata&>;
+    } -> std::same_as<IMetadata &>;
 };
 
 using inode_t = size_t;
@@ -67,7 +77,7 @@ enum class INodeType : uint8_t { FILE, DIRECTORY };
  */
 class IINode : public RTTIBase<IINode, INodeType> {
 public:
-    virtual ~IINode()                                   = default;
+    virtual ~IINode() = default;
     /**
      * @brief 将该目录项作为目录打开
      *
@@ -75,6 +85,7 @@ public:
      *
      * @return Result<IDirectory *> 目录对象
      */
+    [[nodiscard]]
     virtual Result<IDirectory *> as_directory();
     /**
      * @brief 将该目录项作为文件打开
@@ -83,19 +94,31 @@ public:
      *
      * @return Result<IFile *> 文件对象
      */
+    [[nodiscard]]
     virtual Result<IFile *> as_file();
     /**
      * @brief 获得元数据
      *
      * @return Metadata& 元数据对象
      */
-    virtual IMetadata& metadata()      = 0;
+    [[nodiscard]]
+    virtual IMetadata &metadata() = 0;
     /**
      * @brief 获取inode ID
-     * 
+     *
      * @return size_t inode ID
      */
+    [[nodiscard]]
     virtual inode_t inode_id() const = 0;
+    /**
+     * @brief 获取INode缓存策略
+     *
+     * @return INodeCachePolicy 缓存策略
+     */
+    [[nodiscard]]
+    virtual INodeCachePolicy inode_cache() const {
+        return INodeCachePolicy::SHARED;
+    }
 };
 
 /**
@@ -105,7 +128,8 @@ public:
 class IFile : public IINode {
 public:
     static constexpr INodeType IDENTIFIER = INodeType::FILE;
-    virtual INodeType type_id() const {
+    [[nodiscard]]
+    INodeType type_id() const override {
         return IDENTIFIER;
     }
 
@@ -119,6 +143,7 @@ public:
      * @param len 读取数据的长度
      * @return Result<size_t> 实际读取的数据长度
      */
+    [[nodiscard]]
     virtual Result<size_t> read(off_t offset, void *buf, size_t len) = 0;
 
     /**
@@ -129,21 +154,32 @@ public:
      * @param len 写入数据的长度
      * @return Result<size_t> 实际写入的数据长度
      */
-    virtual Result<size_t> write(off_t offset, const void *buf,
-                                     size_t len) = 0;
+    [[nodiscard]]
+    virtual Result<size_t> write(off_t offset, const void *buf, size_t len) = 0;
 
     /**
      * @brief 获取文件大小
      *
      * @return Result<size_t> 文件大小
      */
+    [[nodiscard]]
     virtual Result<size_t> size() = 0;
 
     /**
      * @brief 同步文件数据到存储设备
      *
      */
+    [[nodiscard]]
     virtual Result<void> sync() = 0;
+    /**
+     * @brief 获取文件内容缓存策略
+     *
+     * @return FileCachePolicy 缓存策略
+     */
+    [[nodiscard]]
+    virtual FileCachePolicy file_cache() const {
+        return FileCachePolicy::SHARED;
+    }
 };
 
 /**
@@ -153,24 +189,27 @@ public:
 class IDirectory : public IINode {
 public:
     static constexpr INodeType IDENTIFIER = INodeType::DIRECTORY;
-    virtual INodeType type_id() const {
+    [[nodiscard]]
+    INodeType type_id() const override {
         return IDENTIFIER;
     }
 
-    virtual ~IDirectory()                                  = default;
+    virtual ~IDirectory() = default;
     /**
      * @brief 在目录中查找指定名称的目录项
      *
      * @param name 目录项名称
      * @return Result<inode_t> 查询到的目录项INode号
      */
+    [[nodiscard]]
     virtual Result<inode_t> lookup(std::string_view name) = 0;
     /**
      * @brief 同步目录数据到存储设备
      *
      * @return Result<void> 错误码
      */
-    virtual Result<void> sync()                                        = 0;
+    [[nodiscard]]
+    virtual Result<void> sync() = 0;
 };
 
 /**
@@ -179,28 +218,28 @@ public:
  */
 class ISuperblock {
 public:
-    virtual ~ISuperblock()                         = default;
+    virtual ~ISuperblock()                                            = default;
     /**
      * @brief 获得所属的文件系统驱动
      *
      * @return IFsDriver& 文件系统驱动
      */
-    virtual IFsDriver &fs()                    = 0;
+    virtual IFsDriver &fs()                                           = 0;
     /**
      * @brief 同步超级块数据到存储设备
      *
      * @return Result<void>
      */
-    virtual Result<void> sync()                   = 0;
+    virtual Result<void> sync()                                       = 0;
     /**
      * @brief 获取根目录项
      *
      * @return Result<inode_t> 根目录项的inode号
      */
-    virtual Result<inode_t> root()        = 0;
+    virtual Result<inode_t> root()                                    = 0;
     /**
      * @brief 由inode号获取inode对象
-     * 
+     *
      * @param inode_id inode号
      * @return Result<util::owner<INode *>> inode对象
      */
@@ -210,13 +249,13 @@ public:
      *
      * @return IMetadata& 元数据对象
      */
-    virtual IMetadata& metadata() = 0;
+    virtual IMetadata &metadata()                                     = 0;
     /**
      * @brief 获得Superblock ID
      *
-     * @return Result<size_t> Superblock ID
+     * @return size_t Superblock ID
      */
-    virtual Result<size_t> sb_id() const = 0;
+    virtual size_t sb_id() const                                      = 0;
 };
 
 class IFsDriver {
@@ -243,13 +282,41 @@ public:
      * @return Result<ISuperblock *> 文件系统超级块
      */
     virtual Result<util::owner<ISuperblock *>> mount(IBlockDevice *device,
-                                            const char *options)       = 0;
+                                                     const char *options) = 0;
     /**
      * @brief 解挂文件系统
      *
      * @param sb 超级块
      */
-    virtual Result<void> unmount(ISuperblock *sb)                        = 0;
+    virtual Result<void> unmount(ISuperblock *sb)                         = 0;
+
+    [[nodiscard]]
+    virtual bool is_pseudo() const {
+        return false;
+    }
+};
+
+class IPesudoFsDriver : public IFsDriver {
+public:
+    ~IPesudoFsDriver() = default;
+
+    Result<void> probe(IBlockDevice *device, const char *options) final {
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<util::owner<ISuperblock *>> mount(IBlockDevice *device,
+                                             const char *options) final {
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    virtual Result<void> probe(const char *name, const char *options)     = 0;
+    virtual Result<util::owner<ISuperblock *>> mount(const char *name,
+                                                     const char *options) = 0;
+
+    [[nodiscard]]
+    bool is_pseudo() const final {
+        return true;
+    }
 };
 
 static_assert(ISyncable<IFile>);

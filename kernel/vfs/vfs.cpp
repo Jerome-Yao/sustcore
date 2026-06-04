@@ -25,12 +25,50 @@ namespace {
     static bool inst_vfs_initialized = false;
 }  // namespace
 
-VFile::VFile(util::owner<VINode *> vind, const util::Path &mount_path, VFS &vfs)
-    : _vind(vind), _mount_path(mount_path), _vfs(&vfs) {}
-
-VFile::~VFile() {
-    delete _vind.get();
+VSuperblock::~VSuperblock() {
+    on_death();
 }
+
+Result<util::refc_ptr<VINode>> VSuperblock::get_vnode(inode_t inode_id) {
+    auto cache_res = _inode_cache.at_nt(inode_id);
+    if (cache_res.has_value()) {
+        VINode *cached = cache_res.value().get();
+        if (cached != nullptr) {
+            return util::refc_ptr(cached);
+        }
+        _inode_cache.erase(inode_id);
+    }
+
+    auto inode_res = sb()->get_inode(inode_id);
+    propagate(inode_res);
+
+    auto *vnode = new VINode(inode_res.value(), vfsd(), *this);
+    if (vnode == nullptr) {
+        unexpect_return(ErrCode::OUT_OF_MEMORY);
+    }
+
+    auto policy = vnode->inode()->inode_cache();
+    if (policy != INodeCachePolicy::NONE) {
+        vnode->keep();
+        _inode_cache.insert_or_assign(inode_id, vnode);
+    }
+
+    return util::refc_ptr(vnode);
+}
+
+void VSuperblock::on_death() {
+    for (auto &entry : _inode_cache) {
+        if (entry.second != nullptr) {
+            entry.second->release();
+        }
+    }
+    _inode_cache.clear();
+    delete _sb.get();
+    _sb = util::owner<ISuperblock *>(nullptr);
+}
+
+VFile::VFile(VINode &vind, const util::Path &mount_path, VFS &vfs)
+    : _vind(&vind), _mount_path(mount_path), _vfs(&vfs) {}
 
 void VFile::destruct() {
     if (_vfs != nullptr) {
@@ -110,21 +148,49 @@ Result<void> VFS::unregister_fs(const char *fs_name) {
 Result<void> VFS::mount(const char *fs_name, IBlockDevice *device,
                         const char *mountpoint, MountFlags flags,
                         const char *options) {
+    (void)flags;
     util::Path mnt_path = util::Path::normalize(mountpoint);
     if (mount_table.contains(mnt_path)) {
-        unexpect_return(ErrCode::INVALID_PARAM);  // 已经被挂载
+        unexpect_return(ErrCode::INVALID_PARAM);
     }
-    // 否则, 挂载该文件系统
-    // 查找文件系统驱动
+
     auto lookup_result = fs_table.at_nt(fs_name);
     if (!lookup_result.has_value()) {
-        unexpect_return(ErrCode::INVALID_PARAM);  // 未注册该文件系统
+        unexpect_return(ErrCode::INVALID_PARAM);
     }
-    // 获取文件系统驱动
     VFsDriver *fsd = lookup_result.value().get();
+    if (fsd->fsd()->is_pseudo()) {
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
 
-    // 挂载文件系统
     auto mount_result = fsd->fsd()->mount(device, options);
+    return mount_result.transform(
+        [this, mnt_path, fsd](util::owner<ISuperblock *> isb) {
+            util::owner<VSuperblock *> vsb =
+                util::owner(new VSuperblock(isb, *fsd));
+            this->mount_table.insert_or_assign(mnt_path, vsb);
+            this->_active_mount_files.insert_or_assign(mnt_path, 0);
+        });
+}
+
+Result<void> VFS::mount(const char *fs_name, const char *mountpoint,
+                        const char *options) {
+    util::Path mnt_path = util::Path::normalize(mountpoint);
+    if (mount_table.contains(mnt_path)) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    auto lookup_result = fs_table.at_nt(fs_name);
+    if (!lookup_result.has_value()) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+    VFsDriver *fsd = lookup_result.value().get();
+    if (!fsd->fsd()->is_pseudo()) {
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    auto *pseudo = static_cast<IPesudoFsDriver *>(fsd->fsd());
+    auto mount_result = pseudo->mount(fs_name, options);
     return mount_result.transform(
         [this, mnt_path, fsd](util::owner<ISuperblock *> isb) {
             util::owner<VSuperblock *> vsb =
@@ -138,7 +204,7 @@ Result<void> VFS::umount(const char *mountpoint) {
     util::Path mnt_path = util::Path::normalize(mountpoint);
     auto lookup_result  = mount_table.at_nt(mnt_path);
     if (!lookup_result.has_value()) {
-        unexpect_return(ErrCode::INVALID_PARAM);  // 没有该挂载点
+        unexpect_return(ErrCode::INVALID_PARAM);
     }
 
     auto active_res = _active_mount_files.at_nt(mnt_path);
@@ -150,13 +216,10 @@ Result<void> VFS::umount(const char *mountpoint) {
     }
 
     util::owner<VSuperblock *> vsb = lookup_result.value().get();
-
-    // 移除挂载
     this->mount_table.erase(mnt_path);
     this->_active_mount_files.erase(mnt_path);
     Result<void> ret = vsb->vfsd().fsd()->unmount(vsb->sb());
     delete vsb;
-
     return ret;
 }
 
@@ -173,9 +236,8 @@ Result<VFile *> VFS::_open_file(const char *filepath) {
                                    mount_path);
     propagate(vind_res);
 
-    auto *file = new VFile(vind_res.value(), mount_path, *this);
+    auto *file = new VFile(*vind_res.value().get(), mount_path, *this);
     if (file == nullptr) {
-        delete vind_res.value().get();
         unexpect_return(ErrCode::ALLOCATION_FAILED);
     }
 
@@ -219,8 +281,8 @@ Result<std::pair<util::Path, VSuperblock *>> VFS::_resolve_mount(
     }
 }
 
-Result<util::owner<VINode *>> VFS::_resolve_inode(const util::Path &path,
-                                                  util::Path &mount_path) {
+Result<util::refc_ptr<VINode>> VFS::_resolve_inode(const util::Path &path,
+                                                   util::Path &mount_path) {
     auto mount_res = _resolve_mount(path);
     propagate(mount_res);
     mount_path        = mount_res.value().first;
@@ -229,38 +291,26 @@ Result<util::owner<VINode *>> VFS::_resolve_inode(const util::Path &path,
     auto root_res = vsb->sb()->root();
     propagate(root_res);
 
-    auto inode_res = vsb->sb()->get_inode(root_res.value());
-    propagate(inode_res);
-
-    auto current_vind =
-        util::owner(new VINode(inode_res.value(), vsb->vfsd(), *vsb));
-    if (!current_vind) {
-        unexpect_return(ErrCode::OUT_OF_MEMORY);
-    }
+    auto current_vind = vsb->get_vnode(root_res.value());
+    propagate(current_vind);
+    VINode *current = current_vind.value().get();
 
     const util::Path relpath = path.relative_to(mount_path);
     if (relpath == ".") {
-        return current_vind;
+        return util::refc_ptr(current);
     }
 
     for (const auto &entry : relpath) {
-        auto lookup_res = current_vind->inode()->as_directory().and_then(
+        auto lookup_res = current->inode()->as_directory().and_then(
             [entry](IDirectory *dir) { return dir->lookup(entry); });
         propagate(lookup_res);
 
-        auto next_inode_res = vsb->sb()->get_inode(lookup_res.value());
-        propagate(next_inode_res);
-
-        auto next_vind =
-            util::owner(new VINode(next_inode_res.value(), vsb->vfsd(), *vsb));
-        if (!next_vind) {
-            unexpect_return(ErrCode::OUT_OF_MEMORY);
-        }
-
-        current_vind = next_vind;
+        auto next_vind = vsb->get_vnode(lookup_res.value());
+        propagate(next_vind);
+        current = next_vind.value().get();
     }
 
-    return current_vind;
+    return util::refc_ptr(current);
 }
 
 void VFS::_on_vfile_destroy(const util::Path &mount_path) noexcept {
@@ -277,46 +327,52 @@ void VFS::_on_vfile_destroy(const util::Path &mount_path) noexcept {
     active_res.value().get()--;
 }
 
-// 读取文件内容到buf中, 返回实际读取的字节数
 Result<size_t> VFS::read(VFile &vfile, off_t offset, void *buf, size_t len) const {
-    // get interfaces from vfile
     auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
     IFile *file = file_res.value();
 
-    return file->read(offset, buf, len);
+    auto read_res = file->read(offset, buf, len);
+    propagate(read_res);
+
+    if (file->file_cache() == FileCachePolicy::NONE) {
+        auto sync_res = file->sync();
+        if (!sync_res.has_value() && sync_res.error() != ErrCode::NOT_SUPPORTED) {
+            propagate_return(sync_res);
+        }
+    }
+    return read_res.value();
 }
 
-// 将buf中的内容写入文件, 返回实际写入的字节数
 Result<size_t> VFS::write(VFile &vfile, off_t offset, const void *buf,
                           size_t len) const
 {
-    // get interfaces from vfile
     auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
     IFile *file = file_res.value();
 
-    return file->write(offset, buf, len);
+    auto write_res = file->write(offset, buf, len);
+    propagate(write_res);
+
+    if (file->file_cache() == FileCachePolicy::NONE) {
+        auto sync_res = file->sync();
+        if (!sync_res.has_value() && sync_res.error() != ErrCode::NOT_SUPPORTED) {
+            propagate_return(sync_res);
+        }
+    }
+    return write_res.value();
 }
 
-// 获取文件大小
 Result<size_t> VFS::size(VFile &vfile) const
 {
-    // get interfaces from vfile
     auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
-    IFile *file = file_res.value();
-
-    return file->size();
+    return file_res.value()->size();
 }
 
-// 刷新文件内容到存储设备
 Result<void> VFS::sync(VFile &vfile) const
 {
-    // get interfaces from vfile
     auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
-    IFile *file = file_res.value();
-
-    return file->sync();
+    return file_res.value()->sync();
 }

@@ -16,6 +16,36 @@
 #include <sus/units.h>
 
 namespace driver {
+    namespace {
+        class SerialIOFile final : public devfs::CharDevFile {
+        private:
+            SerialDevice &_device;
+
+        public:
+            SerialIOFile(inode_t inode_id, SerialDevice &device)
+                : CharDevFile(inode_id), _device(device) {}
+
+            [[nodiscard]]
+            Result<size_t> write(const void *buf, size_t len) override {
+                if (buf == nullptr && len != 0) {
+                    unexpect_return(ErrCode::NULLPTR);
+                }
+                _device.write(static_cast<const char *>(buf), len);
+                return len;
+            }
+        };
+
+        Result<util::owner<IINode *>> create_serial_io_file(void *ctx,
+                                                            inode_t inode_id) {
+            auto *device = static_cast<SerialDevice *>(ctx);
+            auto *file   = new SerialIOFile(inode_id, *device);
+            if (file == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            return util::owner<IINode *>(file);
+        }
+    }  // namespace
+
     /**
      * @brief 构造一个串口设备驱动.
      */
@@ -45,6 +75,26 @@ namespace driver {
         for (size_t i = 0; i < len; ++i) {
             writec(str[i]);
         }
+    }
+
+    Result<void> SerialDevice::mount(devfs::DevFSSuperblock &root,
+                                     const char *options) noexcept {
+        (void)options;
+        auto sys_root_res = root.root();
+        propagate(sys_root_res);
+
+        auto serial_dir_res = root.ensure_dir(sys_root_res.value(), "serial");
+        propagate(serial_dir_res);
+
+        auto register_res = root.register_char(
+            serial_dir_res.value(), "serial",
+            devfs::CharFactory{this, create_serial_io_file});
+        if (!register_res.has_value() &&
+            register_res.error() != ErrCode::KEY_DUPLICATED)
+        {
+            propagate_return(register_res);
+        }
+        void_return();
     }
 
     /**
