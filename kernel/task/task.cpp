@@ -824,17 +824,9 @@ namespace task {
         }
         auto tmm = util::owner(new TaskMemoryManager(gfp_res.value()));
 
-        // 打开文件
-        auto open_res = VFS::inst().open(path);
-        propagate(open_res);
-        VFile *file = open_res.value();
-
-        // 加载到CHolder中
-        auto insert_res = holder->insert_to_free(file);
-        if (!insert_res.has_value()) {
-            file->destruct();
-            propagate_return(insert_res);
-        }
+        // 打开文件并直接加载到 CHolder 中
+        auto insert_res = VFS::inst().open(path, *holder);
+        propagate(insert_res);
 
         // 设置spec参数
         spec.holder = holder;

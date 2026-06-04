@@ -15,14 +15,9 @@
 
 namespace cap {
     class VFileObject : public CapObj<::VFile> {
-    private:
-        VINode *_vind;
-
     public:
         explicit VFileObject(util::nonnull<Capability *> cap)
-            : CapObj<::VFile>(cap), _vind(_obj->vind()) {
-            assert(_vind != nullptr);
-        }
+            : CapObj<::VFile>(cap) {}
         ~VFileObject() = default;
 
         void *operator new(size_t size) = delete;

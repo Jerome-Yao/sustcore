@@ -12,15 +12,14 @@
 #pragma once
 
 #include <cap/capability.h>
+#include <cap/cholder.h>
 #include <device/block.h>
 #include <logger.h>
-#include <sus/list.h>
 #include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/path.h>
 #include <sustcore/errcode.h>
 #include <vfs/ops.h>
-#include <vfs/vfs.h>
 
 #include <string>
 #include <unordered_map>
@@ -29,7 +28,7 @@ class VFsDriver;
 class VSuperblock;
 class VINode;
 class VFile;
-class DEntry;
+class VFS;
 
 class VFsDriver : public util::refc<VFsDriver> {
 public:
@@ -61,13 +60,11 @@ public:
 private:
     util::owner<ISuperblock *> _sb;
     util::refc_ptr<VFsDriver> _fsd;
-    std::unordered_map<inode_t, util::owner<VINode *>> inode_cache;
 
 public:
     VSuperblock(util::owner<ISuperblock *> sb, VFsDriver &fsd)
         : _sb(sb), _fsd(&fsd) {}
     virtual ~VSuperblock() {
-        assert(inode_cache.empty());
         delete _sb;
     }
     constexpr ISuperblock *sb() const {
@@ -76,23 +73,11 @@ public:
     constexpr VFsDriver &vfsd() const {
         return *_fsd;
     }
-    // 是否仍有该超级块上的 inode 处于活动状态
-    constexpr bool busy() const {
-        return !inode_cache.empty();
-    }
-    // 更新inode_cache, 使其包含指定inode号的inode
-    Result<VINode *> update_inode(inode_t inode_id);
-    // 整理inode_cache
-    Result<void> tidy_up();
 };
 
-class VINode : public util::refc<VINode> {
+class VINode {
 public:
     static constexpr PayloadType IDENTIFIER = PayloadType::VFILE;
-    void on_death() {}
-    constexpr bool closable() const {
-        return !alive();
-    }
 
 private:
     util::owner<IINode *> _inode;
@@ -120,69 +105,18 @@ public:
 
 class VFile : public cap::_PayloadHelper<PayloadType::VFILE> {
 private:
-    util::nonnull<VINode *> _vind;
-    bool _discarded = false;
+    util::owner<VINode *> _vind;
+    util::Path _mount_path;
+    VFS *_vfs;
 
 public:
-    explicit VFile(util::nonnull<VINode *> vind) : _vind(vind) {
-        _vind->keep();
-    }
-
-    ~VFile() override {
-        if (!_discarded) {
-            loggers::VFS::WARN("VFile destructed without being discarded");
-        }
-
-        _vind->release();
-    }
-
-    void destruct() override {
-        if (_discarded) {
-            loggers::VFS::WARN("VFile destructed multiple times");
-            return;
-        }
-        _discarded = true;
-    }
+    VFile(util::owner<VINode *> vind, const util::Path &mount_path, VFS &vfs);
+    ~VFile() override;
+    void destruct() override;
 
     [[nodiscard]]
-    util::nonnull<VINode *> vind() const {
-        return _vind;
-    }
-
-    [[nodiscard]]
-    bool discarded() const {
-        return _discarded;
-    }
-};
-
-class DEntry : public util::refc<DEntry> {
-public:
-    constexpr void on_death() {}
-
-    [[nodiscard]]
-    constexpr bool closable() const {
-        return !alive();
-    }
-
-private:
-    util::Path _path;
-    // automatically call the keep() and release() of VINode and DEntry
-    util::refc_ptr<VINode> _vind;
-    util::refc_ptr<DEntry> _parent;
-
-public:
-    constexpr DEntry(const util::Path &path, util::nonnull<VINode *> vind,
-                     DEntry * parent)
-        : _path(path), _vind(vind), _parent(parent) {}
-    constexpr virtual ~DEntry() {}
-    constexpr const util::Path &path() const {
-        return _path;
-    }
-    constexpr util::nonnull<VINode *> vind() const {
+    util::nonnull<VINode *> vinode() const {
         return util::nnullforce(_vind.get());
-    }
-    constexpr DEntry * parent() const {
-        return _parent.get();
     }
 };
 
@@ -192,8 +126,20 @@ class VFS {
 private:
     std::unordered_map<std::string, util::owner<VFsDriver *>> fs_table;
     std::unordered_map<util::Path, util::owner<VSuperblock *>> mount_table;
-    std::unordered_map<util::Path, util::owner<DEntry *>> dentry_cache;
-    util::ArrayList<VFile *> open_files;
+    std::unordered_map<util::Path, size_t> _active_mount_files;
+
+    [[nodiscard]]
+    Result<VFile *> _open_file(const char *filepath);
+
+    [[nodiscard]]
+    Result<std::pair<util::Path, VSuperblock *>> _resolve_mount(
+        const util::Path &path);
+
+    [[nodiscard]]
+    Result<util::owner<VINode *>> _resolve_inode(const util::Path &path,
+                                                 util::Path &mount_path);
+
+    void _on_vfile_destroy(const util::Path &mount_path) noexcept;
 
 public:
     static void init();
@@ -216,30 +162,21 @@ public:
                        const char *mountpoint, MountFlags flags,
                        const char *options);
     Result<void> umount(const char *mountpoint);
-    // 打开文件
-    // 此处将会返回一个VFile payload, 其最终回收由VFS tidy_up负责
-    Result<VFile *> open(const char *filepath);
-
-    // 整理dentry_cache
-    Result<void> tidy_up();
-
-protected:
-    // 将mnt_path的root更新到dentry_cache中
-    Result<void> update_root(const util::Path &mnt_path);
-    // locate到最近的位于dentry_cache/mount_table中的路径
-    Result<DEntry *> locate(const util::Path &path);
-    // 更新dentry_cache, 使其包含指定路径的dentry
-    Result<void> update_dentry(const util::Path &path);
+    // 打开文件并直接插入到指定 holder 中
+    Result<CapIdx> open(const char *filepath, cap::CHolder &holder);
+    // 仅供测试代码使用的调试接口
+    Result<VFile *> __debug_open(const char *filepath);
 
 public:
     // 读取文件内容到buf中, 返回实际读取的字节数
-    Result<size_t> read(VINode *vfile, off_t offset, void *buf,
-                        size_t len) const;
+    Result<size_t> read(VFile &vfile, off_t offset, void *buf, size_t len) const;
     // 将buf中的内容写入文件, 返回实际写入的字节数
-    Result<size_t> write(VINode *vfile, off_t offset, const void *buf,
+    Result<size_t> write(VFile &vfile, off_t offset, const void *buf,
                          size_t len) const;
     // 获取文件大小
-    Result<size_t> size(VINode *vfile) const;
+    Result<size_t> size(VFile &vfile) const;
     // 刷新文件内容到存储设备
-    Result<void> sync(VINode *vfile) const;
+    Result<void> sync(VFile &vfile) const;
+
+    friend class VFile;
 };

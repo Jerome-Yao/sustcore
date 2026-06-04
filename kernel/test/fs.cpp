@@ -38,7 +38,7 @@ namespace test::fs {
             tassert(mount_res.has_value(), "应能将 tarfs 挂载到根目录 /");
 
             action("打开 initrd 中的 /license 文件");
-            auto open_res = vfs.open("/license");
+            auto open_res = vfs.__debug_open("/license");
             tassert(open_res.has_value(), "应能成功打开 /license 文件");
 
             auto* cap = new cap::Capability(open_res.value(), perm::allperm());
@@ -62,10 +62,6 @@ namespace test::fs {
             delete cap;
             tassert(true, "应能成功关闭 /license 文件能力");
 
-            auto tidy_res = vfs.tidy_up();
-            tassert(tidy_res.has_value(),
-                    "tidy_up 应成功整理 dentry/inode 缓存");
-
             auto umount_res = vfs.umount("/");
             tassert(umount_res.has_value(), "卸载根目录 / 应成功");
 
@@ -87,10 +83,10 @@ namespace test::fs {
                 vfs.mount("tarfs", initrd, "/", MountFlags::NONE, nullptr);
             tassert(mount_res.has_value(), "应能将 tarfs 挂载到根目录 /");
 
-            auto open_res = vfs.open("/license");
+            auto open_res = vfs.__debug_open("/license");
             tassert(open_res.has_value(), "第一次打开 /license 应成功");
 
-            auto open_res2 = vfs.open("/license");
+            auto open_res2 = vfs.__debug_open("/license");
             tassert(open_res2.has_value(), "第二次打开 /license 应成功");
 
             auto* cap1 = new cap::Capability(open_res.value(), perm::allperm());
@@ -115,10 +111,6 @@ namespace test::fs {
             delete cap1;
             tassert(true, "应能成功关闭第一个 /license 文件能力");
 
-            auto tidy_res = vfs.tidy_up();
-            tassert(tidy_res.has_value(),
-                    "tidy_up 应成功整理 dentry/inode 缓存");
-
             auto umount_res = vfs.umount("/");
             tassert(umount_res.has_value(), "释放所有访问器后卸载应成功");
 
@@ -140,7 +132,7 @@ namespace test::fs {
                 vfs.mount("tarfs", initrd, "/", MountFlags::NONE, nullptr);
             tassert(mount_res.has_value(), "应能将 tarfs 挂载到根目录 /");
 
-            auto missing_open = vfs.open("/this_file_should_not_exist");
+            auto missing_open = vfs.__debug_open("/this_file_should_not_exist");
             tassert(!missing_open.has_value(), "打开不存在文件应失败");
 
             auto umount_res = vfs.umount("/");

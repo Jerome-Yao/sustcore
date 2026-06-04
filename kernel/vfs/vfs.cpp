@@ -9,23 +9,36 @@
  *
  */
 
-#include <sus/nonnull.h>
-#include <sus/owner.h>
+#include <cap/cholder.h>
 #include <sus/path.h>
-#include <sus/raii.h>
 #include <sustcore/errcode.h>
 #include <vfs/ops.h>
 #include <vfs/vfs.h>
 
 #include <cassert>
 #include <cstring>
-#include <expected>
+#include <utility>
 
 namespace {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static VFS inst_vfs;
     static bool inst_vfs_initialized = false;
 }  // namespace
+
+VFile::VFile(util::owner<VINode *> vind, const util::Path &mount_path, VFS &vfs)
+    : _vind(vind), _mount_path(mount_path), _vfs(&vfs) {}
+
+VFile::~VFile() {
+    delete _vind.get();
+}
+
+void VFile::destruct() {
+    if (_vfs != nullptr) {
+        _vfs->_on_vfile_destroy(_mount_path);
+        _vfs = nullptr;
+    }
+    delete this;
+}
 
 void VFS::init() {
     // call the constructor explicitly to ensure the instance is initialized before use
@@ -62,11 +75,7 @@ Result<IFile *> IINode::as_file() {
     }
 }
 
-VFS::~VFS() {
-    for (auto *file : open_files) {
-        delete file;
-    }
-}
+VFS::~VFS() = default;
 
 Result<void> VFS::register_fs(util::owner<IFsDriver *> &&driver) {
     const char *fs_name = driver->name();
@@ -88,11 +97,7 @@ Result<void> VFS::unregister_fs(const char *fs_name) {
         unexpect_return(ErrCode::UNKNOWN_ERROR);
     }
 
-    auto tidy_res = tidy_up();
-    propagate(tidy_res);
-
-    // 未被引用: not busy, 可以删除
-    util::owner<VFsDriver *> driver = get_res.value();
+    util::owner<VFsDriver *> driver = get_res.value().get();
     if (!driver->closable()) {
         unexpect_return(ErrCode::BUSY);
     }
@@ -125,6 +130,7 @@ Result<void> VFS::mount(const char *fs_name, IBlockDevice *device,
             util::owner<VSuperblock *> vsb =
                 util::owner(new VSuperblock(isb, *fsd));
             this->mount_table.insert_or_assign(mnt_path, vsb);
+            this->_active_mount_files.insert_or_assign(mnt_path, 0);
         });
 }
 
@@ -135,254 +141,146 @@ Result<void> VFS::umount(const char *mountpoint) {
         unexpect_return(ErrCode::INVALID_PARAM);  // 没有该挂载点
     }
 
-    util::owner<VSuperblock *> vsb = lookup_result.value().get();
-
-    // 确定没有打开的文件属于该挂载点
-    // 先进行一次tidy_up, 清理掉已亡文件
-    // 因为我们并不会在文件的引用计数归零时即刻对其进行删除
-    Result<void> res = tidy_up();
-    if (!res.has_value()) {
-        return res;
+    auto active_res = _active_mount_files.at_nt(mnt_path);
+    if (!active_res.has_value()) {
+        unexpect_return(ErrCode::FS_ERROR);
     }
-
-    // 若仍有该超级块上的 inode 存在, 视为 busy, 禁止卸载
-    if (vsb->busy()) {
+    if (active_res.value().get() != 0) {
         unexpect_return(ErrCode::BUSY);
     }
 
+    util::owner<VSuperblock *> vsb = lookup_result.value().get();
+
     // 移除挂载
     this->mount_table.erase(mnt_path);
+    this->_active_mount_files.erase(mnt_path);
     Result<void> ret = vsb->vfsd().fsd()->unmount(vsb->sb());
     delete vsb;
 
     return ret;
 }
 
-Result<VFile *> VFS::open(const char *filepath) {
+Result<VFile *> VFS::_open_file(const char *filepath) {
+    if (filepath == nullptr) {
+        unexpect_return(ErrCode::NULLPTR);
+    }
     if (*filepath == '\0') {
         unexpect_return(ErrCode::INVALID_PARAM);
     }
 
-    util::Path path = util::Path::from(filepath).normalize();
+    util::Path mount_path;
+    auto vind_res = _resolve_inode(util::Path::from(filepath).normalize(),
+                                   mount_path);
+    propagate(vind_res);
 
-    // try update dentry cache
-    auto update_res = update_dentry(path);
-    propagate(update_res);
-
-    // get virtual inode from dentry
-    auto get_res = dentry_cache.at_nt(path);
-    assert(get_res.has_value());
-    util::nonnull<VINode *> vind = get_res.value().get()->vind();
-    auto *file = new VFile(vind);
+    auto *file = new VFile(vind_res.value(), mount_path, *this);
     if (file == nullptr) {
+        delete vind_res.value().get();
         unexpect_return(ErrCode::ALLOCATION_FAILED);
     }
-    open_files.push_back(file);
+
+    auto active_res = _active_mount_files.at_nt(mount_path);
+    if (!active_res.has_value()) {
+        delete file;
+        unexpect_return(ErrCode::FS_ERROR);
+    }
+    active_res.value().get()++;
     return file;
 }
 
-Result<void> VFS::tidy_up() {
-    for (auto it = open_files.begin(); it != open_files.end();) {
-        VFile *file = *it;
-        if (!file->discarded()) {
-            ++it;
-            continue;
-        }
-        delete file;
-        it = open_files.erase(it);
+Result<CapIdx> VFS::open(const char *filepath, cap::CHolder &holder) {
+    auto file_res = _open_file(filepath);
+    propagate(file_res);
+
+    auto insert_res = holder.insert_to_free(file_res.value());
+    if (!insert_res.has_value()) {
+        file_res.value()->destruct();
+        propagate_return(insert_res);
     }
-
-    // 遍历 dentry_cache, 记录可以删除的 dentry
-    util::ArrayList<util::Path> closable_list;
-    for (const auto &entry : dentry_cache) {
-        DEntry *dentry = entry.second.get();
-        if (dentry->closable()) {
-            closable_list.push_back(entry.first);
-        }
-    }
-
-    // 逐个从 dentry_cache 中移除并释放
-    for (const auto &closable_path : closable_list) {
-        auto get_res = dentry_cache.at_nt(closable_path);
-        if (!get_res.has_value()) {
-            unexpect_return(ErrCode::FS_ERROR);
-        }
-
-        util::owner<DEntry *> dentry_owner = get_res.value();
-        dentry_cache.erase(closable_path);
-        delete dentry_owner;
-    }
-
-    // 最后遍历mount_table, 对每个挂载点的inode_cache进行整理
-    for (const auto &entry : mount_table) {
-        VSuperblock *vsb = entry.second.get();
-        auto tidy_res    = vsb->tidy_up();
-        if (!tidy_res.has_value()) {
-            unexpect_return(ErrCode::FS_ERROR);
-        }
-    }
-
-    void_return();
+    return insert_res.value();
 }
 
-// 整理inode_cache
-Result<void> VSuperblock::tidy_up() {
-    // 遍历 inode_cache, 记录可以删除的 inode
-    util::ArrayList<inode_t> closable_list;
-    for (const auto &entry : inode_cache) {
-        VINode *vind = entry.second.get();
-        if (vind->closable()) {
-            closable_list.push_back(entry.first);
-        }
-    }
-
-    // 逐个从 inode_cache 中移除并释放
-    for (const auto &closable_inode : closable_list) {
-        auto get_res = inode_cache.at_nt(closable_inode);
-        if (!get_res.has_value()) {
-            unexpect_return(ErrCode::FS_ERROR);
-        }
-
-        util::owner<VINode *> vinode_owner = get_res.value();
-        inode_cache.erase(closable_inode);
-        delete vinode_owner;
-    }
-
-    void_return();
+Result<VFile *> VFS::__debug_open(const char *filepath) {
+    return _open_file(filepath);
 }
 
-// 更新inode_cache, 使其包含指定inode号的inode
-Result<VINode *> VSuperblock::update_inode(inode_t inode_id) {
-    if (inode_cache.contains(inode_id)) {
-        return inode_cache.at_nt(inode_id)
-            .transform(unwrap_owner<VINode *>())
-            .transform_error(always(ErrCode::FS_ERROR));
-    }
-
-    // 如果未命中则构造
-    auto get_res = sb()->get_inode(inode_id);
-    propagate(get_res);
-
-    util::owner<VINode *> vind =
-        util::owner(new VINode(get_res.value(), *_fsd, *this));
-    if (!vind) {
-        unexpect_return(ErrCode::OUT_OF_MEMORY);
-    }
-    inode_cache.insert_or_assign(inode_id, vind);
-    return vind.get();
-}
-
-// 将mnt_path的root更新到dentry_cache中
-Result<void> VFS::update_root(const util::Path &mnt_path) {
-    if (!mount_table.contains(mnt_path)) {
-        unexpect_return(ErrCode::INVALID_PARAM);
-    }
-    auto get_res = mount_table.at_nt(mnt_path);
-    if (!get_res.has_value()) {
-        unexpect_return(ErrCode::UNKNOWN_ERROR);
-    }
-    VSuperblock *vsb = get_res.value().get();
-    auto root_res    = vsb->sb()->root().and_then(
-        [vsb](inode_t root_id) { return vsb->update_inode(root_id); });
-    propagate(root_res);
-    VINode *root_vind = root_res.value();
-    util::owner<DEntry *> root_de =
-        util::owner(new DEntry(mnt_path, util::nnullforce(root_vind), nullptr));
-    if (!root_de) {
-        unexpect_return(ErrCode::OUT_OF_MEMORY);
-    }
-    assert(!dentry_cache.contains(mnt_path));
-    dentry_cache.insert_or_assign(mnt_path, root_de);
-    void_return();
-}
-
-// locate到最近的位于dentry_cache/mount_table中的路径
-Result<DEntry *> VFS::locate(const util::Path &path) {
-    // 沿着path向上寻找, 直到找到一个在dentry_cache中的路径
-    // 然后沿着这个路径向下更新dentry_cache, 直到path被包含在内
+Result<std::pair<util::Path, VSuperblock *>> VFS::_resolve_mount(
+    const util::Path &path) {
     util::Path cur_path = path;
-    bool rooted         = false;
-    while (!rooted) {
+    while (true) {
+        auto mount_res = mount_table.at_nt(cur_path);
+        if (mount_res.has_value()) {
+            return std::make_pair(cur_path, mount_res.value().get().get());
+        }
         if (cur_path == "/") {
-            rooted = true;
+            unexpect_return(ErrCode::INVALID_PARAM);
         }
-
-        // 找到一个起点
-        if (dentry_cache.contains(cur_path)) {
-            break;
-        }
-
-        if (mount_table.contains(cur_path)) {
-            auto update_res = update_root(cur_path);
-            if (!update_res.has_value()) {
-                // 判断错误类型
-                // 目前先返回错误
-                // 可以根据错误类型修复mount_table, 或继续向上查找
-                propagate_return(update_res);
-            } else {
-                break;
-            }
-        }
-
         cur_path = cur_path.parent_path();
     }
-    return dentry_cache.at_nt(cur_path)
-        .transform(unwrap_owner<DEntry *>())
-        .transform_error(always(ErrCode::INVALID_PARAM));
 }
 
-// 更新dentry_cache, 使其包含指定路径的dentry
-Result<void> VFS::update_dentry(const util::Path &path) {
-    if (dentry_cache.contains(path)) {
-        void_return();
+Result<util::owner<VINode *>> VFS::_resolve_inode(const util::Path &path,
+                                                  util::Path &mount_path) {
+    auto mount_res = _resolve_mount(path);
+    propagate(mount_res);
+    mount_path        = mount_res.value().first;
+    VSuperblock *vsb = mount_res.value().second;
+
+    auto root_res = vsb->sb()->root();
+    propagate(root_res);
+
+    auto inode_res = vsb->sb()->get_inode(root_res.value());
+    propagate(inode_res);
+
+    auto current_vind =
+        util::owner(new VINode(inode_res.value(), vsb->vfsd(), *vsb));
+    if (!current_vind) {
+        unexpect_return(ErrCode::OUT_OF_MEMORY);
     }
 
-    auto locate_res = locate(path);
-    propagate(locate_res);
-    DEntry *base_dentry      = locate_res.value();
-    VINode *root             = base_dentry->vind();
-    VSuperblock &vsb         = root->superblock();
-    const util::Path relpath = path.relative_to(base_dentry->path());
+    const util::Path relpath = path.relative_to(mount_path);
+    if (relpath == ".") {
+        return current_vind;
+    }
 
-    // 沿着root向下走
-    VINode *curnd       = root;
-    DEntry *parde       = base_dentry;
-    util::Path walkpath = base_dentry->path();
     for (const auto &entry : relpath) {
-        auto lookup_res = curnd->inode()->as_directory().and_then(
+        auto lookup_res = current_vind->inode()->as_directory().and_then(
             [entry](IDirectory *dir) { return dir->lookup(entry); });
         propagate(lookup_res);
 
-        // update inode cache
-        inode_t nxtid = lookup_res.value();
-        auto upd_res  = vsb.update_inode(nxtid);
-        propagate(upd_res);
+        auto next_inode_res = vsb->sb()->get_inode(lookup_res.value());
+        propagate(next_inode_res);
 
-        // iterate to next node
-        curnd    = upd_res.value();
-        walkpath = walkpath / entry;
-        walkpath = walkpath.normalize();
-        util::owner<DEntry *> nxtde =
-            util::owner(new DEntry(walkpath, util::nnullforce(curnd), parde));
-        parde = nxtde.get();
+        auto next_vind =
+            util::owner(new VINode(next_inode_res.value(), vsb->vfsd(), *vsb));
+        if (!next_vind) {
+            unexpect_return(ErrCode::OUT_OF_MEMORY);
+        }
 
-        // update dentry cache
-        dentry_cache.insert_or_assign(walkpath, nxtde);
+        current_vind = next_vind;
     }
 
-    // 如此一来, 就更新了dentry_cache, 使其包含path
-    void_return();
+    return current_vind;
+}
+
+void VFS::_on_vfile_destroy(const util::Path &mount_path) noexcept {
+    auto active_res = _active_mount_files.at_nt(mount_path);
+    if (!active_res.has_value()) {
+        loggers::VFS::WARN("VFile 销毁时找不到挂载点: %s",
+                           mount_path.c_str());
+        return;
+    }
+    if (active_res.value().get() == 0) {
+        loggers::VFS::WARN("VFile 活跃计数已经为 0: %s", mount_path.c_str());
+        return;
+    }
+    active_res.value().get()--;
 }
 
 // 读取文件内容到buf中, 返回实际读取的字节数
-Result<size_t> VFS::read(VINode *vfile, off_t offset, void *buf, size_t len) const {
-    // check if vfile is valid
-    if (vfile->closable()) {
-        unexpect_return(ErrCode::INVALID_PARAM);
-    }
-
+Result<size_t> VFS::read(VFile &vfile, off_t offset, void *buf, size_t len) const {
     // get interfaces from vfile
-    auto file_res = vfile->inode()->as_file();
+    auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
     IFile *file = file_res.value();
 
@@ -390,16 +288,11 @@ Result<size_t> VFS::read(VINode *vfile, off_t offset, void *buf, size_t len) con
 }
 
 // 将buf中的内容写入文件, 返回实际写入的字节数
-Result<size_t> VFS::write(VINode *vfile, off_t offset, const void *buf,
+Result<size_t> VFS::write(VFile &vfile, off_t offset, const void *buf,
                           size_t len) const
 {
-    // check if vfile is valid
-    if (vfile->closable()) {
-        unexpect_return(ErrCode::INVALID_PARAM);
-    }
-
     // get interfaces from vfile
-    auto file_res = vfile->inode()->as_file();
+    auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
     IFile *file = file_res.value();
 
@@ -407,15 +300,10 @@ Result<size_t> VFS::write(VINode *vfile, off_t offset, const void *buf,
 }
 
 // 获取文件大小
-Result<size_t> VFS::size(VINode *vfile) const
+Result<size_t> VFS::size(VFile &vfile) const
 {
-    // check if vfile is valid
-    if (vfile->closable()) {
-        unexpect_return(ErrCode::INVALID_PARAM);
-    }
-
     // get interfaces from vfile
-    auto file_res = vfile->inode()->as_file();
+    auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
     IFile *file = file_res.value();
 
@@ -423,15 +311,10 @@ Result<size_t> VFS::size(VINode *vfile) const
 }
 
 // 刷新文件内容到存储设备
-Result<void> VFS::sync(VINode *vfile) const
+Result<void> VFS::sync(VFile &vfile) const
 {
-    // check if vfile is valid
-    if (vfile->closable()) {
-        unexpect_return(ErrCode::INVALID_PARAM);
-    }
-
     // get interfaces from vfile
-    auto file_res = vfile->inode()->as_file();
+    auto file_res = vfile.vinode()->inode()->as_file();
     propagate(file_res);
     IFile *file = file_res.value();
 
