@@ -1,3 +1,4 @@
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 
 #include <cstddef>
@@ -98,8 +99,11 @@ int kmod_main() {
 
     if (is_child) {
         CapIdx reserved_caps[] = {exec_notif_cap};
+        NotifBootstrap bootstrap{exec_notif_cap};
         printf("test_fork: child exec test_execve\n");
-        if (!execve("/initrd/test_execve.mod", reserved_caps, 1)) {
+        if (!execve("/initrd/test_execve.mod", reserved_caps, 1, &bootstrap,
+                    sizeof(bootstrap)))
+        {
             printf("test_fork: child exec failed\n");
         }
         exit(-1);

@@ -12,7 +12,6 @@
 #include <device/model.h>
 #include <driver/rtc/goldfish.h>
 #include <logger.h>
-#include <mem/userspace.h>
 #include <sustcore/errcode.h>
 
 namespace driver {

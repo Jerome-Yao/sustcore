@@ -1,3 +1,4 @@
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 #include <rpc/metahelper.h>
 #include <rpc/packet.h>
@@ -49,9 +50,11 @@ int kmod_main() {
     printf("Server is running endpoint=%p\n", (void *)endpoint);
 
     CapIdx initial_caps[] = {endpoint};
+    EndpointBootstrap bootstrap{endpoint};
     CapIdx client_pcb     = sys_create_process("/initrd/test_rpc_client.mod",
                                                initial_caps, 1,
-                                               SCHED_CLASS_FCFS);
+                                               SCHED_CLASS_FCFS, &bootstrap,
+                                               sizeof(bootstrap));
     if (client_pcb == cap::error) {
         printf("Failed to create test_rpc_client\n");
         exit(0);

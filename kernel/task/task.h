@@ -141,7 +141,22 @@ namespace task {
          */
         Result<util::nonnull<TCB *>> construct_main_thread(
             util::nonnull<PCB *> pcb, schd::ClassType schd_class,
-            task::StartupInfo startup_info);
+            task::StartupInfo startup_info, const void *startup_blob = nullptr,
+            size_t startup_blob_size = 0);
+        /**
+         * @brief 将启动参数块写入用户主栈并返回新的初始栈顶.
+         *
+         * @param stack_mem 主栈对应的 MemoryPayload.
+         * @param stack_top 用户栈顶虚拟地址.
+         * @param startup_info 需要写入主栈的启动参数块.
+         * @return 成功返回新的用户态初始栈顶地址.
+         */
+        [[nodiscard]]
+        Result<VirAddr> build_user_stack(cap::MemoryPayload &stack_mem,
+                                         VirAddr stack_top,
+                                         const task::StartupInfo &startup_info,
+                                         const void *startup_blob,
+                                         size_t startup_blob_size);
 
         /**
          * @brief 根据 TaskSpec 填充 PCB 并构造主线程.
@@ -318,7 +333,9 @@ namespace task {
          */
         Result<void> exec_pcb(util::nonnull<PCB *> pcb, const char *path,
                               const CapIdx *reserved_caps,
-                              size_t reserved_count);
+                              size_t reserved_count,
+                              const void *startup_blob = nullptr,
+                              size_t startup_blob_size = 0);
         /**
          * @brief 将已完成的 PCB 加入回收队列, 以便稍后统一回收.
          *
@@ -357,9 +374,9 @@ namespace task {
          * @param schd_class 调度类别. 
          * @return 创建成功的 PCB. 
          */
-        Result<util::nonnull<PCB *>> load_elf_into(const char *path,
-                                                   cap::CHolder *holder,
-                                                   schd::ClassType schd_class);
+        Result<util::nonnull<PCB *>> load_elf_into(
+            const char *path, cap::CHolder *holder, schd::ClassType schd_class,
+            const void *startup_blob = nullptr, size_t startup_blob_size = 0);
         /**
          * @brief 加载并创建 init 进程的 PCB, 路径通常指向系统初始化程序.
          *

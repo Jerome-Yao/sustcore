@@ -11,20 +11,4 @@
 
 #pragma once
 
-#include <sustcore/addr.h>
-#include <sustcore/capability.h>
-
-namespace task {
-    // 进程启动时的相关函数
-    // 在进入进程前写到寄存器中
-    // 一般在 create_process 的最后写入
-    struct StartupInfo {
-        VirAddr heap_vaddr;    // 堆的起始地址
-        VirAddr stack_vaddr;   // 栈的起始地址
-        VirAddr entrypoint;    // 入口点地址
-        CapIdx pcb_cap;        // 自身PCB能力
-        CapIdx main_tcb_cap;   // 主线程TCB能力
-        CapIdx heap_mem_cap;   // 堆 Memory 能力
-        CapIdx stack_mem_cap;  // 主栈 Memory 能力
-    };
-}  // namespace task
+#include <sustcore/startup.h>

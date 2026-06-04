@@ -15,6 +15,7 @@
 #include <mem/vma.h>
 #include <sustcore/addr.h>
 
+#include <memory>
 #include <string_view>
 
 /**
@@ -51,4 +52,7 @@ struct TaskSpec {
     // 堆的起始地址
     VirAddr heap_vaddr;
     CapIdx heap_mem_cap = cap::null;
+    // 传递给新镜像的启动缓冲区副本.
+    util::owner<char *> startup_blob = util::owner<char *>(nullptr);
+    size_t startup_blob_size         = 0;
 };

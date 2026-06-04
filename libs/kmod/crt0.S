@@ -12,5 +12,6 @@ _start:
     1:  auipc gp, %pcrel_hi(__global_pointer$)
         addi  gp, gp, %pcrel_lo(1b)
     .option pop
-    /* 直接跳转到 _cpp_setup */
+    /* 将当前用户栈顶作为启动参数块指针传给 _cpp_setup */
+    mv a0, sp
     j _cpp_setup

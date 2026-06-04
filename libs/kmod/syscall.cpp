@@ -21,8 +21,10 @@ void exit(int exit_code) {
 }
 
 CapIdx sys_create_process(const char *path, CapIdx *caps, size_t caps_sz,
-                          size_t sched_class) {
-    return sys_pcb_create_process(__pcb_cap, path, caps, caps_sz, sched_class);
+                          size_t sched_class, const void *startup_blob,
+                          size_t startup_blob_size) {
+    return sys_pcb_create_process(__pcb_cap, path, caps, caps_sz, sched_class,
+                                  startup_blob, startup_blob_size);
 }
 
 CapIdx sys_create_thread(void (*entry)(), void *stack_addr,
@@ -39,12 +41,16 @@ size_t fork(CapIdx *child_pcb_cap) {
     return child_pid;
 }
 
-bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz) {
-    return sys_pcb_execve(__pcb_cap, path, rsvdlst, rsvdsz);
+bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz,
+                const void *startup_blob, size_t startup_blob_size) {
+    return sys_pcb_execve(__pcb_cap, path, rsvdlst, rsvdsz, startup_blob,
+                          startup_blob_size);
 }
 
-bool execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz) {
-    return sys_execve(path, rsvdlst, rsvdsz);
+bool execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz,
+            const void *startup_blob, size_t startup_blob_size) {
+    return sys_execve(path, rsvdlst, rsvdsz, startup_blob,
+                      startup_blob_size);
 }
 
 bool sys_mem_map(CapIdx idx, void *vaddr, uint64_t rwx, uint64_t growth) {

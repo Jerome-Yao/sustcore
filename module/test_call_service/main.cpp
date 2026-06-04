@@ -1,3 +1,4 @@
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 #include <sustcore/capability.h>
 
@@ -69,8 +70,11 @@ int kmod_main() {
     }
 
     CapIdx initial_caps[] = {endpoint};
+    EndpointBootstrap bootstrap{endpoint};
     CapIdx user_pcb       = sys_create_process("/initrd/test_call_user.mod",
-                                               initial_caps, 1, SCHED_CLASS_RR);
+                                               initial_caps, 1,
+                                               SCHED_CLASS_RR, &bootstrap,
+                                               sizeof(bootstrap));
     if (user_pcb == cap::error) {
         printf("test_call_service: 创建user失败\n");
         exit(-1);

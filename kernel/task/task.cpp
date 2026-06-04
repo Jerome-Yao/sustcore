@@ -180,6 +180,7 @@ namespace task {
                 .tmm        = util::owner<TaskMemoryManager *>(nullptr),
                 .holder     = nullptr,
                 .entrypoint = VirAddr(static_cast<addr_t>(0)),
+                .startup_blob = util::owner<char *>(nullptr),
             };
         }
 
@@ -190,12 +191,22 @@ namespace task {
          */
         void destroy_unowned_task_memory(TaskSpec &spec) {
             if (spec.tmm.get() == nullptr) {
+                if (spec.startup_blob != nullptr) {
+                    delete[] spec.startup_blob.get();
+                    spec.startup_blob = util::owner<char *>(nullptr);
+                    spec.startup_blob_size = 0;
+                }
                 return;
             }
             PhyAddr pgd = spec.tmm->pgd();
             delete spec.tmm;
             GFP::put_page(pgd, 1);
             spec.tmm = util::owner<TaskMemoryManager *>(nullptr);
+            if (spec.startup_blob != nullptr) {
+                delete[] spec.startup_blob.get();
+                spec.startup_blob = util::owner<char *>(nullptr);
+                spec.startup_blob_size = 0;
+            }
         }
 
         /**
@@ -363,7 +374,8 @@ namespace task {
 
     Result<util::nonnull<TCB *>> TaskManager::construct_main_thread(
         util::nonnull<PCB *> pcb, schd::ClassType schd_class,
-        task::StartupInfo startup_info) {
+        task::StartupInfo startup_info, const void *startup_blob,
+        size_t startup_blob_size) {
         // 为主线程分配初始栈空间, 并将其加入Task Memory的VMA中
         // 此处无需通过GFP分配物理页, 由缺页中断自动处理即可
         auto *stack_mem = new cap::MemoryPayload(MAX_INITIAL_STACK_SIZE, false,
@@ -378,7 +390,6 @@ namespace task {
                               VirArea(USER_STACK_BOTTOM, USER_STACK_TOP),
                               stack_mem, PageMan::RWX::RW);
         propagate(vma_res);
-
         auto con_res = construct_thread(pcb, pcb->entrypoint.addr(),
                                         USER_STACK_TOP.addr(), schd_class);
         propagate(con_res);
@@ -392,10 +403,65 @@ namespace task {
         startup_info.pcb_cap       = pcb->pcb_cap;
         startup_info.main_tcb_cap  = pcb->main_tcb_cap;
         startup_info.stack_mem_cap = stack_cap_res.value();
-        tcb->context()->write_startup(startup_info);
+        auto stack_top_res =
+            build_user_stack(*stack_mem, USER_STACK_TOP, startup_info,
+                             startup_blob, startup_blob_size);
+        propagate(stack_top_res);
+        tcb->context()->sp() = reinterpret_cast<umb_t>(stack_top_res.value().addr());
+        loggers::TASK::INFO(
+            "构造用户主线程: pid=%lu entry=%p sp=%p", pcb->pid,
+            pcb->entrypoint.addr(), stack_top_res.value().addr());
 
         tcb_guard.release();
         return tcb;
+    }
+
+    Result<VirAddr> TaskManager::build_user_stack(
+        cap::MemoryPayload &stack_mem, VirAddr stack_top,
+        const task::StartupInfo &startup_info, const void *startup_blob,
+        size_t startup_blob_size) {
+        if (!stack_top.nonnull()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (startup_blob_size != 0 && startup_blob == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        constexpr size_t STACK_ALIGN = 16;
+        addr_t stack_arith           = stack_top.arith();
+        size_t total_size = sizeof(size_t) + sizeof(task::StartupInfo) +
+                            startup_blob_size;
+        if (stack_arith < total_size) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        addr_t raw_sp     = stack_arith - total_size;
+        addr_t aligned_sp = raw_sp & ~(static_cast<addr_t>(STACK_ALIGN - 1));
+        if (aligned_sp < USER_STACK_BOTTOM.arith()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        VirAddr user_sp(aligned_sp);
+        size_t mem_offset = user_sp - USER_STACK_BOTTOM;
+        auto size_write_res = stack_mem.write(mem_offset, &total_size,
+                                              sizeof(total_size));
+        propagate(size_write_res);
+        auto info_write_res =
+            stack_mem.write(mem_offset + sizeof(size_t), &startup_info,
+                            sizeof(startup_info));
+        propagate(info_write_res);
+        if (startup_blob_size != 0) {
+            auto blob_write_res = stack_mem.write(
+                mem_offset + sizeof(size_t) + sizeof(startup_info),
+                startup_blob, startup_blob_size);
+            propagate(blob_write_res);
+        }
+        loggers::TASK::DEBUG(
+            "build_user_stack: stack_top=%p raw_sp=%p aligned_sp=%p "
+            "mem_off=%lu total=%lu blob=%lu",
+            stack_top.addr(), reinterpret_cast<void *>(raw_sp), user_sp.addr(),
+            mem_offset, total_size, startup_blob_size);
+        return user_sp;
     }
 
     Result<util::nonnull<TCB *>> TaskManager::populate_task(
@@ -432,7 +498,17 @@ namespace task {
         };
 
         if (reuse_main_tcb == nullptr) {
-            return construct_main_thread(pcb, schd_class, startup_info);
+            auto main_thread_res =
+                construct_main_thread(pcb, schd_class, startup_info,
+                                      spec.startup_blob.get(),
+                                      spec.startup_blob_size);
+            if (spec.startup_blob != nullptr) {
+                delete[] spec.startup_blob.get();
+                spec.startup_blob = util::owner<char *>(nullptr);
+                spec.startup_blob_size = 0;
+            }
+            propagate(main_thread_res);
+            return main_thread_res.value();
         }
 
         auto *stack_mem = new cap::MemoryPayload(MAX_INITIAL_STACK_SIZE, false,
@@ -462,8 +538,21 @@ namespace task {
         pcb->main_tcb_cap          = tcb_cap_res.value();
         startup_info.main_tcb_cap  = pcb->main_tcb_cap;
         startup_info.stack_mem_cap = stack_cap_res.value();
-        tcb->context()->write_startup(startup_info);
+        auto stack_top_res =
+            build_user_stack(*stack_mem, USER_STACK_TOP, startup_info,
+                             spec.startup_blob.get(),
+                             spec.startup_blob_size);
+        propagate(stack_top_res);
+        tcb->context()->sp() = reinterpret_cast<umb_t>(stack_top_res.value().addr());
         pcb->threads.push_back(*tcb);
+        loggers::TASK::INFO(
+            "复用主线程上下文: pid=%lu entry=%p sp=%p", pcb->pid,
+            pcb->entrypoint.addr(), stack_top_res.value().addr());
+        if (spec.startup_blob != nullptr) {
+            delete[] spec.startup_blob.get();
+            spec.startup_blob = util::owner<char *>(nullptr);
+            spec.startup_blob_size = 0;
+        }
         return tcb;
     }
 
@@ -780,8 +869,18 @@ namespace task {
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_elf_into(
-        const char *path, cap::CHolder *holder, schd::ClassType schd_class) {
+        const char *path, cap::CHolder *holder, schd::ClassType schd_class,
+        const void *startup_blob, size_t startup_blob_size) {
         TaskSpec spec = empty_task_spec();
+        if (startup_blob_size != 0) {
+            if (startup_blob == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+            auto copied = util::owner(new char[startup_blob_size]);
+            memcpy(copied.get(), startup_blob, startup_blob_size);
+            spec.startup_blob      = std::move(copied);
+            spec.startup_blob_size = startup_blob_size;
+        }
         LoadPrm load_prm{};
         auto preload_res = preload_into(path, holder, spec, load_prm);
         if (!preload_res.has_value()) {
@@ -1047,18 +1146,23 @@ namespace task {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         return exec_pcb(util::nnullforce(current_tcb->task), path,
-                        reserved_caps, reserved_count);
+                        reserved_caps, reserved_count, nullptr, 0);
     }
 
     Result<void> TaskManager::exec_pcb(util::nonnull<PCB *> target,
                                        const char *path,
                                        const CapIdx *reserved_caps,
-                                       size_t reserved_count) {
+                                       size_t reserved_count,
+                                       const void *startup_blob,
+                                       size_t startup_blob_size) {
         PCB *pcb = target.get();
         if (pcb->is_kernel) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         if (pcb->tmm == nullptr || pcb->cholder == nullptr || path == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if (startup_blob_size != 0 && startup_blob == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
         auto *current_tcb = schd::Scheduler::inst().current_tcb();
@@ -1074,6 +1178,12 @@ namespace task {
         propagate(reserved_res);
 
         TaskSpec spec = empty_task_spec();
+        if (startup_blob_size != 0) {
+            auto copied = util::owner(new char[startup_blob_size]);
+            memcpy(copied.get(), startup_blob, startup_blob_size);
+            spec.startup_blob      = std::move(copied);
+            spec.startup_blob_size = startup_blob_size;
+        }
         LoadPrm load_prm{};
         auto preload_res = preload_into(path, pcb->cholder, spec, load_prm);
         propagate(preload_res);

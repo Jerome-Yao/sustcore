@@ -152,7 +152,8 @@ namespace syscall {
 
     Result<CapIdx> pcb_create_process(CapIdx pcb_cap, const UString &path,
                                       UBuffer &&caps_buf, size_t caps_sz,
-                                      size_t sched_class) {
+                                      size_t sched_class, UBuffer *startup_buf,
+                                      size_t startup_buf_sz) {
         loggers::SYSCALL::DEBUG(
             "创建进程: pcb=%p path=%s, caps_uaddr=%p, caps_sz=%u, "
             "sched_class=%u",
@@ -193,7 +194,11 @@ namespace syscall {
 
         // 2) 使用已预配置的 CHolder 加载子进程 ELF
         auto load_res = task::TaskManager::inst().load_elf_into(
-            path.kbuf(), child_holder, sched_res.value());
+            path.kbuf(), child_holder, sched_res.value(),
+            startup_buf_sz == 0 || startup_buf == nullptr
+                ? nullptr
+                : startup_buf->kbuf(),
+            startup_buf_sz);
         propagate(load_res);
         holder_guard.release();
         auto pcb_guard = util::Guard([&]() {
@@ -306,7 +311,8 @@ namespace syscall {
     }
 
     Result<bool> pcb_execve(CapIdx pcb_cap, const UString &path,
-                            UBuffer &&reserved_buf, size_t reserved_sz) {
+                            UBuffer &&reserved_buf, size_t reserved_sz,
+                            UBuffer *startup_buf, size_t startup_buf_sz) {
         cap::Capability *cap = nullptr;
         auto pcb_res         = lookup_pcb(pcb_cap, &cap);
         propagate(pcb_res);
@@ -323,7 +329,11 @@ namespace syscall {
 
         auto exec_res = task::TaskManager::inst().exec_pcb(
             util::nnullforce(target_res.value()), path.kbuf(), reserved,
-            reserved_sz);
+            reserved_sz,
+            startup_buf_sz == 0 || startup_buf == nullptr
+                ? nullptr
+                : startup_buf->kbuf(),
+            startup_buf_sz);
         propagate(exec_res);
         return true;
     }

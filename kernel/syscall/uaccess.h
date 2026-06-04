@@ -13,9 +13,10 @@
 
 #include <env.h>
 #include <logger.h>
-#include <mem/userspace.h>
 #include <mem/vma.h>
+#include <object/memory.h>
 #include <sus/owner.h>
+#include <sus/range.h>
 #include <sustcore/addr.h>
 #include <syscall/syscall.h>
 
@@ -32,15 +33,21 @@ namespace syscall {
         util::owner<char *> _kbuf;  // 内核空间缓冲区地址
         size_t _len;                // 数据长度
         TaskMemoryManager *_tmm;    // 用户空间内存管理器
-    public:
+        cap::MemoryPayload *_memory;
+        size_t _mem_offset;
+        bool _resolved;
+
         /**
-         * @brief 构造一个用户缓冲区代理.
+         * @brief 解析当前系统调用对应的用户地址空间.
          *
-         * @param uaddr 用户空间地址.
-         * @param len 缓冲区长度.
+         * @return Result<TaskMemoryManager*> 成功时返回用户地址空间管理器.
          */
-        UBuffer(VirAddr uaddr, size_t len)
-            : _uaddr(uaddr), _len(len), _tmm(nullptr) {
+        [[nodiscard]]
+        Result<TaskMemoryManager *> resolve_tmm() noexcept {
+            if (_tmm != nullptr) {
+                return _tmm;
+            }
+
             auto current_tcb_res = syscall::current_tcb();
             if (current_tcb_res.has_value() &&
                 current_tcb_res.value()->task != nullptr)
@@ -49,8 +56,70 @@ namespace syscall {
             } else {
                 _tmm = env::inst().tmm();
             }
-            // 分配内核空间缓冲区
-            _kbuf = util::owner(new char[_len]);
+
+            if (_tmm == nullptr) {
+                loggers::SYSCALL::ERROR("UBuffer: 用户地址空间为空");
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return _tmm;
+        }
+
+        /**
+         * @brief 解析用户缓冲区对应的唯一 MemoryPayload.
+         *
+         * 要求整个缓冲区都落在同一个 VMA 中; 否则返回错误.
+         *
+         * @return Result<void> 成功返回空结果.
+         */
+        [[nodiscard]]
+        Result<void> resolve_payload() {
+            if (_resolved || _len == 0) {
+                _resolved = true;
+                void_return();
+            }
+
+            auto tmm_res = resolve_tmm();
+            propagate(tmm_res);
+            auto locate_res = tmm_res.value()->locate(_uaddr);
+            propagate(locate_res);
+            VMA *vma = locate_res.value();
+            if (vma == nullptr || vma->memory == nullptr) {
+                loggers::SYSCALL::ERROR("UBuffer: 用户缓冲区无有效 MemoryPayload");
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+
+            VirAddr end = _uaddr + _len;
+            if (!within(vma->varea, _uaddr) || end > vma->varea.end) {
+                loggers::SYSCALL::ERROR(
+                    "UBuffer: 用户缓冲区跨越多个VMA或超出VMA范围: [%p, %p)",
+                    _uaddr.addr(), end.addr());
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+
+            _memory     = vma->memory;
+            _mem_offset = vma->mem_offset + (_uaddr - vma->varea.begin);
+            _resolved   = true;
+            loggers::SYSCALL::DEBUG(
+                "UBuffer: 解析成功 uaddr=%p len=%lu mem=%p mem_off=%lu",
+                _uaddr.addr(), _len, _memory, _mem_offset);
+            void_return();
+        }
+
+    public:
+        /**
+         * @brief 构造一个用户缓冲区代理.
+         *
+         * @param uaddr 用户空间地址.
+         * @param len 缓冲区长度.
+         */
+        UBuffer(VirAddr uaddr, size_t len)
+            : _uaddr(uaddr),
+              _kbuf(util::owner(new char[len])),
+              _len(len),
+              _tmm(nullptr),
+              _memory(nullptr),
+              _mem_offset(0),
+              _resolved(false) {
         }
 
         UBuffer(UBuffer &)            = delete;
@@ -65,11 +134,17 @@ namespace syscall {
             : _uaddr(other._uaddr),
               _kbuf(std::move(other._kbuf)),
               _len(other._len),
-              _tmm(other._tmm) {
+              _tmm(other._tmm),
+              _memory(other._memory),
+              _mem_offset(other._mem_offset),
+              _resolved(other._resolved) {
             other._uaddr = VirAddr::null;
             other._kbuf  = util::owner<char *>(nullptr);
             other._len   = 0;
             other._tmm   = nullptr;
+            other._memory = nullptr;
+            other._mem_offset = 0;
+            other._resolved = false;
         }
 
         /**
@@ -96,11 +171,17 @@ namespace syscall {
                 _kbuf  = std::move(other._kbuf);
                 _len   = other._len;
                 _tmm   = other._tmm;
+                _memory = other._memory;
+                _mem_offset = other._mem_offset;
+                _resolved = other._resolved;
 
                 other._kbuf  = util::owner<char *>(nullptr);
                 other._uaddr = VirAddr::null;
                 other._len   = 0;
                 other._tmm   = nullptr;
+                other._memory = nullptr;
+                other._mem_offset = 0;
+                other._resolved = false;
             }
             return *this;
         }
@@ -115,19 +196,24 @@ namespace syscall {
         /**
          * @brief 将用户空间数据复制到内核缓冲区.
          *
-         * @return UBuffer& 当前对象.
+         * @return Result<void> 成功返回空结果.
          */
-        UBuffer &sync_from_user() {
-            if (_kbuf != nullptr) {
-                // 从用户空间复制数据到内核空间
-                auto ret = uspace::umemcpy<uspace::CpyDir::U2K>(_tmm, _kbuf,
-                                                                _uaddr, _len);
-                if (!ret.has_value()) {
-                    loggers::SYSCALL::ERROR("从用户空间复制数据失败: %s",
-                                            to_cstring(ret.error()));
-                }
+        [[nodiscard]]
+        Result<void> sync_from_user() {
+            if (_kbuf == nullptr || _len == 0) {
+                void_return();
             }
-            return *this;
+
+            auto resolve_res = resolve_payload();
+            propagate(resolve_res);
+            auto read_res = _memory->read(_mem_offset, _kbuf, _len);
+            if (!read_res.has_value()) {
+                loggers::SYSCALL::ERROR(
+                    "UBuffer: 从用户空间同步失败: %s",
+                    to_cstring(read_res.error()));
+                propagate_return(read_res);
+            }
+            void_return();
         }
 
         /**
@@ -137,16 +223,18 @@ namespace syscall {
          */
         [[nodiscard]]
         Result<void> commit_to_user() noexcept {
-            if (_kbuf == nullptr) {
+            if (_kbuf == nullptr || _len == 0) {
                 void_return();
             }
 
-            auto ret = uspace::umemcpy<uspace::CpyDir::K2U>(_tmm, _kbuf, _uaddr,
-                                                            _len);
-            if (!ret.has_value()) {
-                loggers::SYSCALL::ERROR("到用户空间复制数据失败: %s",
-                                        to_cstring(ret.error()));
-                propagate_return(ret);
+            auto resolve_res = resolve_payload();
+            propagate(resolve_res);
+            auto write_res = _memory->write(_mem_offset, _kbuf, _len);
+            if (!write_res.has_value()) {
+                loggers::SYSCALL::ERROR(
+                    "UBuffer: 提交到用户空间失败: %s",
+                    to_cstring(write_res.error()));
+                propagate_return(write_res);
             }
             void_return();
         }
@@ -189,7 +277,10 @@ namespace syscall {
          * @param maxlen 最大读取长度.
          */
         UString(VirAddr uaddr, size_t maxlen) : _ubuf(uaddr, maxlen) {
-            sync_from_user();
+            auto sync_res = sync_from_user();
+            if (!sync_res.has_value()) {
+                _len = 0;
+            }
         }
 
         /**
@@ -249,12 +340,14 @@ namespace syscall {
         /**
          * @brief 从用户空间重新同步字符串数据.
          *
-         * @return UString& 当前对象.
+         * @return Result<void> 成功返回空结果.
          */
-        UString &sync_from_user() noexcept {
-            _ubuf.sync_from_user();
+        [[nodiscard]]
+        Result<void> sync_from_user() noexcept {
+            auto sync_res = _ubuf.sync_from_user();
+            propagate(sync_res);
             _len = strnlen(kbuf(), maxlen());
-            return *this;
+            void_return();
         }
 
         /**

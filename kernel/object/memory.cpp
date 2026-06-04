@@ -13,6 +13,7 @@
 #include <mem/vma.h>
 #include <object/memory.h>
 #include <object/perm.h>
+#include <logger.h>
 #include <sustcore/errcode.h>
 
 #include <cstring>
@@ -21,14 +22,68 @@ namespace {
     /**
      * @brief 将 Memory 内偏移向下对齐到页边界. 
      */
-    size_t page_offset(size_t offset) {
-        return page_align_down(offset);
+    [[nodiscard]]
+    size_t offset_to_offvpn(size_t offset) noexcept {
+        return page_align_down(offset) / PAGESIZE;
+    }
+
+    /**
+     * @brief 将 offvpn 转为 payload 内页对齐字节偏移. 
+     */
+    [[nodiscard]]
+    size_t offvpn_to_offset(size_t offvpn) noexcept {
+        return offvpn * PAGESIZE;
+    }
+
+    /**
+     * @brief 获取指定偏移所在页内偏移. 
+     */
+    [[nodiscard]]
+    size_t offset_in_page(size_t offset) noexcept {
+        return offset % PAGESIZE;
+    }
+
+    /**
+     * @brief 计算以当前偏移为起点, 在当前页内最多可访问的字节数. 
+     */
+    [[nodiscard]]
+    size_t page_chunk_size(size_t offset, size_t remain) noexcept {
+        size_t capacity = PAGESIZE - offset_in_page(offset);
+        return capacity < remain ? capacity : remain;
+    }
+
+    /**
+     * @brief 查询指定 offvpn 对应页记录. 
+     */
+    [[nodiscard]]
+    Result<std::reference_wrapper<cap::PhyPage>> lookup_page_entry(
+        cap::MemoryPayload &memory, size_t offvpn) noexcept {
+        auto it = memory.phy_pages.find(offvpn);
+        if (it == memory.phy_pages.end()) {
+            unexpect_return(ErrCode::PAGE_NOT_PRESENT);
+        }
+        return std::ref(it->second);
+    }
+
+    /**
+     * @brief 查询指定 offvpn 对应只读页记录. 
+     */
+    [[nodiscard]]
+    Result<std::reference_wrapper<const cap::PhyPage>> lookup_page_entry(
+        const cap::MemoryPayload &memory, size_t offvpn) noexcept {
+        auto it = memory.phy_pages.find(offvpn);
+        if (it == memory.phy_pages.end()) {
+            unexpect_return(ErrCode::PAGE_NOT_PRESENT);
+        }
+        return std::cref(it->second);
     }
 
     /**
      * @brief 判断请求的增长/收缩方式是否被 Memory 属性允许. 
      */
-    bool growth_allows(cap::MemoryGrowth owned, cap::MemoryGrowth requested) {
+    [[nodiscard]]
+    bool growth_allows(cap::MemoryGrowth owned,
+                       cap::MemoryGrowth requested) noexcept {
         if (requested == cap::MemoryGrowth::FIXED) {
             return owned == cap::MemoryGrowth::FIXED;
         }
@@ -40,6 +95,7 @@ namespace {
      *
      * 已分配过物理页或大小为 0 时不做任何操作. 
      */
+    [[nodiscard]]
     Result<void> ensure_contiguous(cap::MemoryPayload *memory) {
         if (memory == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
@@ -55,9 +111,24 @@ namespace {
         propagate(paddr_res);
         PhyAddr base = paddr_res.value();
         for (size_t i = 0; i < pages; ++i) {
-            memory->phy_pages.push_back({base + i * PAGESIZE, i * PAGESIZE});
+            memory->phy_pages.insert_or_assign(i,
+                                               cap::PhyPage{base + i * PAGESIZE,
+                                                            1});
         }
         void_return();
+    }
+
+    /**
+     * @brief 计算从指定偏移起, 当前 payload 中仍可访问的总长度. 
+     */
+    [[nodiscard]]
+    Result<size_t> bounded_length(size_t memsz, size_t offset,
+                                  size_t buflen) noexcept {
+        if (offset >= memsz) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        size_t available = memsz - offset;
+        return available < buflen ? available : buflen;
     }
 }  // namespace
 
@@ -72,7 +143,7 @@ namespace cap {
 
     void MemoryPayload::destruct() {
         for (auto &page : phy_pages) {
-            GFP::put_page(page.addr, 1);
+            GFP::put_page(page.second.addr, 1);
         }
         delete this;
     }
@@ -84,23 +155,19 @@ namespace cap {
 
         auto *cloned = new MemoryPayload(memsz, shared, continuity, growth);
         for (auto &page : phy_pages) {
-            GFP::keep_page(page.addr, 1);
-            cloned->phy_pages.push_back(page);
+            GFP::keep_page(page.second.addr, 1);
+            page.second.refcount++;
+            cloned->phy_pages.insert_or_assign(page.first, page.second);
         }
         return cloned;
     }
 
-    Result<PhyAddr> MemoryPayload::lookup_page(size_t offset) const {
-        size_t poff = page_offset(offset);
-        if (poff >= memsz) {
+    Result<PhyAddr> MemoryPayload::lookup_page(size_t offset) const noexcept {
+        if (page_align_down(offset) >= memsz) {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
-        for (auto &page : phy_pages) {
-            if (page.offset == poff) {
-                return page.addr;
-            }
-        }
-        unexpect_return(ErrCode::PAGE_NOT_PRESENT);
+        return lookup_page_entry(*this, offset_to_offvpn(offset))
+            .transform(std::mem_fn(&PhyPage::addr));
     }
 
     Result<PhyAddr> MemoryPayload::ensure_page(size_t offset) {
@@ -112,32 +179,159 @@ namespace cap {
             propagate_return(lookup_res);
         }
 
-        size_t poff   = page_offset(offset);
+        size_t offvpn = offset_to_offvpn(offset);
         auto page_res = GFP::get_free_page(1);
         propagate(page_res);
         PhyAddr paddr = page_res.value();
         memset(convert<KpaAddr>(paddr).addr(), 0, PAGESIZE);
-        phy_pages.push_back({paddr, poff});
+        phy_pages.insert_or_assign(offvpn, PhyPage{paddr, 1});
+        loggers::PAGING::DEBUG(
+            "MemoryPayload::ensure_page: offvpn=%lu paddr=%p", offvpn,
+            paddr.addr());
         return paddr;
     }
 
-    Result<void> MemoryPayload::replace_page(size_t offset, PhyAddr new_addr) {
-        size_t poff = page_offset(offset);
-        for (auto &page : phy_pages) {
-            if (page.offset == poff) {
-                GFP::put_page(page.addr, 1);
-                page.addr = new_addr;
-                void_return();
-            }
+    Result<size_t> MemoryPayload::page_refcount(size_t offset) const noexcept {
+        if (page_align_down(offset) >= memsz) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
-        unexpect_return(ErrCode::PAGE_NOT_PRESENT);
+        return lookup_page_entry(*this, offset_to_offvpn(offset))
+            .transform(std::mem_fn(&PhyPage::refcount));
     }
 
-    void MemoryPayload::release_pages_from(size_t offset) {
-        size_t poff = page_offset(offset);
+    Result<void> MemoryPayload::replace_page(size_t offset,
+                                             PhyAddr new_addr) noexcept {
+        size_t offvpn = offset_to_offvpn(offset);
+        auto entry_res = lookup_page_entry(*this, offvpn);
+        propagate(entry_res);
+
+        auto &page   = entry_res.value().get();
+        PhyAddr old  = page.addr;
+        page.addr    = new_addr;
+        page.refcount = 1;
+        GFP::put_page(old, 1);
+        loggers::PAGING::DEBUG(
+            "MemoryPayload::replace_page: offvpn=%lu old=%p new=%p", offvpn,
+            old.addr(), new_addr.addr());
+        void_return();
+    }
+
+    Result<size_t> MemoryPayload::read(size_t offset, void *data, size_t buflen) {
+        if (data == nullptr && buflen != 0) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if (buflen == 0) {
+            return size_t{0};
+        }
+
+        auto total_res = bounded_length(memsz, offset, buflen);
+        propagate(total_res);
+        size_t total = total_res.value();
+
+        auto *dst       = static_cast<char *>(data);
+        size_t consumed = 0;
+        while (consumed < total) {
+            size_t cur_offset = offset + consumed;
+            size_t chunk      = page_chunk_size(cur_offset, total - consumed);
+            auto page_res     = ensure_page(cur_offset);
+            propagate(page_res);
+            PhyAddr paddr = page_res.value();
+            memcpy(dst + consumed,
+                   static_cast<char *>(convert<KpaAddr>(paddr).addr()) +
+                       offset_in_page(cur_offset),
+                   chunk);
+            consumed += chunk;
+        }
+
+        loggers::PAGING::DEBUG(
+            "MemoryPayload::read: offset=%lu len=%lu actual=%lu", offset,
+            buflen, total);
+        return total;
+    }
+
+    Result<size_t> MemoryPayload::write(size_t offset, const void *data,
+                                        size_t buflen) {
+        if (data == nullptr && buflen != 0) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if (buflen == 0) {
+            return size_t{0};
+        }
+
+        auto total_res = bounded_length(memsz, offset, buflen);
+        propagate(total_res);
+        size_t total = total_res.value();
+
+        auto *src       = static_cast<const char *>(data);
+        size_t consumed = 0;
+        while (consumed < total) {
+            size_t cur_offset = offset + consumed;
+            size_t chunk      = page_chunk_size(cur_offset, total - consumed);
+            auto page_res     = ensure_page(cur_offset);
+            propagate(page_res);
+
+            auto refcount_res = page_refcount(cur_offset);
+            propagate(refcount_res);
+            if (refcount_res.value() > 1) {
+                auto fork_res = fork(cur_offset);
+                propagate(fork_res);
+            }
+
+            auto current_res = lookup_page(cur_offset);
+            propagate(current_res);
+            PhyAddr paddr = current_res.value();
+            memcpy(static_cast<char *>(convert<KpaAddr>(paddr).addr()) +
+                       offset_in_page(cur_offset),
+                   src + consumed, chunk);
+            consumed += chunk;
+        }
+
+        loggers::PAGING::DEBUG(
+            "MemoryPayload::write: offset=%lu len=%lu actual=%lu", offset,
+            buflen, total);
+        return total;
+    }
+
+    Result<void> MemoryPayload::fork(size_t offset) {
+        if (page_align_down(offset) >= memsz) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        size_t offvpn       = offset_to_offvpn(offset);
+        auto entry_res      = lookup_page_entry(*this, offvpn);
+        propagate(entry_res);
+        auto &page          = entry_res.value().get();
+        size_t old_refcount = page.refcount;
+        if (old_refcount <= 1) {
+            page.refcount = 1;
+            loggers::PAGING::DEBUG(
+                "MemoryPayload::fork: offvpn=%lu already exclusive paddr=%p",
+                offvpn, page.addr.addr());
+            void_return();
+        }
+
+        auto new_page_res = GFP::get_free_page(1);
+        propagate(new_page_res);
+        PhyAddr new_paddr = new_page_res.value();
+        memcpy(convert<KpaAddr>(new_paddr).addr(),
+               convert<KpaAddr>(page.addr).addr(), PAGESIZE);
+
+        PhyAddr old_paddr = page.addr;
+        page.addr         = new_paddr;
+        page.refcount     = 1;
+        old_refcount--;
+        GFP::put_page(old_paddr, 1);
+        loggers::PAGING::INFO(
+            "MemoryPayload::fork: offvpn=%lu old=%p new=%p shared_ref=%lu",
+            offvpn, old_paddr.addr(), new_paddr.addr(), old_refcount);
+        void_return();
+    }
+
+    void MemoryPayload::release_pages_from(size_t offset) noexcept {
+        size_t first_offvpn = page_align_up(offset) / PAGESIZE;
         for (auto it = phy_pages.begin(); it != phy_pages.end();) {
-            if (it->offset >= poff) {
-                GFP::put_page(it->addr, 1);
+            if (it->first >= first_offvpn) {
+                GFP::put_page(it->second.addr, 1);
                 it = phy_pages.erase(it);
             } else {
                 ++it;
@@ -177,7 +371,7 @@ namespace cap {
 
             size_t copy_pages = old_pages < new_pages ? old_pages : new_pages;
             for (size_t i = 0; i < copy_pages; ++i) {
-                auto old_page_res = lookup_page(i * PAGESIZE);
+                auto old_page_res = lookup_page(offvpn_to_offset(i));
                 if (old_page_res.has_value()) {
                     memcpy(convert<KpaAddr>(new_base + i * PAGESIZE).addr(),
                            convert<KpaAddr>(old_page_res.value()).addr(),
@@ -186,11 +380,12 @@ namespace cap {
             }
 
             for (auto &page : phy_pages) {
-                GFP::put_page(page.addr, 1);
+                GFP::put_page(page.second.addr, 1);
             }
             phy_pages.clear();
             for (size_t i = 0; i < new_pages; ++i) {
-                phy_pages.push_back({new_base + i * PAGESIZE, i * PAGESIZE});
+                phy_pages.insert_or_assign(i,
+                                           PhyPage{new_base + i * PAGESIZE, 1});
             }
         } else if (newsz < memsz) {
             release_pages_from(newsz);
@@ -199,7 +394,7 @@ namespace cap {
         void_return();
     }
 
-    size_t MemoryPayload::allocated_size() const {
+    size_t MemoryPayload::allocated_size() const noexcept {
         return phy_pages.size() * PAGESIZE;
     }
 

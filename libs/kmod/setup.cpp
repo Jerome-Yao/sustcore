@@ -12,6 +12,7 @@
 // cpp setup入口点
 
 #include <prm.h>
+#include <sustcore/startup.h>
 #include <sustcore/capability.h>
 
 #include <cstddef>
@@ -27,6 +28,8 @@ CapIdx __pcb_cap;
 CapIdx __main_tcb_cap;
 CapIdx __heap_mem_cap;
 CapIdx __stack_mem_cap;
+void *__startup_data;
+size_t __startup_size;
 
 namespace kmod {
     void init(void) {
@@ -41,15 +44,31 @@ namespace kmod {
 
 void kmod_main(void);
 
-extern "C" void _cpp_setup(size_t heap_vaddr, CapIdx pcb_cap,
-                           CapIdx main_tcb_cap, CapIdx heap_mem_cap,
-                           CapIdx stack_mem_cap) {
-    __heap_base     = heap_vaddr;
-    __current_brk   = heap_vaddr;
-    __pcb_cap       = pcb_cap;
-    __main_tcb_cap  = main_tcb_cap;
-    __heap_mem_cap  = heap_mem_cap;
-    __stack_mem_cap = stack_mem_cap;
+extern "C" void _cpp_setup(const void *stack_start) {
+    if (stack_start == nullptr) {
+        while (true) {}
+    }
+
+    const auto *base = static_cast<const char *>(stack_start);
+    size_t total_size = 0;
+    memcpy(&total_size, base, sizeof(total_size));
+    const auto *startup = reinterpret_cast<const task::StartupInfo *>(
+        base + sizeof(size_t));
+    __startup_size =
+        total_size > sizeof(size_t) + sizeof(task::StartupInfo)
+            ? total_size - sizeof(size_t) - sizeof(task::StartupInfo)
+            : 0;
+    __startup_data = __startup_size == 0
+                         ? nullptr
+                         : const_cast<char *>(base + sizeof(size_t) +
+                                              sizeof(task::StartupInfo));
+
+    __heap_base     = startup->heap_vaddr.arith();
+    __current_brk   = startup->heap_vaddr.arith();
+    __pcb_cap       = startup->pcb_cap;
+    __main_tcb_cap  = startup->main_tcb_cap;
+    __heap_mem_cap  = startup->heap_mem_cap;
+    __stack_mem_cap = startup->stack_mem_cap;
 
     kmod::init();
     kmod_main();

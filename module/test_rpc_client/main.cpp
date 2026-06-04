@@ -1,3 +1,4 @@
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 #include <rpc/metahelper.h>
 #include <rpc/packet.h>
@@ -8,7 +9,6 @@
 #include <string>
 
 constexpr sus_i32 kTestValue    = 114514;
-constexpr size_t kScanSlots     = 16;
 
 class SampleServiceInterface {
 public:
@@ -45,29 +45,15 @@ public:
     }
 };
 
-static CapIdx find_unique_endpoint_cap() {
-    CapIdx found = cap::null;
-    size_t count = 0;
-
-    for (size_t slot = 0; slot < kScanSlots; ++slot) {
-        CapIdx candidate = cap::make(0, slot);
-        CapInfo info{};
-        if (!sys_cap_lookup(candidate, &info) ||
-            info.type != PayloadType::ENDPOINT)
-        {
-            continue;
-        }
-
-        found = candidate;
-        ++count;
-    }
-
-    if (count != 1) {
-        printf("test_rpc_client: 预期找到一个endpoint, 实际=%u\n", count);
+static CapIdx bootstrap_endpoint() {
+    if (__startup_data == nullptr ||
+        __startup_size != sizeof(EndpointBootstrap))
+    {
+        printf("test_rpc_client: 启动参数无效 size=%u\n", __startup_size);
         exit(-1);
     }
-
-    return found;
+    auto *bootstrap = static_cast<const EndpointBootstrap *>(__startup_data);
+    return bootstrap->endpoint;
 }
 
 static void fail(const char *msg) {
@@ -77,7 +63,7 @@ static void fail(const char *msg) {
 
 int kmod_main() {
     printf("test_rpc_client: start pid=%u\n", sys_getpid(__pcb_cap));
-    CapIdx endpoint = find_unique_endpoint_cap();
+    CapIdx endpoint = bootstrap_endpoint();
 
     SampleClient client(endpoint);
 

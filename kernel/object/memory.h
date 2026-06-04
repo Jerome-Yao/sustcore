@@ -16,25 +16,28 @@
 #include <sus/list.h>
 #include <sustcore/addr.h>
 
+#include <unordered_map>
+
 class TaskMemoryManager;
 
 namespace cap {
     /**
      * @brief Memory Capability 已分配物理页记录. 
      *
-     * addr 是物理页起始地址, offset 是该页在 Memory payload 中的页对齐偏移. 
+     * addr 是物理页起始地址, refcount 仅用于标记该页是否仍处于
+     * 当前 payload 视角下的 COW 共享状态. 
      */
     struct PhyPage {
         /// 物理页起始地址. 
         PhyAddr addr;
-        /// 该物理页在 Memory payload 内的偏移. 
-        size_t offset;
+        /// 当前 payload 视角下的 COW 共享引用计数. 
+        size_t refcount;
 
         /**
          * @brief 比较两个物理页记录是否完全相同. 
          */
         constexpr bool operator==(const PhyPage &other) const noexcept {
-            return addr == other.addr && offset == other.offset;
+            return addr == other.addr && refcount == other.refcount;
         }
     };
 
@@ -76,8 +79,8 @@ namespace cap {
         bool continuity;
         /// 允许的增长/收缩方式. 
         MemoryGrowth growth;
-        /// 已实际分配的物理页列表. 
-        util::ArrayList<PhyPage> phy_pages;
+        /// 已实际分配的物理页映射, key 为 offvpn. 
+        std::unordered_map<size_t, PhyPage> phy_pages;
 
         /**
          * @brief 构造 Memory payload. 
@@ -103,6 +106,7 @@ namespace cap {
          *
          * @return 克隆后的 payload. 
          */
+        [[nodiscard]]
         Payload *clone_payload() override;
 
         /**
@@ -111,7 +115,8 @@ namespace cap {
          * @param offset Memory 内偏移, 可以非页对齐. 
          * @return 已分配物理页地址; 未分配返回 PAGE_NOT_PRESENT. 
          */
-        Result<PhyAddr> lookup_page(size_t offset) const;
+        [[nodiscard]]
+        Result<PhyAddr> lookup_page(size_t offset) const noexcept;
         /**
          * @brief 确保指定偏移对应的物理页存在. 
          *
@@ -120,7 +125,16 @@ namespace cap {
          * @param offset Memory 内偏移, 可以非页对齐. 
          * @return 物理页地址. 
          */
+        [[nodiscard]]
         Result<PhyAddr> ensure_page(size_t offset);
+        /**
+         * @brief 查询指定偏移对应页的 COW 共享引用计数. 
+         *
+         * @param offset Memory 内偏移, 可以非页对齐. 
+         * @return 对应页的 refcount. 
+         */
+        [[nodiscard]]
+        Result<size_t> page_refcount(size_t offset) const noexcept;
         /**
          * @brief 将指定偏移对应的物理页替换为新页. 
          *
@@ -129,7 +143,44 @@ namespace cap {
          * @param offset Memory 内偏移, 可以非页对齐. 
          * @param new_addr 新物理页地址. 
          */
-        Result<void> replace_page(size_t offset, PhyAddr new_addr);
+        [[nodiscard]]
+        Result<void> replace_page(size_t offset, PhyAddr new_addr) noexcept;
+        /**
+         * @brief 从 payload 中读取指定偏移范围的数据. 
+         *
+         * 未分配页会先懒分配为零页, 然后再执行读取. 
+         *
+         * @param offset 起始偏移. 
+         * @param data 输出缓冲区. 
+         * @param buflen 请求读取长度. 
+         * @return 实际读取字节数. 
+         */
+        [[nodiscard]]
+        Result<size_t> read(size_t offset, void *data, size_t buflen);
+        /**
+         * @brief 向 payload 的指定偏移范围写入数据. 
+         *
+         * 未分配页会先懒分配. 若目标页仍处于 COW 共享状态, 会先执行
+         * fork() 拆分物理页后再写入. 
+         *
+         * @param offset 起始偏移. 
+         * @param data 输入缓冲区. 
+         * @param buflen 请求写入长度. 
+         * @return 实际写入字节数. 
+         */
+        [[nodiscard]]
+        Result<size_t> write(size_t offset, const void *data, size_t buflen);
+        /**
+         * @brief 对指定偏移所在页执行写时复制拆分. 
+         *
+         * refcount 为 1 时不分配新页, 直接表示该页可独占写入. refcount
+         * 大于 1 时复制旧页内容到新页, 替换当前 payload 持有的物理页. 
+         *
+         * @param offset Memory 内偏移, 可以非页对齐. 
+         * @return 成功返回 SUCCESS. 
+         */
+        [[nodiscard]]
+        Result<void> fork(size_t offset);
         /**
          * @brief 调整 Memory 承诺大小. 
          *
@@ -138,19 +189,21 @@ namespace cap {
          *
          * @param newsz 新大小. 
          */
+        [[nodiscard]]
         Result<void> resize(size_t newsz);
         /**
          * @brief 释放从指定偏移开始的已分配物理页. 
          *
          * @param offset 起始偏移. 
          */
-        void release_pages_from(size_t offset);
+        void release_pages_from(size_t offset) noexcept;
         /**
          * @brief 查询当前已分配的物理内存大小. 
          *
          * @return 已分配页数乘以 PAGESIZE. 
          */
-        size_t allocated_size() const;
+        [[nodiscard]]
+        size_t allocated_size() const noexcept;
     };
 
     /**

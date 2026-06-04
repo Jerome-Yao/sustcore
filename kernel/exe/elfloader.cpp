@@ -13,12 +13,10 @@
 #include <cap/capability.h>
 #include <cap/cholder.h>
 #include <elf.h>
-#include <env.h>
 #include <exe/elfloader.h>
 #include <logger.h>
-#include <mem/kaddr.h>
-#include <mem/userspace.h>
 #include <mem/vma.h>
+#include <object/memory.h>
 #include <object/vfile.h>
 #include <sustcore/addr.h>
 
@@ -26,22 +24,148 @@
 #include <limits>
 #include <string>
 
-namespace key {
-    using namespace env::key;
-    struct elfloader : public tmm {
-    public:
-        elfloader() = default;
-    };
-}  // namespace key
-
 namespace loader::elf {
+    namespace {
+        constexpr size_t SEGMENT_IO_CHUNK_SIZE = PAGESIZE;
+
+        /**
+         * @brief 判断程序头是否表示可加载段.
+         */
+        [[nodiscard]]
+        constexpr bool is_load_segment(const Elf64_Phdr &phdr) noexcept {
+            return phdr.p_type == PT_LOAD;
+        }
+
+        /**
+         * @brief 计算两个 size_t 中的较小值.
+         */
+        [[nodiscard]]
+        constexpr size_t min_size(size_t lhs, size_t rhs) noexcept {
+            return lhs < rhs ? lhs : rhs;
+        }
+
+        /**
+         * @brief 定位与段起始地址对应的 VMA.
+         *
+         * @param tmm 目标任务内存管理器.
+         * @param segvaddr 段起始虚拟地址.
+         * @param memsz 段内存大小.
+         * @return 命中的 VMA.
+         */
+        [[nodiscard]]
+        Result<std::reference_wrapper<VMA>> locate_segment_vma(
+            TaskMemoryManager &tmm, VirAddr segvaddr, size_t memsz) {
+            auto locate_res = tmm.locate(segvaddr);
+            propagate(locate_res);
+            VMA *vma = locate_res.value();
+            if (vma == nullptr || vma->memory == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+            size_t vma_offset = segvaddr - vma->varea.begin;
+            if (vma_offset > vma->size() || memsz > vma->size() - vma_offset) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            return std::ref(*vma);
+        }
+
+        /**
+         * @brief 读取文件数据并分块写入 MemoryPayload.
+         *
+         * @param fop ELF 文件对象.
+         * @param memory 目标 payload.
+         * @param file_offset 文件偏移.
+         * @param mem_offset payload 内偏移.
+         * @param len 需要写入的总长度.
+         */
+        [[nodiscard]]
+        Result<void> load_file_into_memory(cap::VFileObject &fop,
+                                           cap::MemoryPayload &memory,
+                                           off_t file_offset,
+                                           size_t mem_offset, size_t len) {
+            char buffer[SEGMENT_IO_CHUNK_SIZE];
+            size_t loaded = 0;
+            while (loaded < len) {
+                size_t chunk = min_size(len - loaded, sizeof(buffer));
+                auto read_res =
+                    fop.read_exact(file_offset + loaded, buffer, chunk);
+                propagate(read_res);
+                auto write_res = memory.write(mem_offset + loaded, buffer, chunk);
+                propagate(write_res);
+                loggers::SUSTCORE::DEBUG(
+                    "ELF段文件写入: file_off=%lu mem_off=%lu chunk=%lu",
+                    static_cast<unsigned long>(file_offset + loaded),
+                    mem_offset + loaded, chunk);
+                loaded += chunk;
+            }
+            void_return();
+        }
+
+        /**
+         * @brief 将 payload 指定范围按块清零.
+         *
+         * @param memory 目标 payload.
+         * @param mem_offset payload 内偏移.
+         * @param len 需要清零的总长度.
+         */
+        [[nodiscard]]
+        Result<void> zero_fill_memory(cap::MemoryPayload &memory,
+                                      size_t mem_offset, size_t len) {
+            char zeros[SEGMENT_IO_CHUNK_SIZE] = {};
+            size_t filled                     = 0;
+            while (filled < len) {
+                size_t chunk = min_size(len - filled, sizeof(zeros));
+                auto write_res =
+                    memory.write(mem_offset + filled, zeros, chunk);
+                propagate(write_res);
+                loggers::SUSTCORE::DEBUG(
+                    "ELF段清零: mem_off=%lu chunk=%lu", mem_offset + filled,
+                    chunk);
+                filled += chunk;
+            }
+            void_return();
+        }
+
+        /**
+         * @brief 读取并打印 VMA 开头若干字节内容.
+         *
+         * @param vma 目标 VMA.
+         * @param dump_size 最大打印字节数.
+         */
+        [[nodiscard]]
+        Result<void> dump_vma_prefix(const VMA &vma, size_t dump_size) {
+            if (vma.memory == nullptr || vma.varea.nullable() || dump_size == 0) {
+                void_return();
+            }
+
+            unsigned char buf[16] = {};
+            size_t actual_size    = min_size(dump_size, sizeof(buf));
+            auto read_res = vma.memory->read(vma.mem_offset, buf, actual_size);
+            propagate(read_res);
+            actual_size = read_res.value();
+
+            std::string hex_dump;
+            for (size_t i = 0; i < actual_size; ++i) {
+                char item[4];
+                sprintf(item, "%02x ", buf[i]);
+                hex_dump += item;
+            }
+
+            loggers::SUSTCORE::DEBUG("  VMA类型: %s, 起始地址: %p",
+                                     to_string(vma.type),
+                                     vma.varea.begin.addr());
+            loggers::SUSTCORE::DEBUG("    前%u字节: %s", actual_size,
+                                     hex_dump.c_str());
+            void_return();
+        }
+    }  // namespace
+
     constexpr const unsigned char ELF_MAGIC[] = {0x7f, 'E', 'L', 'F'};
-    constexpr const bool check_magic(const unsigned char *ident) {
+    constexpr const bool check_magic(const unsigned char *ident) noexcept {
         return memcmp(ident, (unsigned char *)ELF_MAGIC, sizeof(ELF_MAGIC)) ==
                0;
     }
 
-    constexpr VMA::Type phdr_to_vma_type(Elf64_Word flags) {
+    constexpr VMA::Type phdr_to_vma_type(Elf64_Word flags) noexcept {
         // 可执行段优先映射为 CODE, 其余按可写属性归类到 DATA. 
         if ((flags & PF_X) != 0) {
             return VMA::Type::CODE;
@@ -49,15 +173,19 @@ namespace loader::elf {
         return VMA::Type::DATA;
     }
 
-    inline bool overflow_add_u64(uint64_t a, uint64_t b) {
+    inline bool overflow_add_u64(uint64_t a, uint64_t b) noexcept {
         return a > (~uint64_t(0) - b);
     }
 
-    inline void local_fence_i() {
+    inline void local_fence_i() noexcept {
         asm volatile("fence.i" ::: "memory");
     }
 
-    Result<void> validate_elf64(const Elf64_Ehdr &ehdr, size_t file_size) {
+    /**
+     * @brief 校验 ELF64 文件头及程序头表边界.
+     */
+    [[nodiscard]]
+    Result<void> validate_elf64(const Elf64_Ehdr &ehdr, size_t file_size) noexcept {
         if (!check_magic(ehdr.e_ident)) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
@@ -93,31 +221,43 @@ namespace loader::elf {
         void_return();
     }
 
-    // 将段内内容加载到内存中
-    Result<void> loadsegs(cap::VFileObject &fop, Elf64_Ehdr ehdr) {
-        // 解析程序头表并将段内容加载到内存中
+    /**
+     * @brief 将所有 PT_LOAD 段内容写入对应的 MemoryPayload.
+     */
+    [[nodiscard]]
+    Result<void> loadsegs(cap::VFileObject &fop, TaskMemoryManager &tmm,
+                          const Elf64_Ehdr &ehdr) {
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
-            // 定位到程序头
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
             auto read_phdr_res = fop.read_exact(offset, &phdr, sizeof(phdr));
             propagate(read_phdr_res);
 
-            if (phdr.p_type != PT_LOAD) {
-                continue;  // 目前仅处理可加载段
+            if (!is_load_segment(phdr)) {
+                continue;
             }
 
-            // 读入段内容到内存
             VirAddr segvaddr(phdr.p_vaddr);
-            auto read_res =
-                fop.read_exact(phdr.p_offset, segvaddr.addr(), phdr.p_filesz);
-            propagate(read_res);
+            auto vma_res = locate_segment_vma(tmm, segvaddr, phdr.p_memsz);
+            propagate(vma_res);
+            VMA &vma = vma_res.value().get();
+            size_t mem_offset = vma.mem_offset + (segvaddr - vma.varea.begin);
 
-            // 如果内存大小大于文件大小, 说明需要将剩余部分清零
+            loggers::SUSTCORE::INFO(
+                "加载ELF段: idx=%u vaddr=%p filesz=%lu memsz=%lu mem_off=%lu",
+                i, segvaddr.addr(), static_cast<unsigned long>(phdr.p_filesz),
+                static_cast<unsigned long>(phdr.p_memsz), mem_offset);
+
+            auto load_res = load_file_into_memory(
+                fop, *vma.memory, phdr.p_offset, mem_offset, phdr.p_filesz);
+            propagate(load_res);
+
             if (phdr.p_memsz > phdr.p_filesz) {
-                size_t zero_sz   = phdr.p_memsz - phdr.p_filesz;
-                void *zero_start = (segvaddr + phdr.p_filesz).addr();
-                memset(zero_start, 0, zero_sz);
+                size_t zero_sz = phdr.p_memsz - phdr.p_filesz;
+                auto zero_res =
+                    zero_fill_memory(*vma.memory, mem_offset + phdr.p_filesz,
+                                     zero_sz);
+                propagate(zero_res);
             }
         }
 
@@ -160,13 +300,12 @@ namespace loader::elf {
         // 解析程序头表并为TM添加相应的VMA
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
-            // 定位到程序头
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
             auto read_phdr_res = fop.read_exact(offset, &phdr, sizeof(phdr));
             propagate(read_phdr_res);
 
-            if (phdr.p_type != PT_LOAD) {
-                continue;  // 目前仅处理可加载段
+            if (!is_load_segment(phdr)) {
+                continue;
             }
 
             // 检查段边界
@@ -225,7 +364,6 @@ namespace loader::elf {
         spec.heap_vaddr   = heap_start;
         spec.heap_mem_cap = heap_cap_res.value();
 
-        // 输出TM中的VMA信息以供调试
         loggers::SUSTCORE::DEBUG("ELF加载完成, TM中的VMA列表:");
         for (const auto &vma : spec.tmm->vmas()) {
             loggers::SUSTCORE::DEBUG("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
@@ -233,34 +371,13 @@ namespace loader::elf {
                                     vma.varea.end.addr(), vma.size());
         }
 
-        auto *origin_tmm   = env::inst().tmm();
-        PhyAddr origin_pgd = env::inst().pgd();
+        auto load_res = loadsegs(fop, *spec.tmm, ehdr);
+        propagate(load_res);
+        // loadsegs() writes executable bytes into MemoryPayload pages.
+        // RISC-V requires fence.i before those freshly written bytes are
+        // fetched as instructions on this hart.
+        local_fence_i();
 
-        loggers::SUSTCORE::DEBUG("切换页表以加载ELF段");
-        env::inst().tmm(key::elfloader()) = spec.tmm.get();
-        spec.tmm->pman().switch_root();
-        PageMan::flush_tlb();
-
-        // 开始加载段. 这里在 S-Mode 直接写用户虚拟地址, 需要打开 SUM. 
-        {
-            uspace::SumGuard sum_guard;
-            loggers::SUSTCORE::DEBUG("打开SUM, 开始加载ELF段");
-            sum_guard.open();
-            auto load_res = loadsegs(fop, ehdr);
-            if (!load_res.has_value()) {
-                env::inst().tmm(key::elfloader()) = origin_tmm;
-                PageMan(origin_pgd).switch_root();
-                PageMan::flush_tlb();
-                propagate_return(load_res);
-            }
-            // loadsegs() writes executable user pages through the data path.
-            // RISC-V requires fence.i before those freshly written bytes are
-            // fetched as instructions on this hart.
-            local_fence_i();
-        }
-
-        // 将各个段的VMA的loading标记为false
-        // 同时将其对应的内存权限改回正常值
         for (auto &vma : spec.tmm->vmas()) {
             vma.loading      = false;
             PageMan::RWX rwx = VMA::seg2rwx(vma.type);
@@ -268,38 +385,14 @@ namespace loader::elf {
                 vma.varea.begin, vma.size(), rwx, true, false);
         }
 
-        // 输出每个VMA的开头几个字节以供调试
         loggers::SUSTCORE::DEBUG("每个VMA的前16字节内容:");
         for (const auto &vma : spec.tmm->vmas()) {
             if (vma.varea.nullable()) {
                 continue;
             }
-
-            // 打开SUM以访问用户空间地址
-            uspace::SumGuard sum_guard;
-            sum_guard.open();
-
-            loggers::SUSTCORE::DEBUG("  VMA类型: %s, 起始地址: %p",
-                                    to_string(vma.type),
-                                    vma.varea.begin.addr());
-
-            const size_t dump_size = vma.size() < 16 ? vma.size() : 16;
-            const unsigned char *data =
-                reinterpret_cast<const unsigned char *>(vma.varea.begin.addr());
-
-            std::string hex_dump;
-            for (size_t i = 0; i < dump_size; ++i) {
-                char buf[4];
-                sprintf(buf, "%02x ", data[i]);
-                hex_dump += buf;
-            }
-            loggers::SUSTCORE::DEBUG("    前%d字节: %s", dump_size,
-                                    hex_dump.c_str());
+            auto dump_res = dump_vma_prefix(vma, 16);
+            propagate(dump_res);
         }
-
-        env::inst().tmm(key::elfloader()) = origin_tmm;
-        PageMan(origin_pgd).switch_root();
-        PageMan::flush_tlb();
 
         void_return();
     }

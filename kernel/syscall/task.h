@@ -27,7 +27,9 @@ namespace syscall {
     [[nodiscard]]
     Result<CapIdx> pcb_create_process(CapIdx pcb_cap, const UString &path,
                                       UBuffer &&caps_buf, size_t caps_sz,
-                                      size_t sched_class);
+                                      size_t sched_class,
+                                      UBuffer *startup_buf = nullptr,
+                                      size_t startup_buf_sz = 0);
 
     /**
      * @brief 创建线程.
@@ -73,7 +75,9 @@ namespace syscall {
      */
     [[nodiscard]]
     Result<bool> pcb_execve(CapIdx pcb_cap, const UString &path,
-                            UBuffer &&reserved_buf, size_t reserved_sz);
+                            UBuffer &&reserved_buf, size_t reserved_sz,
+                            UBuffer *startup_buf = nullptr,
+                            size_t startup_buf_sz = 0);
 
     /**
      * @brief 判断目标 PCB 是否为当前进程.

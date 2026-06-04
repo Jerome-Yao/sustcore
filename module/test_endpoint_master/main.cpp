@@ -1,3 +1,4 @@
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 #include <sustcore/capability.h>
 
@@ -38,8 +39,11 @@ int kmod_main() {
     }
 
     CapIdx initial_caps[] = {endpoint};
+    EndpointBootstrap bootstrap{endpoint};
     CapIdx slave_pcb = sys_create_process("/initrd/test_endpoint_slave.mod",
-                                          (CapIdx *)initial_caps, 1, SCHED_CLASS_RR);
+                                          (CapIdx *)initial_caps, 1,
+                                          SCHED_CLASS_RR, &bootstrap,
+                                          sizeof(bootstrap));
     if (slave_pcb == cap::error) {
         printf("test-endpoint-master: 创建 test-endpoint-slave 失败!\n");
         exit(-1);

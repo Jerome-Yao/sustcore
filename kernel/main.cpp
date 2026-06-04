@@ -432,6 +432,8 @@ Result<void> init_scheduler() {
     void_return();
 }
 
+static driver::GoldfishRTC::AlarmHandler ticker;
+
 void after_init() {
     // 打开中断
     Interrupt::sti();
@@ -488,9 +490,7 @@ void after_init() {
                 static_cast<long long>(ft.second));
             auto alarm_time = time + units::time::from_seconds(2);
 
-            driver::GoldfishRTC::AlarmHandler ticker;
-
-            ticker = [driver, &ticker](units::time now) {
+            ticker = [driver](units::time now) {
                 auto alarm_ft = units::rt_time::from_time(now).to_formatted_time();
                 loggers::SUSTCORE::INFO(
                     "Goldfish RTC alarm 触发: %04lld-%02lld-%02lld %02lld:%02lld:%02lld",
@@ -505,7 +505,6 @@ void after_init() {
             };
 
             driver->set_alarm(alarm_time, ticker);
-            while (true);
         }
     }
 

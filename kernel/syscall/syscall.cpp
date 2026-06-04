@@ -247,6 +247,8 @@ namespace syscall {
         b64 arg1     = args.args[1];
         b64 arg2     = args.args[2];
         b64 arg3     = args.args[3];
+        b64 arg4     = args.args[4];
+        b64 arg5     = args.args[5];
         b64 sysno    = args.syscall_number;
         b64 capidx   = args.capidx;
 
@@ -265,11 +267,27 @@ namespace syscall {
             case SYS_CREATE_PROCESS: {
                 UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 UBuffer caps_buf((VirAddr)arg1, arg2 * sizeof(CapIdx));
-                caps_buf.sync_from_user();
+                auto sync_res = caps_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步进程能力列表", sync_res);
+                    break;
+                }
+                UBuffer startup_buf((VirAddr)arg4, arg5);
+                if (arg5 != 0) {
+                    auto startup_sync_res = startup_buf.sync_from_user();
+                    if (!startup_sync_res.has_value()) {
+                        ret = result_void_ret("同步进程启动缓冲区",
+                                              startup_sync_res);
+                        break;
+                    }
+                }
                 ret = result_value_ret(
                     "创建进程", pcb_create_process(capidx, path,
                                                    std::move(caps_buf), arg2,
-                                                   arg3));
+                                                   arg3,
+                                                   arg5 == 0 ? nullptr
+                                                             : &startup_buf,
+                                                   arg5));
                 break;
             }
             case SYS_CREATE_THREAD: {
@@ -280,7 +298,11 @@ namespace syscall {
             }
             case SYS_FORK: {
                 UBuffer child_cap_buf((VirAddr)arg0, sizeof(CapIdx));
-                child_cap_buf.sync_from_user();
+                auto sync_res = child_cap_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步fork返回缓冲区", sync_res);
+                    break;
+                }
                 auto fork_res = pcb_fork(capidx, std::move(child_cap_buf));
                 ret = result_value_ret("fork", fork_res);
                 break;
@@ -288,10 +310,25 @@ namespace syscall {
             case SYS_EXECVE: {
                 UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 UBuffer reserved_buf((VirAddr)arg1, arg2 * sizeof(CapIdx));
-                reserved_buf.sync_from_user();
+                auto sync_res = reserved_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步execve保留能力列表", sync_res);
+                    break;
+                }
+                UBuffer startup_buf((VirAddr)arg4, arg5);
+                if (arg5 != 0) {
+                    auto startup_sync_res = startup_buf.sync_from_user();
+                    if (!startup_sync_res.has_value()) {
+                        ret = result_void_ret("同步execve启动缓冲区",
+                                              startup_sync_res);
+                        break;
+                    }
+                }
                 ret = result_bool_ret(
                     "execve", pcb_execve(capidx, path, std::move(reserved_buf),
-                                         arg2));
+                                         arg2,
+                                         arg5 == 0 ? nullptr : &startup_buf,
+                                         arg5));
                 break;
             }
             case SYS_PCB_KILL: {
@@ -358,7 +395,11 @@ namespace syscall {
             }
             case SYS_ENDPOINT_SEND_ASYNC: {
                 UBuffer packet_buf((VirAddr)arg0, sizeof(MsgPacket));
-                packet_buf.sync_from_user();
+                auto sync_res = packet_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步异步发送消息包", sync_res);
+                    break;
+                }
                 auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
                 ret =
                     result_bool_ret("异步发送endpoint消息",
@@ -367,7 +408,11 @@ namespace syscall {
             }
             case SYS_ENDPOINT_RECV_ASYNC: {
                 UBuffer packet_buf((VirAddr)arg0, sizeof(MsgPacket));
-                packet_buf.sync_from_user();
+                auto sync_res = packet_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步异步接收消息包", sync_res);
+                    break;
+                }
                 auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
                 auto recv_res = endpoint_recv_async(capidx, packet,
                                                     std::move(packet_buf));
@@ -406,7 +451,11 @@ namespace syscall {
             }
             case SYS_ENDPOINT_REPLY: {
                 UBuffer reply_buf((VirAddr)arg0, sizeof(MsgPacket));
-                reply_buf.sync_from_user();
+                auto sync_res = reply_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步reply消息包", sync_res);
+                    break;
+                }
                 auto reply_packet =
                     *reinterpret_cast<MsgPacket *>(reply_buf.kbuf());
                 ret = result_void_ret("endpoint_reply",
@@ -460,7 +509,11 @@ namespace syscall {
         switch (sysno) {
             case SYS_ENDPOINT_SEND: {
                 UBuffer packet_buf((VirAddr)arg0, sizeof(MsgPacket));
-                packet_buf.sync_from_user();
+                auto sync_res = packet_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步发送消息包", sync_res);
+                    break;
+                }
                 auto packet =
                     *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
                 auto send_task = endpoint_send_sync(capidx, packet);
@@ -470,7 +523,11 @@ namespace syscall {
             }
             case SYS_ENDPOINT_RECV: {
                 UBuffer packet_buf((VirAddr)arg0, sizeof(MsgPacket));
-                packet_buf.sync_from_user();
+                auto sync_res = packet_buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步接收消息包", sync_res);
+                    break;
+                }
                 auto packet =
                     *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
                 auto recv_task =
@@ -481,11 +538,19 @@ namespace syscall {
             }
             case SYS_ENDPOINT_CALL: {
                 UBuffer send_buf((VirAddr)arg0, sizeof(MsgPacket));
-                send_buf.sync_from_user();
+                auto send_sync_res = send_buf.sync_from_user();
+                if (!send_sync_res.has_value()) {
+                    ret = result_void_ret("同步call发送消息包", send_sync_res);
+                    break;
+                }
                 auto send_packet =
                     *reinterpret_cast<MsgPacket *>(send_buf.kbuf());
                 UBuffer reply_buf((VirAddr)arg1, sizeof(MsgPacket));
-                reply_buf.sync_from_user();
+                auto reply_sync_res = reply_buf.sync_from_user();
+                if (!reply_sync_res.has_value()) {
+                    ret = result_void_ret("同步call回复消息包", reply_sync_res);
+                    break;
+                }
                 auto reply_packet =
                     *reinterpret_cast<MsgPacket *>(reply_buf.kbuf());
                 auto call_task =

@@ -25,7 +25,8 @@ sys_pcb_kill:
     .global sys_pcb_create_process
     .type   sys_pcb_create_process, @function
 sys_pcb_create_process:
-    /* a0 = pcb cap slot, a1 = path, a2 = initial caps, a3 = size, a4 = sched */
+    /* a0 = pcb cap slot, a1 = path, a2 = initial caps, a3 = size, a4 = sched,
+       a5 = startup blob ptr, a6 = startup blob size */
     li a7, SYS_CREATE_PROCESS
     ecall
     ret
@@ -55,7 +56,8 @@ sys_pcb_fork:
     .global sys_pcb_execve
     .type   sys_pcb_execve, @function
 sys_pcb_execve:
-    /* a0 = pcb cap slot, a1 = path, a2 = reserved caps, a3 = reserved caps size */
+    /* a0 = pcb cap slot, a1 = path, a2 = reserved caps, a3 = reserved caps size,
+       a4 = startup blob ptr, a5 = startup blob size */
     li a7, SYS_EXECVE
     ecall
     ret

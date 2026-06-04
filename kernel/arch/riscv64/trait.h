@@ -128,6 +128,7 @@ struct Riscv64Context {
         pack.args[2] = regs[A0_BASE + 3];
         pack.args[3] = regs[A0_BASE + 4];
         pack.args[4] = regs[A0_BASE + 5];
+        pack.args[5] = regs[A0_BASE + 6];
     }
 
     [[nodiscard]]
@@ -137,13 +138,6 @@ struct Riscv64Context {
         return pack;
     }
 
-    constexpr void write_startup(const task::StartupInfo &info) {
-        regs[A0_BASE]     = info.heap_vaddr.arith();
-        regs[A0_BASE + 1] = info.pcb_cap;
-        regs[A0_BASE + 2] = info.main_tcb_cap;
-        regs[A0_BASE + 3] = info.heap_mem_cap;
-        regs[A0_BASE + 4] = info.stack_mem_cap;
-    }
 };
 
 static_assert(ContextTrait<Riscv64Context>);

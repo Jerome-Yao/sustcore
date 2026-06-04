@@ -1,3 +1,4 @@
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 #include <sustcore/capability.h>
 
@@ -11,7 +12,6 @@ constexpr uint64_t kOpEncrypt     = 1;
 constexpr uint64_t kOpDecrypt     = 2;
 constexpr uint64_t kKey           = 0xfedcba9876543210ULL;
 constexpr uint64_t kValue         = 0x123456789abcdef0ULL;
-constexpr size_t kScanSlots       = 16;
 
 struct CallRequest {
     uint64_t op;
@@ -19,29 +19,15 @@ struct CallRequest {
     uint64_t value;
 };
 
-static CapIdx find_unique_endpoint_cap() {
-    CapIdx found = cap::null;
-    size_t count = 0;
-
-    for (size_t slot = 0; slot < kScanSlots; ++slot) {
-        CapIdx candidate = cap::make(0, slot);
-        CapInfo info{};
-        if (!sys_cap_lookup(candidate, &info) ||
-            info.type != PayloadType::ENDPOINT)
-        {
-            continue;
-        }
-
-        found = candidate;
-        ++count;
-    }
-
-    if (count != 1) {
-        printf("test_call_user: 预期找到一个endpoint, 实际=%u\n", count);
+static CapIdx bootstrap_endpoint() {
+    if (__startup_data == nullptr ||
+        __startup_size != sizeof(EndpointBootstrap))
+    {
+        printf("test_call_user: 启动参数无效 size=%u\n", __startup_size);
         exit(-1);
     }
-
-    return found;
+    auto *bootstrap = static_cast<const EndpointBootstrap *>(__startup_data);
+    return bootstrap->endpoint;
 }
 
 static uint64_t call_service(CapIdx endpoint, uint64_t op, uint64_t value) {
@@ -74,7 +60,7 @@ static uint64_t call_service(CapIdx endpoint, uint64_t op, uint64_t value) {
 
 int kmod_main() {
     printf("test_call_user: start pid=%u\n", sys_getpid(__pcb_cap));
-    CapIdx endpoint = find_unique_endpoint_cap();
+    CapIdx endpoint = bootstrap_endpoint();
 
     uint64_t encrypted       = call_service(endpoint, kOpEncrypt, kValue);
     uint64_t expected_cipher = kKey ^ kValue;

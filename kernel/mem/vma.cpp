@@ -344,9 +344,14 @@ bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
 
     VirAddr aligned_vaddr = e.access_address.page_align_down();
     size_t mem_offset     = memory_offset_for_page(*vma, aligned_vaddr);
-    auto page_res         = vma->memory->ensure_page(mem_offset);
+    auto ensure_res       = vma->memory->ensure_page(mem_offset);
+    if (!ensure_res.has_value()) {
+        loggers::TASK::ERROR("无法处理缺页异常: err=%d", ensure_res.error());
+        return false;
+    }
+    auto page_res = vma->memory->lookup_page(mem_offset);
     if (!page_res.has_value()) {
-        loggers::TASK::ERROR("无法处理缺页异常: err=%d", page_res.error());
+        loggers::TASK::ERROR("缺页补页后查询失败: err=%d", page_res.error());
         return false;
     }
     PhyAddr paddr = page_res.value();
@@ -354,8 +359,15 @@ bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
 
     // 如果正在加载, 此时应当给予读写权限
     PageMan::RWX rwx = vma->loading ? PageMan::RWX::RW : vma->rwx;
-    bool cow_page    = !vma->memory->shared && GFP::ref_count(paddr) > 1 &&
-                    PageMan::is_writable(rwx);
+    auto refcount_res = vma->memory->page_refcount(mem_offset);
+    if (!refcount_res.has_value()) {
+        loggers::PAGING::ERROR(
+            "TM::on_np: 无法获取页共享计数: addr=%p err=%d",
+            aligned_vaddr.addr(), refcount_res.error());
+        return false;
+    }
+    bool cow_page = !vma->memory->shared && PageMan::is_writable(rwx) &&
+                    refcount_res.value() > 1;
     PageMan::RWX map_rwx = cow_page ? PageMan::without_write(rwx) : rwx;
     bool u = !vma->loading;  // 加载过程中按内核页处理, 加载完成后按用户页处理
 
@@ -368,6 +380,9 @@ bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
         }
     }
     _pman.flush_tlb();
+    loggers::PAGING::DEBUG(
+        "TM::on_np: mapped addr=%p page=%p cow=%d", e.access_address.addr(),
+        aligned_vaddr.addr(), cow_page);
 
     // 调试: 使用当前硬件页表根再次查询该页
     PhyAddr hw_root = PageMan::read_root();
@@ -420,37 +435,27 @@ bool TaskMemoryManager::on_wp(VirAddr fault_addr) {
         return false;
     }
 
-    PhyAddr old_paddr = PageMan::get_physical_address(*qres.pte);
-    PageMan::RWX rwx  = vma->rwx;
-    if (GFP::ref_count(old_paddr) <= 1) {
-        qres.pte->rwx = rwx_cast(rwx);
-        PageMan::set_cow(qres.pte, false);
-        PageMan::flush_tlb();
-        return true;
-    }
-
-    // 分配一个新页并将原数据复制过去
-    auto new_page_res = GFP::get_free_page(1);
-    if (!new_page_res.has_value()) {
-        loggers::PAGING::ERROR("TM::on_wp: 无法为 COW 分配新页");
-        return false;
-    }
-    PhyAddr new_paddr = new_page_res.value();
-    memcpy(convert<KpaAddr>(new_paddr).addr(),
-           convert<KpaAddr>(old_paddr).addr(), PAGESIZE);
     size_t mem_offset = memory_offset_for_page(*vma, aligned_vaddr);
-    auto replace_res  = vma->memory->replace_page(mem_offset, new_paddr);
-    if (!replace_res.has_value()) {
-        GFP::put_page(new_paddr, 1);
-        loggers::PAGING::ERROR("TM::on_wp: 更新 Memory 页失败: err=%d",
-                               replace_res.error());
+    auto fork_res     = vma->memory->fork(mem_offset);
+    if (!fork_res.has_value()) {
+        loggers::PAGING::ERROR("TM::on_wp: COW fork 失败: addr=%p err=%d",
+                               aligned_vaddr.addr(), fork_res.error());
         return false;
     }
 
-    PageMan::set_paddr(qres.pte, new_paddr);
-    qres.pte->rwx = rwx_cast(rwx);
+    auto page_res = vma->memory->lookup_page(mem_offset);
+    if (!page_res.has_value()) {
+        loggers::PAGING::ERROR("TM::on_wp: fork 后查询页失败: addr=%p err=%d",
+                               aligned_vaddr.addr(), page_res.error());
+        return false;
+    }
+
+    PageMan::set_paddr(qres.pte, page_res.value());
+    qres.pte->rwx = rwx_cast(vma->rwx);
     PageMan::set_cow(qres.pte, false);
     PageMan::flush_tlb();
+    loggers::PAGING::INFO("TM::on_wp: resolved cow addr=%p page=%p",
+                          fault_addr.addr(), aligned_vaddr.addr());
     return true;
 }
 

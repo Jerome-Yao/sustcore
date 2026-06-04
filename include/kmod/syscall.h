@@ -18,6 +18,8 @@ extern CapIdx __pcb_cap;
 extern CapIdx __main_tcb_cap;
 extern CapIdx __heap_mem_cap;
 extern CapIdx __stack_mem_cap;
+extern void *__startup_data;
+extern size_t __startup_size;
 
 enum KmodSchedClass : size_t {
     SCHED_CLASS_IDLE = 1,
@@ -37,18 +39,26 @@ bool sys_pcb_kill(CapIdx pcb_cap, int exit_code);
 bool sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, void *vaddr, uint64_t rwx,
                  uint64_t growth);
 CapIdx sys_pcb_create_process(CapIdx pcb_cap, const char *path, CapIdx *caps,
-                              size_t caps_sz, size_t sched_class);
+                              size_t caps_sz, size_t sched_class,
+                              const void *startup_blob,
+                              size_t startup_blob_size);
 CapIdx sys_create_process(const char *path, CapIdx *caps, size_t caps_sz,
-                          size_t sched_class);
+                          size_t sched_class, const void *startup_blob = nullptr,
+                          size_t startup_blob_size = 0);
 CapIdx sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
                              void *stack_addr, size_t stack_size);
 CapIdx sys_create_thread(void (*entry)(), void *stack_addr, size_t stack_size);
 size_t sys_pcb_fork(CapIdx pcb_cap, CapIdx *child_pcb_cap);
 size_t fork(CapIdx *child_pcb_cap);
 bool sys_pcb_execve(CapIdx pcb_cap, const char *path, CapIdx *rsvdlst,
-                    size_t rsvdsz);
-bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz);
-bool execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz);
+                    size_t rsvdsz, const void *startup_blob,
+                    size_t startup_blob_size);
+bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz,
+                const void *startup_blob = nullptr,
+                size_t startup_blob_size = 0);
+bool execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz,
+            const void *startup_blob = nullptr,
+            size_t startup_blob_size = 0);
 
 CapIdx sys_cap_clone(CapIdx src);
 bool sys_cap_downgrade(CapIdx idx, uint64_t new_perm);
