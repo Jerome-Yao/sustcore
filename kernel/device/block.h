@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include <driver/base.h>
 #include <sus/rtti.h>
+#include <sustcore/errcode.h>
+
 #include <cstddef>
 
 using lba_t = size_t;
@@ -21,21 +24,23 @@ enum class BlockDeviceType {
     RAMDISK = 1
 };
 
-class IBlockDevice : public RTTIBase<IBlockDevice, BlockDeviceType> {
+class IBlockDeviceOps : public RTTIBase<IBlockDeviceOps, BlockDeviceType> {
 public:
-    virtual ~IBlockDevice() = default;
+    virtual ~IBlockDeviceOps() = default;
     /**
      * @brief 获得块大小
      *
      * @return size_t 块大小 (字节）
      */
-    virtual size_t block_sz(void) const                          = 0;
+    [[nodiscard]]
+    virtual Result<size_t> block_sz(void) const = 0;
     /**
      * @brief 获得块数量
      *
      * @return size_t 块数量
      */
-    virtual size_t block_cnt(void) const                         = 0;
+    [[nodiscard]]
+    virtual Result<size_t> block_cnt(void) const = 0;
     /**
      * @brief 读取块
      *
@@ -44,7 +49,8 @@ public:
      * @param cnt 读取块的数量
      * @return size_t 实际读取的块数量
      */
-    virtual size_t read_blocks(lba_t lba, void *buf, size_t cnt) = 0;
+    [[nodiscard]]
+    virtual Result<size_t> read_blocks(lba_t lba, void *buf, size_t cnt) = 0;
     /**
      * @brief 写入块
      *
@@ -53,30 +59,50 @@ public:
      * @param cnt 写入块的数量
      * @return size_t 实际写入的块数量
      */
-    virtual size_t write_blocks(lba_t lba, const void *buf, size_t cnt) = 0;
+    [[nodiscard]]
+    virtual Result<size_t> write_blocks(lba_t lba, const void *buf,
+                                        size_t cnt) = 0;
     /**
      * @brief 同步块设备
      *
      * @return bool 是否同步成功
      */
-    virtual bool sync(void)                                             = 0;
+    [[nodiscard]]
+    virtual Result<void> sync(void) = 0;
 };
 
-class RamDiskDevice : public IBlockDevice {
+namespace driver {
+    class BlockDevice : public DriverBase, public IBlockDeviceOps {
+    public:
+        explicit BlockDevice(DevRes res) noexcept : DriverBase(std::move(res)) {}
+        ~BlockDevice() override = default;
+    };
+}  // namespace driver
+
+class RamDiskDevice : public IBlockDeviceOps {
 private:
     void *D_base;
     size_t D_block_size;
     size_t D_block_count;
 public:
     constexpr static BlockDeviceType IDENTIFIER = BlockDeviceType::RAMDISK;
-    virtual BlockDeviceType type_id() const override;
-    virtual ~RamDiskDevice() = default;
+    [[nodiscard]]
+    BlockDeviceType type_id() const override;
+    ~RamDiskDevice() override = default;
     constexpr RamDiskDevice(void *base, size_t block_size, size_t block_count)
         : D_base(base), D_block_size(block_size), D_block_count(block_count) {}
-    virtual size_t block_sz(void) const override;
-    virtual size_t block_cnt(void) const override;
-    virtual size_t read_blocks(lba_t lba, void *buf, size_t cnt) override;
-    virtual size_t write_blocks(lba_t lba, const void *buf, size_t cnt) override;
-    virtual bool sync(void) override;
-    constexpr void *base() const { return D_base; }
+    [[nodiscard]]
+    Result<size_t> block_sz(void) const override;
+    [[nodiscard]]
+    Result<size_t> block_cnt(void) const override;
+    [[nodiscard]]
+    Result<size_t> read_blocks(lba_t lba, void *buf, size_t cnt) override;
+    [[nodiscard]]
+    Result<size_t> write_blocks(lba_t lba, const void *buf, size_t cnt) override;
+    [[nodiscard]]
+    Result<void> sync(void) override;
+    [[nodiscard]]
+    constexpr void *base() const {
+        return D_base;
+    }
 };

@@ -163,7 +163,7 @@ public:
     Result<void> register_fs(util::owner<IFsDriver *> &&driver);
     Result<void> unregister_fs(const char *fs_name);
     // 挂载文件系统
-    Result<void> mount(const char *fs_name, IBlockDevice *device,
+    Result<void> mount(const char *fs_name, IBlockDeviceOps *device,
                        const char *mountpoint, MountFlags flags,
                        const char *options);
     Result<void> mount(const char *fs_name, const char *mountpoint,

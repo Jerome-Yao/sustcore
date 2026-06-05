@@ -145,7 +145,7 @@ Result<void> VFS::unregister_fs(const char *fs_name) {
     void_return();
 }
 
-Result<void> VFS::mount(const char *fs_name, IBlockDevice *device,
+Result<void> VFS::mount(const char *fs_name, IBlockDeviceOps *device,
                         const char *mountpoint, MountFlags flags,
                         const char *options) {
     (void)flags;

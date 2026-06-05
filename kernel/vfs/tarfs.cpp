@@ -141,16 +141,24 @@ namespace tarfs {
 		return true;
 	}
 
-	Result<void> TarFSDriver::probe(IBlockDevice *device,
+	Result<void> TarFSDriver::probe(IBlockDeviceOps *device,
 									const char *options) {
 		(void)options;
-		size_t size   = device->block_sz() * device->block_cnt();
+		auto block_sz_res = device->block_sz();
+		propagate(block_sz_res);
+		auto block_cnt_res = device->block_cnt();
+		propagate(block_cnt_res);
+		size_t size   = block_sz_res.value() * block_cnt_res.value();
 		uint8_t *data = new uint8_t[size];
 		if (!data) {
 			unexpect_return(ErrCode::OUT_OF_MEMORY);
 		}
-		size_t read_blocks = device->read_blocks(0, data, device->block_cnt());
-		if (read_blocks != device->block_cnt()) {
+		auto read_blocks_res = device->read_blocks(0, data, block_cnt_res.value());
+		if (!read_blocks_res.has_value()) {
+			delete[] data;
+			propagate_return(read_blocks_res);
+		}
+		if (read_blocks_res.value() != block_cnt_res.value()) {
 			delete[] data;
 			unexpect_return(ErrCode::IO_ERROR);
 		}
@@ -163,20 +171,29 @@ namespace tarfs {
 	}
 
 	Result<util::owner<ISuperblock *>> TarFSDriver::mount(
-		IBlockDevice *device, const char *options) {
+		IBlockDeviceOps *device, const char *options) {
 		(void)options;
-		size_t size   = device->block_sz() * device->block_cnt();
+		auto block_sz_res = device->block_sz();
+		propagate(block_sz_res);
+		auto block_cnt_res = device->block_cnt();
+		propagate(block_cnt_res);
+		size_t size   = block_sz_res.value() * block_cnt_res.value();
 		uint8_t *data = nullptr;
-		if (device->is<RamDiskDevice>()) {
+		auto *ramdisk = device->as<RamDiskDevice>();
+		if (ramdisk != nullptr) {
 			// 直接使用其内存作为数据源, 减少复制
-			data = static_cast<uint8_t *>(device->as<RamDiskDevice>()->base());
+			data = static_cast<uint8_t *>(ramdisk->base());
 		} else {
 			data = new uint8_t[size];
 			if (!data) {
 				unexpect_return(ErrCode::OUT_OF_MEMORY);
 			}
-			size_t blocks = device->read_blocks(0, data, device->block_cnt());
-			if (blocks != device->block_cnt()) {
+			auto blocks_res = device->read_blocks(0, data, block_cnt_res.value());
+			if (!blocks_res.has_value()) {
+				delete[] data;
+				propagate_return(blocks_res);
+			}
+			if (blocks_res.value() != block_cnt_res.value()) {
 				delete[] data;
 				unexpect_return(ErrCode::IO_ERROR);
 			}
@@ -185,7 +202,7 @@ namespace tarfs {
 		TarSuperblock *sb_impl =
 			new TarSuperblock(data, size, this, device, 0);
 		if (!sb_impl) {
-			if (!device->is<RamDiskDevice>()) {
+			if (ramdisk == nullptr) {
 				delete[] data;
 			}
 			unexpect_return(ErrCode::OUT_OF_MEMORY);
@@ -200,7 +217,7 @@ namespace tarfs {
 	// TarSuperblock
 
 	TarSuperblock::~TarSuperblock() {
-		if (!device_->is<RamDiskDevice>()) {
+		if (device_->as<RamDiskDevice>() == nullptr) {
 			delete[] data_;
 		}
 	}

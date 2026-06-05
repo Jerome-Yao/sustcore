@@ -403,7 +403,7 @@ Result<void> init_vfs() {
     propagate(register_res);
 
     auto initrd_device = make_initrd();
-    auto mount_res     = vfs.mount("tarfs", initrd_device, INITRD_PATH,
+    auto mount_res     = vfs.mount("tarfs", initrd_device.get(), INITRD_PATH,
                                    MountFlags::NONE, nullptr);
     propagate(mount_res);
     mount_res = vfs.mount("devfs", "/sys/", nullptr);

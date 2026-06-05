@@ -186,10 +186,10 @@ namespace tarfs {
 			return "tarfs";
 		}
 
-		Result<void> probe(IBlockDevice *device,
+		Result<void> probe(IBlockDeviceOps *device,
 						   const char *options) override;
 
-		Result<util::owner<ISuperblock *>> mount(IBlockDevice *device,
+		Result<util::owner<ISuperblock *>> mount(IBlockDeviceOps *device,
 												 const char *options) override;
 
 		Result<void> unmount(ISuperblock *sb) override;
@@ -200,7 +200,7 @@ namespace tarfs {
 		const uint8_t *data_;  // 只读数据段
 		const size_t size_;
 		TarFSDriver *fs_;
-		IBlockDevice *device_;
+		IBlockDeviceOps *device_;
 
 		struct Meta : public IMetadata {} meta_;
 		size_t sb_id_;
@@ -209,7 +209,7 @@ namespace tarfs {
 
 	public:
 		TarSuperblock(const uint8_t *data, size_t size, TarFSDriver *fs,
-					  IBlockDevice *device, size_t sb_id)
+					  IBlockDeviceOps *device, size_t sb_id)
 			: data_(data), size_(size), fs_(fs), device_(device),
 			  sb_id_(sb_id) {}
 

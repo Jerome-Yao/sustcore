@@ -273,7 +273,7 @@ public:
      * @param device 设备
      * @param options 选项
      */
-    virtual Result<void> probe(IBlockDevice *device, const char *options) = 0;
+    virtual Result<void> probe(IBlockDeviceOps *device, const char *options) = 0;
     /**
      * @brief 挂载文件系统
      *
@@ -281,7 +281,7 @@ public:
      * @param options 选项
      * @return Result<ISuperblock *> 文件系统超级块
      */
-    virtual Result<util::owner<ISuperblock *>> mount(IBlockDevice *device,
+    virtual Result<util::owner<ISuperblock *>> mount(IBlockDeviceOps *device,
                                                      const char *options) = 0;
     /**
      * @brief 解挂文件系统
@@ -300,11 +300,11 @@ class IPesudoFsDriver : public IFsDriver {
 public:
     ~IPesudoFsDriver() = default;
 
-    Result<void> probe(IBlockDevice *device, const char *options) final {
+    Result<void> probe(IBlockDeviceOps *device, const char *options) final {
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
-    Result<util::owner<ISuperblock *>> mount(IBlockDevice *device,
+    Result<util::owner<ISuperblock *>> mount(IBlockDeviceOps *device,
                                              const char *options) final {
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }
