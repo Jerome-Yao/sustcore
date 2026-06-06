@@ -9,7 +9,7 @@
  *
  */
 
-#include <device/block.h>
+#include <bio/block.h>
 #include <vfs/tarfs.h>
 #include <mem/alloc.h>
 

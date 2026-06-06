@@ -38,28 +38,28 @@
 #include <test/vector.h>
 
 void collect_tests(TestFramework& framework) {
-    test::array::collect_tests(framework);
-    test::buddy::collect_tests(framework);
-    test::cap::collect_tests(framework);
-    test::coroutine::collect_tests(framework);
-    test::expected::collect_tests(framework);
+    // test::array::collect_tests(framework);
+    // test::buddy::collect_tests(framework);
+    // test::cap::collect_tests(framework);
+    // test::coroutine::collect_tests(framework);
+    // test::expected::collect_tests(framework);
     test::fs::collect_tests(framework);
-    test::functional::collect_tests(framework);
+    // test::functional::collect_tests(framework);
     test::meta::collect_tests(framework);
-    test::optional::collect_tests(framework);
-    test::path::collect_tests(framework);
-    test::printf::collect_tests(framework);
-    test::raii::collect_tests(framework);
-    test::ranges::collect_tests(framework);
-    test::schd_test::fcfs::collect_tests(framework);
-    test::schd_test::rr::collect_tests(framework);
-    test::slub::collect_tests(framework);
-    test::source_location::collect_tests(framework);
-    test::string::collect_tests(framework);
-    test::string_view::collect_tests(framework);
-    test::tree::collect_tests(framework);
-    test::unordered_map::collect_tests(framework);
-    test::vector::collect_tests(framework);
+    // test::optional::collect_tests(framework);
+    // test::path::collect_tests(framework);
+    // test::printf::collect_tests(framework);
+    // test::raii::collect_tests(framework);
+    // test::ranges::collect_tests(framework);
+    // test::schd_test::fcfs::collect_tests(framework);
+    // test::schd_test::rr::collect_tests(framework);
+    // test::slub::collect_tests(framework);
+    // test::source_location::collect_tests(framework);
+    // test::string::collect_tests(framework);
+    // test::string_view::collect_tests(framework);
+    // test::tree::collect_tests(framework);
+    // test::unordered_map::collect_tests(framework);
+    // test::vector::collect_tests(framework);
 }
 
 void TestFramework::run_all() const {

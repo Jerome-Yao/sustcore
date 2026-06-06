@@ -10,6 +10,7 @@
  */
 
 #include <cap/cholder.h>
+#include <bio/buffer.h>
 #include <sus/path.h>
 #include <sustcore/errcode.h>
 #include <vfs/ops.h>
@@ -149,6 +150,9 @@ Result<void> VFS::mount(const char *fs_name, IBlockDeviceOps *device,
                         const char *mountpoint, MountFlags flags,
                         const char *options) {
     (void)flags;
+    if (device == nullptr) {
+        unexpect_return(ErrCode::NULLPTR);
+    }
     util::Path mnt_path = util::Path::normalize(mountpoint);
     if (mount_table.contains(mnt_path)) {
         unexpect_return(ErrCode::INVALID_PARAM);
@@ -163,13 +167,36 @@ Result<void> VFS::mount(const char *fs_name, IBlockDeviceOps *device,
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
+    util::owner<blk::BufferCache *> cache(nullptr);
+    IFsDriver *driver = fsd->fsd();
+    if (driver->is_block_fs()) {
+        cache = util::owner(new blk::BufferCache(device,
+                                                 reinterpret_cast<size_t>(device)));
+        if (cache.get() == nullptr) {
+            unexpect_return(ErrCode::OUT_OF_MEMORY);
+        }
+        auto *block_driver = static_cast<IBlockFsDriver *>(driver);
+        auto mount_result = block_driver->mount(*cache.get(), options);
+        return mount_result.transform(
+            [this, mnt_path, fsd, cache](util::owner<ISuperblock *> isb) mutable {
+                MountRecord record {
+                    .superblock = util::owner(new VSuperblock(isb, *fsd)),
+                    .cache = cache,
+                    .active_files = 0,
+                };
+                this->mount_table.insert_or_assign(mnt_path, record);
+            });
+    }
+
     auto mount_result = fsd->fsd()->mount(device, options);
     return mount_result.transform(
         [this, mnt_path, fsd](util::owner<ISuperblock *> isb) {
-            util::owner<VSuperblock *> vsb =
-                util::owner(new VSuperblock(isb, *fsd));
-            this->mount_table.insert_or_assign(mnt_path, vsb);
-            this->_active_mount_files.insert_or_assign(mnt_path, 0);
+            MountRecord record {
+                .superblock = util::owner(new VSuperblock(isb, *fsd)),
+                .cache = util::owner<blk::BufferCache *>(nullptr),
+                .active_files = 0,
+            };
+            this->mount_table.insert_or_assign(mnt_path, record);
         });
 }
 
@@ -193,10 +220,12 @@ Result<void> VFS::mount(const char *fs_name, const char *mountpoint,
     auto mount_result = pseudo->mount(fs_name, options);
     return mount_result.transform(
         [this, mnt_path, fsd](util::owner<ISuperblock *> isb) {
-            util::owner<VSuperblock *> vsb =
-                util::owner(new VSuperblock(isb, *fsd));
-            this->mount_table.insert_or_assign(mnt_path, vsb);
-            this->_active_mount_files.insert_or_assign(mnt_path, 0);
+            MountRecord record {
+                .superblock = util::owner(new VSuperblock(isb, *fsd)),
+                .cache = util::owner<blk::BufferCache *>(nullptr),
+                .active_files = 0,
+            };
+            this->mount_table.insert_or_assign(mnt_path, record);
         });
 }
 
@@ -207,19 +236,28 @@ Result<void> VFS::umount(const char *mountpoint) {
         unexpect_return(ErrCode::INVALID_PARAM);
     }
 
-    auto active_res = _active_mount_files.at_nt(mnt_path);
-    if (!active_res.has_value()) {
-        unexpect_return(ErrCode::FS_ERROR);
-    }
-    if (active_res.value().get() != 0) {
+    MountRecord &record = lookup_result.value().get();
+    if (record.active_files != 0) {
         unexpect_return(ErrCode::BUSY);
     }
 
-    util::owner<VSuperblock *> vsb = lookup_result.value().get();
+    auto super_sync_res = record.superblock->sb()->sync();
+    if (!super_sync_res.has_value() &&
+        super_sync_res.error() != ErrCode::NOT_SUPPORTED) {
+        propagate_return(super_sync_res);
+    }
+    if (record.cache.get() != nullptr) {
+        auto cache_sync_res = record.cache->sync_all();
+        propagate(cache_sync_res);
+    }
+
+    util::owner<VSuperblock *> vsb = record.superblock;
+    auto *cache = record.cache.get();
     this->mount_table.erase(mnt_path);
-    this->_active_mount_files.erase(mnt_path);
+
     Result<void> ret = vsb->vfsd().fsd()->unmount(vsb->sb());
-    delete vsb;
+    delete vsb.get();
+    delete cache;
     return ret;
 }
 
@@ -241,12 +279,12 @@ Result<VFile *> VFS::_open_file(const char *filepath) {
         unexpect_return(ErrCode::ALLOCATION_FAILED);
     }
 
-    auto active_res = _active_mount_files.at_nt(mount_path);
-    if (!active_res.has_value()) {
+    auto mount_res = _lookup_mount_record(mount_path);
+    if (!mount_res.has_value()) {
         delete file;
         unexpect_return(ErrCode::FS_ERROR);
     }
-    active_res.value().get()++;
+    mount_res.value()->active_files++;
     return file;
 }
 
@@ -272,13 +310,22 @@ Result<std::pair<util::Path, VSuperblock *>> VFS::_resolve_mount(
     while (true) {
         auto mount_res = mount_table.at_nt(cur_path);
         if (mount_res.has_value()) {
-            return std::make_pair(cur_path, mount_res.value().get().get());
+            return std::make_pair(cur_path,
+                                  mount_res.value().get().superblock.get());
         }
         if (cur_path == "/") {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         cur_path = cur_path.parent_path();
     }
+}
+
+Result<VFS::MountRecord *> VFS::_lookup_mount_record(const util::Path &mount_path) {
+    auto record_res = mount_table.at_nt(mount_path);
+    if (!record_res.has_value()) {
+        unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+    }
+    return &record_res.value().get();
 }
 
 Result<util::refc_ptr<VINode>> VFS::_resolve_inode(const util::Path &path,
@@ -314,17 +361,18 @@ Result<util::refc_ptr<VINode>> VFS::_resolve_inode(const util::Path &path,
 }
 
 void VFS::_on_vfile_destroy(const util::Path &mount_path) noexcept {
-    auto active_res = _active_mount_files.at_nt(mount_path);
+    auto active_res = mount_table.at_nt(mount_path);
     if (!active_res.has_value()) {
         loggers::VFS::WARN("VFile 销毁时找不到挂载点: %s",
                            mount_path.c_str());
         return;
     }
-    if (active_res.value().get() == 0) {
+    MountRecord &record = active_res.value().get();
+    if (record.active_files == 0) {
         loggers::VFS::WARN("VFile 活跃计数已经为 0: %s", mount_path.c_str());
         return;
     }
-    active_res.value().get()--;
+    record.active_files--;
 }
 
 Result<size_t> VFS::read(VFile &vfile, off_t offset, void *buf, size_t len) const {

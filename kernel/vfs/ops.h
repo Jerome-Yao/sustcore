@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include <device/block.h>
+#include <bio/buffer.h>
+#include <bio/block.h>
 #include <sus/owner.h>
 #include <sus/rtti.h>
 #include <sus/types.h>
@@ -294,6 +295,42 @@ public:
     virtual bool is_pseudo() const {
         return false;
     }
+
+    [[nodiscard]]
+    virtual bool is_block_fs() const {
+        return false;
+    }
+};
+
+class IBlockFsDriver : public IFsDriver {
+public:
+    ~IBlockFsDriver() override = default;
+
+    Result<void> probe(IBlockDeviceOps *device, const char *options) final {
+        if (device == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        blk::BufferCache cache(device, reinterpret_cast<size_t>(device));
+        return probe(cache, options);
+    }
+
+    Result<util::owner<ISuperblock *>> mount(IBlockDeviceOps *device,
+                                             const char *options) final {
+        if (device == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        blk::BufferCache cache(device, reinterpret_cast<size_t>(device));
+        return mount(cache, options);
+    }
+
+    [[nodiscard]]
+    bool is_block_fs() const final {
+        return true;
+    }
+
+    virtual Result<void> probe(blk::BufferCache &cache, const char *options) = 0;
+    virtual Result<util::owner<ISuperblock *>> mount(blk::BufferCache &cache,
+                                                     const char *options) = 0;
 };
 
 class IPesudoFsDriver : public IFsDriver {

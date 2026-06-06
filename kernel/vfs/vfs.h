@@ -13,7 +13,8 @@
 
 #include <cap/capability.h>
 #include <cap/cholder.h>
-#include <device/block.h>
+#include <bio/buffer.h>
+#include <bio/block.h>
 #include <logger.h>
 #include <sus/nonnull.h>
 #include <sus/owner.h>
@@ -129,9 +130,14 @@ enum class MountFlags { NONE = 0 };
 
 class VFS {
 private:
+    struct MountRecord {
+        util::owner<VSuperblock *> superblock;
+        util::owner<blk::BufferCache *> cache;
+        size_t active_files = 0;
+    };
+
     std::unordered_map<std::string, util::owner<VFsDriver *>> fs_table;
-    std::unordered_map<util::Path, util::owner<VSuperblock *>> mount_table;
-    std::unordered_map<util::Path, size_t> _active_mount_files;
+    std::unordered_map<util::Path, MountRecord> mount_table;
 
     [[nodiscard]]
     Result<VFile *> _open_file(const char *filepath);
@@ -139,6 +145,9 @@ private:
     [[nodiscard]]
     Result<std::pair<util::Path, VSuperblock *>> _resolve_mount(
         const util::Path &path);
+
+    [[nodiscard]]
+    Result<MountRecord *> _lookup_mount_record(const util::Path &mount_path);
 
     [[nodiscard]]
     Result<util::refc_ptr<VINode>> _resolve_inode(const util::Path &path,

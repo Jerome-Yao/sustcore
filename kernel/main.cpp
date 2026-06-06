@@ -17,7 +17,7 @@
 #include <cap/capability.h>
 #include <cap/cholder.h>
 #include <cap/permission.h>
-#include <device/block.h>
+#include <bio/block.h>
 #include <device/fdt.h>
 #include <device/int.h>
 #include <device/model.h>
@@ -449,113 +449,112 @@ void after_init() {
     // 打开中断
     Interrupt::sti();
 
-    auto devices1 =
-        device::DeviceModel::inst().find_devices_by_compatible("ns16550a");
-    loggers::SUSTCORE::INFO("兼容 ns16550a 的设备数量: %u",
-                            static_cast<unsigned>(devices1.size()));
-    if (devices1.size() > 0) {
-        auto *serial_device = devices1[0];
-        // 注册其驱动
-        auto create_res =
-            driver::DriverModel::inst().create_driver(serial_device);
-        if (!create_res.has_value()) {
-            loggers::SUSTCORE::ERROR("为 ns16550a 设备创建驱动失败: %s",
-                                     to_cstring(create_res.error()));
-        } else {
-            loggers::SUSTCORE::INFO("已为 ns16550a 设备创建驱动");
-            auto *driver =
-                static_cast<driver::SerialDevice *>(create_res.value());
-            driver->write("Hello, Sustcore!\n", strlen("Hello, Sustcore!\n"));
-            if (g_devfs_driver != nullptr) {
-                auto devfs_res = g_devfs_driver->mounted_superblock();
-                if (!devfs_res.has_value()) {
-                    loggers::SUSTCORE::ERROR("获取 DevFS 超级块失败: %s",
-                                             to_cstring(devfs_res.error()));
-                } else {
-                    auto mount_res = driver->mount(*devfs_res.value(), nullptr);
-                    if (!mount_res.has_value()) {
-                        loggers::SUSTCORE::ERROR("挂载串口设备文件失败: %s",
-                                                 to_cstring(mount_res.error()));
-                    }
-                }
+    // auto devices1 =
+    //     device::DeviceModel::inst().find_devices_by_compatible("ns16550a");
+    // loggers::SUSTCORE::INFO("兼容 ns16550a 的设备数量: %u",
+    //                         static_cast<unsigned>(devices1.size()));
+    // if (devices1.size() > 0) {
+    //     auto *serial_device = devices1[0];
+    //     // 注册其驱动
+    //     auto create_res =
+    //         driver::DriverModel::inst().create_driver(serial_device);
+    //     if (!create_res.has_value()) {
+    //         loggers::SUSTCORE::ERROR("为 ns16550a 设备创建驱动失败: %s",
+    //                                  to_cstring(create_res.error()));
+    //     } else {
+    //         loggers::SUSTCORE::INFO("已为 ns16550a 设备创建驱动");
+    //         auto *driver =
+    //             static_cast<driver::SerialDevice *>(create_res.value());
+    //         driver->write("Hello, Sustcore!\n", strlen("Hello, Sustcore!\n"));
+    //         if (g_devfs_driver != nullptr) {
+    //             auto devfs_res = g_devfs_driver->mounted_superblock();
+    //             if (!devfs_res.has_value()) {
+    //                 loggers::SUSTCORE::ERROR("获取 DevFS 超级块失败: %s",
+    //                                          to_cstring(devfs_res.error()));
+    //             } else {
+    //                 auto mount_res = driver->mount(*devfs_res.value(), nullptr);
+    //                 if (!mount_res.has_value()) {
+    //                     loggers::SUSTCORE::ERROR("挂载串口设备文件失败: %s",
+    //                                              to_cstring(mount_res.error()));
+    //                 }
+    //             }
 
-                auto serial_file =
-                    VFS::inst().__debug_open("/sys/serial/serial");
-                if (!serial_file.has_value()) {
-                    loggers::SUSTCORE::ERROR("调试打开串口设备文件失败: %s",
-                                             to_cstring(serial_file.error()));
-                } else {
-                    auto write_res = VFS::inst().write(
-                        *serial_file.value(), 0, "Debug Hello!\n",
-                        strlen("Debug Hello!\n"));
-                    if (!write_res.has_value()) {
-                        loggers::SUSTCORE::ERROR("调试写入串口设备文件失败: %s",
-                                                 to_cstring(write_res.error()));
-                    }
-                }
-            }
-        }
-    }
+    //             auto serial_file =
+    //                 VFS::inst().__debug_open("/sys/serial/serial");
+    //             if (!serial_file.has_value()) {
+    //                 loggers::SUSTCORE::ERROR("调试打开串口设备文件失败: %s",
+    //                                          to_cstring(serial_file.error()));
+    //             } else {
+    //                 auto write_res = VFS::inst().write(
+    //                     *serial_file.value(), 0, "Debug Hello!\n",
+    //                     strlen("Debug Hello!\n"));
+    //                 if (!write_res.has_value()) {
+    //                     loggers::SUSTCORE::ERROR("调试写入串口设备文件失败: %s",
+    //                                              to_cstring(write_res.error()));
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
-    auto devices2 = device::DeviceModel::inst().find_devices_by_compatible(
-        "google,goldfish-rtc");
-    loggers::SUSTCORE::INFO("兼容 google,goldfish-rtc 的设备数量: %u",
-                            static_cast<unsigned>(devices2.size()));
+    // auto devices2 = device::DeviceModel::inst().find_devices_by_compatible(
+    //     "google,goldfish-rtc");
+    // loggers::SUSTCORE::INFO("兼容 google,goldfish-rtc 的设备数量: %u",
+    //                         static_cast<unsigned>(devices2.size()));
 
-    csr_senvcfg_t senvcfg = csr_get_senvcfg();
-    loggers::SUSTCORE::INFO("senvcfg: 0x%08x", senvcfg.value);
-    loggers::SUSTCORE::INFO("PBMT: %s", senvcfg.pbmt ? "启用" : "禁用");
+    // if (devices2.size() > 0) {
+    //     auto *rtc_device = devices2[0];
+    //     // 注册其驱动
+    //     auto create_res = driver::DriverModel::inst().create_driver(rtc_device);
+    //     if (!create_res.has_value()) {
+    //         loggers::SUSTCORE::ERROR(
+    //             "为 google,goldfish-rtc 设备创建驱动失败: %s",
+    //             to_cstring(create_res.error()));
+    //     } else {
+    //         loggers::SUSTCORE::INFO("已为 google,goldfish-rtc 设备创建驱动");
+    //         auto *driver =
+    //             static_cast<driver::GoldfishRTC *>(create_res.value());
+    //         auto time = driver->read_time();
+    //         auto ft   = units::rt_time::from_time(time).to_formatted_time();
+    //         loggers::SUSTCORE::INFO(
+    //             "当前 RTC 时间: %04lld-%02lld-%02lld %02lld:%02lld:%02lld",
+    //             static_cast<long long>(ft.year),
+    //             static_cast<long long>(ft.month),
+    //             static_cast<long long>(ft.day), static_cast<long long>(ft.hour),
+    //             static_cast<long long>(ft.minute),
+    //             static_cast<long long>(ft.second));
+    //         auto alarm_time = time + units::time::from_seconds(2);
 
-    if (devices2.size() > 0) {
-        auto *rtc_device = devices2[0];
-        // 注册其驱动
-        auto create_res = driver::DriverModel::inst().create_driver(rtc_device);
-        if (!create_res.has_value()) {
-            loggers::SUSTCORE::ERROR(
-                "为 google,goldfish-rtc 设备创建驱动失败: %s",
-                to_cstring(create_res.error()));
-        } else {
-            loggers::SUSTCORE::INFO("已为 google,goldfish-rtc 设备创建驱动");
-            auto *driver =
-                static_cast<driver::GoldfishRTC *>(create_res.value());
-            auto time = driver->read_time();
-            auto ft   = units::rt_time::from_time(time).to_formatted_time();
-            loggers::SUSTCORE::INFO(
-                "当前 RTC 时间: %04lld-%02lld-%02lld %02lld:%02lld:%02lld",
-                static_cast<long long>(ft.year),
-                static_cast<long long>(ft.month),
-                static_cast<long long>(ft.day), static_cast<long long>(ft.hour),
-                static_cast<long long>(ft.minute),
-                static_cast<long long>(ft.second));
-            auto alarm_time = time + units::time::from_seconds(2);
+    //         ticker = [driver](units::time now) {
+    //             auto alarm_ft =
+    //                 units::rt_time::from_time(now).to_formatted_time();
+    //             loggers::SUSTCORE::INFO(
+    //                 "Goldfish RTC alarm 触发: %04lld-%02lld-%02lld "
+    //                 "%02lld:%02lld:%02lld",
+    //                 static_cast<long long>(alarm_ft.year),
+    //                 static_cast<long long>(alarm_ft.month),
+    //                 static_cast<long long>(alarm_ft.day),
+    //                 static_cast<long long>(alarm_ft.hour),
+    //                 static_cast<long long>(alarm_ft.minute),
+    //                 static_cast<long long>(alarm_ft.second));
+    //             auto alarm_time = now + units::time::from_seconds(2);
+    //             driver->set_alarm(alarm_time, ticker);
+    //         };
 
-            ticker = [driver](units::time now) {
-                auto alarm_ft =
-                    units::rt_time::from_time(now).to_formatted_time();
-                loggers::SUSTCORE::INFO(
-                    "Goldfish RTC alarm 触发: %04lld-%02lld-%02lld "
-                    "%02lld:%02lld:%02lld",
-                    static_cast<long long>(alarm_ft.year),
-                    static_cast<long long>(alarm_ft.month),
-                    static_cast<long long>(alarm_ft.day),
-                    static_cast<long long>(alarm_ft.hour),
-                    static_cast<long long>(alarm_ft.minute),
-                    static_cast<long long>(alarm_ft.second));
-                auto alarm_time = now + units::time::from_seconds(2);
-                driver->set_alarm(alarm_time, ticker);
-            };
-
-            driver->set_alarm(alarm_time, ticker);
-        }
-    }
+    //         driver->set_alarm(alarm_time, ticker);
+    //     }
+    // }
 
 #ifdef __CONF_KERNEL_TIMEKEEPER_TEST
     register_timekeeper_log_test();
 #endif
 
 #ifdef __CONF_KERNEL_TESTS
-    auto kthread_test_res = test::kthread::start_logger_yield_test();
-    propagate(kthread_test_res);
+    // auto kthread_test_res = test::kthread::start_logger_yield_test();
+    // if (!kthread_test_res.has_value()) {
+    //     loggers::SUSTCORE::ERROR("启动 kthread logger yield 测试失败: %s",
+    //                              to_cstring(kthread_test_res.error()));
+    // }
 #endif
 
     // Kernel tests

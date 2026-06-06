@@ -143,6 +143,15 @@ constexpr auto this_call(T *self, F &&func) {
         };
 }
 
+namespace pred {
+    template <typename T>
+    constexpr auto equal_to(T &&value) {
+        return [value = std::forward<T>(value)](auto &&arg) -> bool {
+            return arg == value;
+        };
+    }
+}  // namespace pred
+
 namespace __helper {
     template <typename T>
     struct __Optional {

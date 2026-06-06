@@ -9,6 +9,7 @@
  *
  */
 
+#include <bio/buffer.h>
 #include <logger.h>
 #include <mem/alloc.h>
 #include <object/vfile.h>
@@ -22,6 +23,101 @@
 namespace test::fs {
 
     static RamDiskDevice* make_initrd();
+
+    static RamDiskDevice* _block_dev = nullptr;
+    static void ensure_block_dev();
+
+    class CaseBufferCacheReadWriteSync : public TestCase {
+    public:
+        CaseBufferCacheReadWriteSync()
+            : TestCase("BufferCache 读写与同步行为") {}
+
+        void _run(void* env) const noexcept override {
+            ensure_block_dev();
+            auto* dev = _block_dev;
+            tassert(dev != nullptr, "应能创建测试块设备");
+
+            blk::BufferCache cache(dev, 1);
+            auto first_res = cache.get_buffer(0);
+            tassert(first_res.has_value(), "首次获取块缓存应成功");
+            tassert(first_res.value().is_valid(), "首次读取后缓存应有效");
+
+            char raw[16]  = {};
+            auto read_len = first_res.value().read(0, raw, sizeof(raw));
+            tassert(read_len == sizeof(raw), "应能从缓存读取整个前缀");
+            tassert(raw[0] == 'A' && raw[1] == 'B', "缓存内容应来自底层块设备");
+
+            const char* payload = "cache-write";
+            auto written = first_res.value().write(8, payload, strlen(payload));
+            tassert(written == strlen(payload), "写入缓存的长度应正确");
+            tassert(first_res.value().is_dirty(), "写入后缓存应变脏");
+
+            auto sync_res = cache.sync(first_res.value());
+            tassert(sync_res.has_value(), "同步单个缓存块应成功");
+            tassert(!first_res.value().is_dirty(), "同步后脏标记应被清除");
+
+            auto second_res = cache.get_buffer(0);
+            tassert(second_res.has_value(), "再次获取同一块缓存应成功");
+            tassert(second_res.value().get() == first_res.value().get(),
+                    "命中缓存时应返回同一块缓存对象");
+
+            char verify[64]    = {};
+            auto verify_blocks = dev->read_blocks(0, verify, 1);
+            tassert(verify_blocks.has_value() && verify_blocks.value() == 1,
+                    "应能直接从设备读回完整块");
+            tassert(memcmp(verify + 8, payload, strlen(payload)) == 0,
+                    "同步后的设备内容应与缓存一致");
+        }
+    };
+
+    class CaseBufferCacheTidy : public TestCase {
+    public:
+        CaseBufferCacheTidy() : TestCase("BufferCache tidy 回收空闲块") {}
+
+        void _run(void* env) const noexcept override {
+            ensure_block_dev();
+            auto* dev = _block_dev;
+            tassert(dev != nullptr, "应能创建测试块设备");
+            blk::BufferCache cache(dev, 2);
+            {
+                auto buf0 = cache.get_buffer(0);
+                tassert(buf0.has_value(), "应能获取第 0 块缓存");
+                const char* payload0 = "dirty0";
+                auto written0 =
+                    buf0.value().write(0, payload0, strlen(payload0));
+                tassert(written0 == strlen(payload0), "应能写脏第 0 块");
+            }
+            {
+                auto buf1 = cache.get_buffer(1);
+                tassert(buf1.has_value(), "应能获取第 1 块缓存");
+                const char* payload1 = "dirty1";
+                auto written1 =
+                    buf1.value().write(4, payload1, strlen(payload1));
+                tassert(written1 == strlen(payload1), "应能写脏第 1 块");
+            }
+
+            auto tidy_res = cache.tidy();
+            tassert(tidy_res.has_value(), "tidy 应能成功回写并回收空闲缓存");
+
+            auto reload0 = cache.get_buffer(0);
+            tassert(reload0.has_value(), "tidy 后仍应能重新加载第 0 块");
+            char verify0[16] = {};
+            auto read0 = reload0.value().read(0, verify0, sizeof(verify0));
+            tassert(read0 == sizeof(verify0), "应能重新读取第 0 块");
+            tassert(memcmp(verify0, "dirty0", strlen("dirty0")) == 0,
+                    "第 0 块写回内容应保留");
+
+            auto reload1 = cache.get_buffer(1);
+            tassert(reload1.has_value(), "tidy 后仍应能重新加载第 1 块");
+            char verify1[16] = {};
+            auto read1 = reload1.value().read(4, verify1, sizeof(verify1) - 4);
+            tassert(read1 == sizeof(verify1) - 4,
+                    "应能重新读取第 1 块偏移内容");
+            tassert(memcmp(verify1, "dirty1", strlen("dirty1")) == 0,
+                    "第 1 块写回内容应保留");
+        }
+    };
+
     class CaseMountOpenRead : public TestCase {
     public:
         CaseMountOpenRead() : TestCase("VFS 挂载 initrd 并读取 license") {}
@@ -184,8 +280,23 @@ namespace test::fs {
         return device;
     }
 
+    static void ensure_block_dev() {
+        if (_block_dev == nullptr) {
+            auto* data = new char[128];
+            if (data == nullptr) {
+                return;
+            }
+            memset(data, 0, 128);
+            memcpy(data, "ABCDEFGH", 8);
+            memcpy(data + 64, "ijklmnop", 8);
+            _block_dev = new RamDiskDevice(data, 64, 2);
+        }
+    }
+
     void collect_tests(TestFramework& framework) {
         auto cases = util::ArrayList<TestCase*>();
+        cases.push_back(new CaseBufferCacheReadWriteSync());
+        cases.push_back(new CaseBufferCacheTidy());
         cases.push_back(new CaseMountOpenRead());
         cases.push_back(new CaseMountBusyUmount());
         cases.push_back(new CaseOpenMissingFile());

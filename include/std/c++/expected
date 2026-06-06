@@ -733,6 +733,23 @@ namespace std {
             other = std::move(*this);
             *this = std::move(tmp);
         }
+
+        template <typename _P>
+        constexpr expected<T, E> filter(_P &&pred, E &&error) const && {
+            if (D_has_value &&
+                !std::forward<_P>(pred)(std::move(D_storage.D_value)))
+            {
+                return expected<T, E>(unexpect, std::forward<E>(error));
+            }
+            return std::move(*this);
+        }
+
+        constexpr expected<void, E> discard_value() const && {
+            if (D_has_value) {
+                return expected<void, E>();
+            }
+            return expected<void, E>(unexpect, std::move(D_storage.D_error));
+        }
     };
 
     template <typename E>
@@ -1156,6 +1173,16 @@ namespace std {
             expected tmp(std::move(other));
             other = std::move(*this);
             *this = std::move(tmp);
+        }
+
+        template <typename _P>
+        constexpr expected<void, E> filter(_P &&pred, E &&error) const && {
+            if (D_has_value &&
+                !std::forward<_P>(pred)(std::move(D_storage.D_value)))
+            {
+                return expected<void, E>(unexpect, std::move(D_storage.D_error));
+            }
+            return std::move(*this);
         }
     };
 }  // namespace std
