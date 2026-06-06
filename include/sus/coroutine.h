@@ -194,8 +194,8 @@ namespace util {
             _handle.promise().destroy_on_final_suspend = true;
             if (_handle.done()) {
                 _handle.destroy();
-                _handle = nullptr;
             }
+            _handle      = nullptr;
             _owns_handle = false;
         }
 
@@ -318,8 +318,8 @@ namespace util {
             _handle.promise().destroy_on_final_suspend = true;
             if (_handle.done()) {
                 _handle.destroy();
-                _handle = nullptr;
             }
+            _handle      = nullptr;
             _owns_handle = false;
         }
 

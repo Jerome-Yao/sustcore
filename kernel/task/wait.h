@@ -29,7 +29,12 @@ namespace task::wait {
     template <typename T>
     class cotask;
 
+    template <typename T>
+    class Future;
+
     struct promise_base;
+
+    WaitReasonId alloc_reason();
 
     enum class FutureState {
         COMPLETE,
@@ -111,13 +116,48 @@ namespace task::wait {
             return std::move(task).operator co_await();
         }
 
+        template <typename T>
+        auto await_transform(Future<T> &future) noexcept {
+            return future.operator co_await();
+        }
+
+        template <typename T>
+        auto await_transform(const Future<T> &future) = delete;
+
+        template <typename T>
+        auto await_transform(Future<T> &&future) noexcept {
+            return std::move(future).operator co_await();
+        }
+
         template <typename Awaitable>
-            requires(
-                !std::same_as<std::remove_cvref_t<Awaitable>, FutureAwaiter>)
+            requires(!std::same_as<std::remove_cvref_t<Awaitable>,
+                                   FutureAwaiter>)
         auto await_transform(Awaitable &&awaitable);
     };
 
     namespace detail {
+        template <typename T>
+        struct is_result_type : std::false_type {};
+
+        template <typename T>
+        struct is_result_type<std::expected<T, ErrCode>> : std::true_type {};
+
+        template <typename T>
+        inline constexpr bool is_result_type_v = is_result_type<T>::value;
+
+        template <typename T>
+        struct future_wait_result {
+            using type = Result<T>;
+        };
+
+        template <typename T>
+        struct future_wait_result<std::expected<T, ErrCode>> {
+            using type = Result<T>;
+        };
+
+        template <typename T>
+        using future_wait_result_t = typename future_wait_result<T>::type;
+
         template <typename Promise>
         concept HasWaitContextAccessor = requires(Promise &promise) {
             {
@@ -131,9 +171,19 @@ namespace task::wait {
         template <typename T>
         struct is_wait_cotask<task::wait::cotask<T>> : std::true_type {};
 
+        template <typename T>
+        struct is_wait_future : std::false_type {};
+
+        template <typename T>
+        struct is_wait_future<task::wait::Future<T>> : std::true_type {};
+
         template <typename Awaitable>
         inline constexpr bool is_wait_cotask_v =
             is_wait_cotask<std::remove_cvref_t<Awaitable>>::value;
+
+        template <typename Awaitable>
+        inline constexpr bool is_wait_future_v =
+            is_wait_future<std::remove_cvref_t<Awaitable>>::value;
 
         template <typename Awaitable>
         decltype(auto) get_awaiter(Awaitable &&awaitable) {
@@ -569,6 +619,91 @@ namespace task::wait {
         bool _owns_handle   = false;
     };
 
+    template <typename T>
+    class Future {
+    public:
+        using value_type       = T;
+        using wait_result_type = detail::future_wait_result_t<T>;
+
+        Future() noexcept
+            : _wait_reason(alloc_reason()),
+              _completed(false),
+              _consumed(false),
+              _value() {}
+
+        Future(const Future &)            = delete;
+        Future &operator=(const Future &) = delete;
+        Future(Future &&)                 = delete;
+        Future &operator=(Future &&)      = delete;
+
+        [[nodiscard]]
+        bool completed() const noexcept {
+            return _completed;
+        }
+
+        [[nodiscard]]
+        bool consumed() const noexcept {
+            return _consumed;
+        }
+
+        [[nodiscard]]
+        WaitReasonId wait_reason() const noexcept {
+            return _wait_reason;
+        }
+
+        Result<void> set_value(T value);
+        Result<T> take_value();
+
+        struct awaiter {
+        private:
+            Future *future = nullptr;
+
+        public:
+            explicit awaiter(Future *future) noexcept : future(future) {}
+
+            [[nodiscard]]
+            bool await_ready() const noexcept {
+                return future == nullptr || future->completed();
+            }
+
+            template <typename Promise>
+            bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
+                if (future == nullptr || future->completed()) {
+                    return false;
+                }
+                if constexpr (!detail::HasWaitContextAccessor<Promise>) {
+                    return false;
+                } else {
+                    auto &promise                = handle.promise();
+                    auto &wait_context           = promise.wait_context();
+                    wait_context.state           = FutureState::PENDING;
+                    wait_context.wait_reason     = future->wait_reason();
+                    wait_context.wait_predicate  = {};
+                    wait_context.ready_predicate = [future = future]() {
+                        return future != nullptr && future->completed();
+                    };
+                    wait_context.suspended_leaf = handle;
+                    promise.propagate_wait_context_chain();
+                    return true;
+                }
+            }
+
+            wait_result_type await_resume();
+        };
+
+        awaiter operator co_await() noexcept {
+            return awaiter(this);
+        }
+
+        awaiter operator co_await() const = delete;
+
+    private:
+        WaitReasonId _wait_reason;
+        bool _completed;
+        bool _consumed;
+        Optional<T> _value;
+    };
+
     /**
      * @brief syscall 协程通用等待点.
      *
@@ -641,7 +776,8 @@ namespace task::wait {
     template <typename Awaitable>
         requires(!std::same_as<std::remove_cvref_t<Awaitable>, FutureAwaiter>)
     inline auto promise_base::await_transform(Awaitable &&awaitable) {
-        if constexpr (detail::is_wait_cotask_v<std::remove_cvref_t<Awaitable>>)
+        if constexpr (detail::is_wait_cotask_v<std::remove_cvref_t<Awaitable>> ||
+                      detail::is_wait_future_v<std::remove_cvref_t<Awaitable>>)
         {
             return std::forward<Awaitable>(awaitable).operator co_await();
         } else {
@@ -659,6 +795,19 @@ namespace task::wait {
 
     inline cotask<void> promise<void>::get_return_object() {
         return cotask<void>(handle_type::from_promise(*this));
+    }
+
+    template <typename T>
+    typename detail::future_wait_result_t<T> take_wait_result(Future<T> &future) {
+        auto value_res = future.take_value();
+        if constexpr (detail::is_result_type_v<T>) {
+            if (!value_res.has_value()) {
+                return std::unexpected(value_res.error());
+            }
+            return value_res.value();
+        } else {
+            return value_res;
+        }
     }
 
     // 等待队列
@@ -736,4 +885,10 @@ namespace task::wait {
     Result<size_t> wake_one(WaitReasonId id);
     Result<size_t> wake_all(WaitReasonId id);
     bool has_waiting(WaitReasonId id);
+
+    template <typename T>
+    typename detail::future_wait_result_t<T> wait_for(Future<T> &future);
+
+    template <typename T>
+    typename detail::future_wait_result_t<T> kthread_wait_for(Future<T> &future);
 }  // namespace task::wait

@@ -25,6 +25,35 @@ namespace task::wait {
     static bool inst_wait_reason_manager_initialized = false;
 
     namespace {
+        [[nodiscard]]
+        Result<TCB *> current_waiter() noexcept {
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return current;
+        }
+
+        [[nodiscard]]
+        Result<TCB *> check_waiting_thread(bool require_kernel) noexcept {
+            auto current_res = current_waiter();
+            propagate(current_res);
+            auto *current = current_res.value();
+            if (current->schd_class == schd::ClassType::IDLE) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            if (current->syscall_info.executing()) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            if (require_kernel && !current->is_kernel) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            if (!require_kernel && current->is_kernel) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return current;
+        }
+
         /**
          * @brief 唤醒一个不依赖 syscall 协程句柄的普通等待线程.
          *
@@ -197,6 +226,71 @@ namespace task::wait {
         tcb->basic_entity
             .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
         void_return();
+    }
+
+    template <typename T>
+    Result<void> Future<T>::set_value(T value) {
+        InterruptGuard guard;
+        guard.enter();
+        if (_completed) {
+            unexpect_return(ErrCode::BUSY);
+        }
+
+        _value = std::move(value);
+        _completed = true;
+        auto wake_res = wake_all(_wait_reason);
+        propagate(wake_res);
+        void_return();
+    }
+
+    template <typename T>
+    Result<T> Future<T>::take_value() {
+        InterruptGuard guard;
+        guard.enter();
+        if (!_completed) {
+            unexpect_return(ErrCode::FUTURE_ERROR);
+        }
+        if (_consumed) {
+            unexpect_return(ErrCode::BUSY);
+        }
+        if (!_value.has_value()) {
+            unexpect_return(ErrCode::FUTURE_ERROR);
+        }
+
+        _consumed = true;
+        return std::move(_value.value());
+    }
+
+    template <typename T>
+    typename Future<T>::wait_result_type Future<T>::awaiter::await_resume() {
+        if (future == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return take_wait_result(*future);
+    }
+
+    template <typename T>
+    typename detail::future_wait_result_t<T> wait_for(Future<T> &future) {
+        auto current_res = check_waiting_thread(false);
+        propagate(current_res);
+        while (!future.completed()) {
+            auto wait_res =
+                schd::Scheduler::inst().block_current(future.wait_reason());
+            propagate(wait_res);
+        }
+        return take_wait_result(future);
+    }
+
+    template <typename T>
+    typename detail::future_wait_result_t<T> kthread_wait_for(Future<T> &future) {
+        auto current_res = check_waiting_thread(true);
+        propagate(current_res);
+        while (!future.completed()) {
+            auto wait_res =
+                schd::Scheduler::inst().block_current(future.wait_reason());
+            propagate(wait_res);
+        }
+        return take_wait_result(future);
     }
 
     WaitReasonManager &WaitReasonManager::inst() {
@@ -422,4 +516,18 @@ namespace task::wait {
     bool has_waiting(WaitReasonId id) {
         return WaitReasonManager::inst().has_waiting(id);
     }
+
+    template Result<void> Future<int>::set_value(int value);
+    template Result<int> Future<int>::take_value();
+    template typename Future<int>::wait_result_type
+        Future<int>::awaiter::await_resume();
+    template Result<int> wait_for(Future<int> &future);
+    template Result<int> kthread_wait_for(Future<int> &future);
+
+    template Result<void> Future<Result<int>>::set_value(Result<int> value);
+    template Result<Result<int>> Future<Result<int>>::take_value();
+    template typename Future<Result<int>>::wait_result_type
+        Future<Result<int>>::awaiter::await_resume();
+    template Result<int> wait_for(Future<Result<int>> &future);
+    template Result<int> kthread_wait_for(Future<Result<int>> &future);
 }  // namespace task::wait

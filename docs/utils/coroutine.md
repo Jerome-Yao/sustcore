@@ -25,6 +25,11 @@ promise 的 `initial_suspend()` 返回 `std::suspend_never`，因此协程创建
 - `promise.destroy_on_final_suspend`: 是否在最终挂起时销毁帧。
 - `promise.continuation`: `co_await` 时需要恢复的 continuation。
 
+当前语义区分两类任务:
+
+- **普通任务**: `cotask` 对象拥有协程帧，可 `co_await`、读取结果，并在析构时负责销毁帧
+- **detached 任务**: 调用 `detach()` 后转为 fire-and-forget，对象立即失效，不再允许任何交互
+
 ## 核心接口
 
 `cotask<T>` 提供:
@@ -46,9 +51,9 @@ promise 的 `initial_suspend()` 返回 `std::suspend_never`，因此协程创建
 1. 如果任务为空或已完成，`await_ready()` 返回 true，同步继续。
 2. 如果任务未完成，`await_suspend()` 记录 continuation。
 3. 子任务最终挂起时优先恢复 continuation。
-4. `await_resume()` 返回结果，必要时销毁 detached 帧。
+4. `await_resume()` 返回结果。
 
-测试覆盖了普通等待、detached 子协程、已完成 detached task 等路径。
+测试覆盖普通等待与已完成任务 detach 释放帧等路径。
 
 ## 与 `Result<T>` 配合
 
@@ -78,7 +83,12 @@ co_return std::unexpected((x).error());
 ## 注意事项
 
 - `cotask` 禁止拷贝，只允许移动。
-- `detach()` 后当前对象不再拥有协程帧；如果任务已完成会立即销毁帧并清空 handle。
+- `detach()` 后当前对象立刻失效:
+  - 不再允许 `co_await`
+  - 不再允许 `result()`
+  - 不再允许保留 awaiter 后手动取值
+- 若 `detach()` 时任务已经完成，会立即销毁帧并清空 handle。
+- 若 `detach()` 时任务尚未完成，任务会在 `final_suspend` 中自我销毁，外部无需干预。
 - `result()` 返回保存值的拷贝；对大型对象或所有权对象应注意移动和生命周期。
 - promise 的 `unhandled_exception()` 只写入默认值或空操作；内核代码不应依赖异常路径表达错误。
 - 协程函数中使用 `Result<T>` 时，失败路径必须通过 `co_return std::unexpected(...)` 或 `co_propagate(...)`。

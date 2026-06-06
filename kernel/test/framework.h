@@ -121,10 +121,10 @@ public:
 };
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
-#define ttest(cond) test((cond), #cond)
+#define ttest(cond) test((cond), "表达式 " #cond " 不成立")
 #define __tassert_1(cond)                \
     do {                                 \
-        bool flag = test((cond), #cond); \
+        bool flag = test((cond), "表达式 " #cond " 不成立"); \
         if (!flag) {                     \
             return;                      \
         }                                \

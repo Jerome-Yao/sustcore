@@ -84,6 +84,30 @@ namespace test::coroutine {
         int ReturnProbe::live_count     = 0;
         int ReturnProbe::destruct_count = 0;
 
+        struct ManualSuspendGate {
+            std::coroutine_handle<> suspended = nullptr;
+
+            struct awaiter {
+                ManualSuspendGate* gate = nullptr;
+
+                [[nodiscard]]
+                bool await_ready() const noexcept {
+                    return false;
+                }
+
+                bool await_suspend(std::coroutine_handle<> handle) const noexcept {
+                    gate->suspended = handle;
+                    return true;
+                }
+
+                void await_resume() const noexcept {}
+            };
+
+            awaiter operator co_await() noexcept {
+                return awaiter{this};
+            }
+        };
+
         util::cotask<void> make_void_task() {
             FrameProbe probe;
             (void)probe;
@@ -96,22 +120,18 @@ namespace test::coroutine {
             co_return ReturnProbe(value);
         }
 
-        util::cotask<int> detached_child(bool& resumed_flag) {
+        util::cotask<int> normal_child(ManualSuspendGate& gate,
+                                       bool& resumed_flag) {
             FrameProbe probe;
             (void)probe;
+            co_await gate;
             resumed_flag = true;
             co_return 7;
         }
 
-        util::cotask<int> await_detached_child(bool& child_ran) {
-            auto child = detached_child(child_ran);
-            child.detach();
-            auto value = co_await child;
-            co_return value + 5;
-        }
-
-        util::cotask<int> await_normal_child(bool& child_ran) {
-            auto child = detached_child(child_ran);
+        util::cotask<int> await_normal_child(ManualSuspendGate& gate,
+                                             bool& child_ran) {
+            auto child = normal_child(gate, child_ran);
             auto value = co_await child;
             co_return value + 9;
         }
@@ -134,6 +154,26 @@ namespace test::coroutine {
             auto child = make_value_task(5);
             auto value = co_await child;
             co_return value.value;
+        }
+
+        task::wait::cotask<Result<int>> co_await_ready_future() {
+            task::wait::Future<int> future;
+            auto set_res = future.set_value(31);
+            if (!set_res.has_value()) {
+                co_return std::unexpected(set_res.error());
+            }
+            auto value_res = co_await future;
+            co_return value_res;
+        }
+
+        task::wait::cotask<Result<int>> co_await_result_future() {
+            task::wait::Future<Result<int>> future;
+            auto set_res = future.set_value(Result<int>{47});
+            if (!set_res.has_value()) {
+                co_return std::unexpected(set_res.error());
+            }
+            auto value_res = co_await future;
+            co_return value_res;
         }
 
         class CaseScopedVoidTask : public TestCase {
@@ -197,25 +237,6 @@ namespace test::coroutine {
             }
         };
 
-        class CaseDetachedContinuation : public TestCase {
-        public:
-            CaseDetachedContinuation()
-                : TestCase("detached 协程存在 continuation 时不丢失恢复") {}
-
-            void _run(void* env [[maybe_unused]]) const noexcept override {
-                FrameProbe::reset();
-                bool child_ran = false;
-                {
-                    auto task = await_detached_child(child_ran);
-                    ttest(task.done());
-                    ttest(child_ran);
-                    ttest(task.result() == 12);
-                }
-                ttest(FrameProbe::live_count == 0);
-                ttest(FrameProbe::destruct_count == 2);
-            }
-        };
-
         class CaseNormalContinuation : public TestCase {
         public:
             CaseNormalContinuation()
@@ -225,36 +246,18 @@ namespace test::coroutine {
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 FrameProbe::reset();
                 bool child_ran = false;
+                ManualSuspendGate gate;
                 {
-                    auto task = await_normal_child(child_ran);
+                    auto task = await_normal_child(gate, child_ran);
+                    ttest(!task.done());
+                    ttest(gate.suspended != nullptr);
+                    ttest(!child_ran);
+                    gate.suspended.resume();
                     ttest(task.done());
                     ttest(child_ran);
                     ttest(task.result() == 16);
                 }
                 ttest(FrameProbe::live_count == 0);
-                ttest(FrameProbe::destruct_count == 2);
-            }
-        };
-
-        class CaseAwaitCompletedDetachedTask : public TestCase {
-        public:
-            CaseAwaitCompletedDetachedTask()
-                : TestCase(
-                      "已完成 detached task 可同步 await_resume 并释放帧") {}
-
-            void _run(void* env [[maybe_unused]]) const noexcept override {
-                FrameProbe::reset();
-                {
-                    auto task = make_value_task(23);
-                    task.detach();
-                    ttest(task.done());
-                    auto value = task.operator co_await().await_resume();
-                    ttest(value.value == 23);
-                    ttest(!task.valid());
-                    ttest(task.done());
-                }
-                ttest(FrameProbe::live_count == 0);
-                ttest(FrameProbe::destruct_count == 1);
             }
         };
 
@@ -289,20 +292,52 @@ namespace test::coroutine {
                 ttest(task.result() == 5);
             }
         };
+
+        class CaseAwaitReadyFuture : public TestCase {
+        public:
+            CaseAwaitReadyFuture()
+                : TestCase("co_await Future<T> 返回 Result<T>") {}
+
+            void _run(void* env [[maybe_unused]]) const noexcept override {
+                auto task = co_await_ready_future();
+                ttest(task.done());
+                auto result = task.result();
+                ttest(result.has_value());
+                ttest(result.value() == 31);
+            }
+        };
+
+        class CaseAwaitResultFutureFlatten : public TestCase {
+        public:
+            CaseAwaitResultFutureFlatten()
+                : TestCase("co_await Future<Result<T>> 扁平化为 Result<T>") {}
+
+            void _run(void* env [[maybe_unused]]) const noexcept override {
+                auto task = co_await_result_future();
+                ttest(task.done());
+                auto result = task.result();
+                ttest(result.has_value());
+                ttest(result.value() == 47);
+            }
+        };
     }  // namespace
 
     void collect_tests(TestFramework& framework) {
-        auto cases = util::ArrayList<TestCase*>();
-        cases.push_back(new CaseScopedVoidTask());
-        cases.push_back(new CaseScopedValueTask());
-        cases.push_back(new CaseDetachCompletedTask());
-        cases.push_back(new CaseDetachedContinuation());
-        cases.push_back(new CaseNormalContinuation());
-        cases.push_back(new CaseAwaitCompletedDetachedTask());
-        cases.push_back(new CaseWaitCotaskPropagateReason());
-        cases.push_back(new CaseWaitCotaskClearOnNormalAwait());
+        auto coroutine_cases = util::ArrayList<TestCase*>();
+        coroutine_cases.push_back(new CaseScopedVoidTask());
+        coroutine_cases.push_back(new CaseScopedValueTask());
+        coroutine_cases.push_back(new CaseDetachCompletedTask());
+        coroutine_cases.push_back(new CaseNormalContinuation());
+        coroutine_cases.push_back(new CaseWaitCotaskPropagateReason());
+        coroutine_cases.push_back(new CaseWaitCotaskClearOnNormalAwait());
+        framework.add_category(
+            new TestCategory("coroutine", std::move(coroutine_cases)));
 
-        framework.add_category(new TestCategory("coroutine", std::move(cases)));
+        auto future_cases = util::ArrayList<TestCase*>();
+        future_cases.push_back(new CaseAwaitReadyFuture());
+        future_cases.push_back(new CaseAwaitResultFutureFlatten());
+        framework.add_category(
+            new TestCategory("future", std::move(future_cases)));
     }
 
 }  // namespace test::coroutine
