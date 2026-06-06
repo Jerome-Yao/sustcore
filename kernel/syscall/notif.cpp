@@ -24,7 +24,8 @@ namespace syscall {
         auto current_tcb_res = current_tcb();
         propagate(current_tcb_res);
         auto *current_tcb = current_tcb_res.value();
-        if (current_tcb->task == nullptr || current_tcb->task->cholder == nullptr)
+        if (current_tcb->task == nullptr ||
+            current_tcb->task->cholder == nullptr)
         {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -44,11 +45,13 @@ namespace syscall {
         return cap::NotificationObject(util::nnullforce(cap));
     }
 
-    Result<bool> wait_notification(CapIdx capidx, size_t idx) {
-        auto notif_res = notif_object(capidx).and_then(
-            [idx](cap::NotificationObject obj) { return obj.wait(idx); });
-        propagate(notif_res);
-        return notif_res.value();
+    task::wait::cotask<Result<bool>> wait_notification(CapIdx capidx,
+                                                       size_t idx) {
+        auto notif_res = notif_object(capidx);
+        co_propagate(notif_res);
+        auto wait_res = co_await notif_res.value().wait(idx);
+        co_propagate(wait_res);
+        co_return wait_res.value();
     }
 
     Result<bool> notification_signal(CapIdx capidx, size_t idx, bool state) {
@@ -70,7 +73,8 @@ namespace syscall {
     Result<CapIdx> notification_create() {
         auto holder_res = current_holder();
         propagate(holder_res);
-        auto create_res = holder_res.value()->create<cap::NotificationPayload>();
+        auto create_res =
+            holder_res.value()->create<cap::NotificationPayload>();
         propagate(create_res);
         return create_res.value();
     }

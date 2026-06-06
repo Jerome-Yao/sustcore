@@ -93,24 +93,27 @@ namespace cap {
         return (_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0;
     }
 
-    Result<bool> NotificationObject::wait(size_t idx) {
-        propagate(check_idx(idx));
-        propagate(check_query_perm(_cap, idx));
+    task::wait::cotask<Result<bool>> NotificationObject::wait(size_t idx) {
+        co_propagate(check_idx(idx));
+        co_propagate(check_query_perm(_cap, idx));
 
-        // The signal check and queue insertion must stay in one interrupt
-        // critical section, otherwise a signal can be missed between them.
-        InterruptGuard guard;
-        guard.enter();
+        while (true) {
+            {
+                InterruptGuard guard;
+                guard.enter();
+                if ((_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0) {
+                    co_return true;
+                }
+            }
 
-        // if the signal is already set, just return immediately without
-        // sleeping
-        if ((_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0) {
-            return true;
+            auto wait_res = co_await task::wait::FutureAwaiter(
+                _obj->wait_reasons[idx], {},
+                [payload = _obj, idx]() {
+                    return payload != nullptr &&
+                           (payload->signalbits &
+                            (static_cast<b32>(1U) << idx)) != 0;
+                });
+            co_propagate(wait_res);
         }
-
-        auto wait_res =
-            task::wait::deprecated_wait_current(_obj->wait_reasons[idx]);
-        propagate(wait_res);
-        return true;
     }
 }  // namespace cap

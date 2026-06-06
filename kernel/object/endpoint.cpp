@@ -199,7 +199,7 @@ namespace cap {
         return false;
     }
 
-    util::cotask<Result<void>> EndpointObject::send_sync(
+    task::wait::cotask<Result<void>> EndpointObject::send_sync(
         pid_t sender_pid, const EndpointMsgView &view) {
         // check the validity of the message and permissions
         // before doing anystate change
@@ -254,7 +254,7 @@ namespace cap {
         }
 
         // wait for the message to be consumed
-        auto wait_res = co_await task::wait::CommonAwaiter(
+        auto wait_res = co_await task::wait::FutureAwaiter(
             _obj->send_wait_reason, {}, [payload = _obj, msg]() {
                 return !message_is_queued(payload, msg);
             });
@@ -295,7 +295,7 @@ namespace cap {
         return msg;
     }
 
-    util::cotask<Result<EndpointMessage *>> EndpointObject::recv_sync() {
+    task::wait::cotask<Result<EndpointMessage *>> EndpointObject::recv_sync() {
         // 同步接收同样要求READ权限; 权限失败直接返回错误而不进入等待.
         if (!imply(perm::endpoint::READ)) {
             loggers::CAPABILITY::ERROR("Endpoint READ权限不足");
@@ -313,7 +313,7 @@ namespace cap {
             }
 
             // 队列为空时挂到endpoint接收等待队列, 条件由发送端入队满足.
-            auto wait_res = co_await task::wait::CommonAwaiter(
+            auto wait_res = co_await task::wait::FutureAwaiter(
                 _obj->recv_wait_reason, {}, [payload = _obj]() {
                     return payload != nullptr && !payload->messages.empty();
                 });
@@ -323,7 +323,7 @@ namespace cap {
         }
     }
 
-    util::cotask<Result<EndpointMessage *>> EndpointObject::call(
+    task::wait::cotask<Result<EndpointMessage *>> EndpointObject::call(
         pid_t sender_pid, CHolder *holder, const EndpointMsgView &msg) {
         // call需要在原消息cap列表末尾追加一个replier cap, 因此必须预留
         // 一个cap槽位.
@@ -465,7 +465,7 @@ namespace cap {
         return msg;
     }
 
-    util::cotask<Result<EndpointMessage *>> ReplyObject::recv_sync() {
+    task::wait::cotask<Result<EndpointMessage *>> ReplyObject::recv_sync() {
         // 同步读取回复前先做权限检查, 避免权限错误线程进入等待队列.
         if (!imply(perm::reply::CALLER)) {
             loggers::CAPABILITY::ERROR("Reply CALLER权限不足");
@@ -484,7 +484,7 @@ namespace cap {
 
         do {
             // reply尚未写入时等待对应ReplyPayload的接收条件.
-            auto wait_res = co_await task::wait::CommonAwaiter(
+            auto wait_res = co_await task::wait::FutureAwaiter(
                 _obj->recv_wait_reason, {}, [payload = _obj]() {
                     return payload != nullptr && payload->message != nullptr;
                 });

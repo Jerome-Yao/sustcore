@@ -11,11 +11,14 @@
 
 #pragma once
 
-#include <cstddef>
 #include <sustcore/capability.h>
+#include <task/wait.h>
+
+#include <cstddef>
 
 namespace syscall {
-    Result<bool> wait_notification(CapIdx capidx, size_t idx);
+    task::wait::cotask<Result<bool>> wait_notification(CapIdx capidx,
+                                                       size_t idx);
     Result<bool> notification_signal(CapIdx capidx, size_t idx, bool state);
     Result<bool> check_notification(CapIdx capidx, size_t idx);
     Result<CapIdx> notification_create();

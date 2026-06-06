@@ -91,8 +91,8 @@ namespace cap {
         /**
          * @brief 同步发送endpoint消息, 直到消息被接收方消费.
          */
-        util::cotask<Result<void>> send_sync(pid_t sender_pid,
-                                             const EndpointMsgView &msg);
+        task::wait::cotask<Result<void>> send_sync(
+            pid_t sender_pid, const EndpointMsgView &msg);
         /**
          * @brief 异步接收endpoint消息.
          *
@@ -102,14 +102,14 @@ namespace cap {
          * @brief 同步接收endpoint消息.
          *
          */
-        util::cotask<Result<EndpointMessage *>> recv_sync();
+        task::wait::cotask<Result<EndpointMessage *>> recv_sync();
         /**
          * @brief 发起同步调用, 并返回调用方收到的回复消息.
          *
          * 调用过程中会在 holder 中创建 caller/replier Reply Capability,
          * 将 replier cap 附加到请求消息, 发送后等待 caller 端收到回复.
          */
-        util::cotask<Result<EndpointMessage *>> call(
+        task::wait::cotask<Result<EndpointMessage *>> call(
             pid_t sender_pid, CHolder *holder, const EndpointMsgView &msg);
     };
 
@@ -144,6 +144,6 @@ namespace cap {
         /**
          * @brief 同步接收ReplyObject中的回复消息.
          */
-        util::cotask<Result<EndpointMessage *>> recv_sync();
+        task::wait::cotask<Result<EndpointMessage *>> recv_sync();
     };
 }  // namespace cap

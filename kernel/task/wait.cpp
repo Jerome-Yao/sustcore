@@ -9,18 +9,17 @@
  *
  */
 
-#include <device/int.h>
-#include <env.h>
+#include <driver/int/base.h>
 #include <logger.h>
 #include <syscall/syscall.h>
 #include <task/scheduler.h>
 #include <task/wait.h>
 
 #include <cassert>
-#include <coroutine>
-#include <functional>
 
 namespace task::wait {
+    const WaitContext WaitContext::EMPTY{};
+
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     static WaitReasonManager inst_wait_reason_manager;
     static bool inst_wait_reason_manager_initialized = false;
@@ -111,55 +110,6 @@ namespace task::wait {
         }
     }  // namespace
 
-    CommonAwaiter::CommonAwaiter(WaitReasonId reason, WaitPredicate predicate,
-                                 WaitReadyPredicate ready_predicate) noexcept
-        : _reason(reason), _predicate(std::move(predicate)),
-          _ready_predicate(std::move(ready_predicate)), _result{} {}
-
-    bool CommonAwaiter::await_ready() const noexcept {
-        return _ready_predicate && _ready_predicate();
-    }
-
-    bool CommonAwaiter::await_suspend(std::coroutine_handle<> handle) noexcept {
-        auto *context = syscall::active_context();
-        if (context == nullptr || context->tcb == nullptr) {
-            _result = std::unexpected(ErrCode::INVALID_PARAM);
-            return false;
-        }
-
-        auto *tcb = context->tcb;
-        if (tcb->schd_class == schd::ClassType::IDLE) {
-            _result = std::unexpected(ErrCode::INVALID_PARAM);
-            return false;
-        }
-
-        InterruptGuard guard;
-        guard.enter();
-        if (_ready_predicate && _ready_predicate()) {
-            return false;
-        }
-
-        tcb->syscall_info.handle = handle;
-        loggers::TASK::DEBUG("线程进入等待: pid=%lu tid=%lu sysno=0x%lx reason=%lu",
-                            tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
-                            tcb->syscall_info.syscall_number, _reason);
-        auto enqueue_res =
-            WaitReasonManager::inst().enqueue(_reason, tcb, std::move(_predicate));
-        if (!enqueue_res.has_value()) {
-            tcb->syscall_info.handle = nullptr;
-            _result                  = std::unexpected(enqueue_res.error());
-            return false;
-        }
-
-        tcb->basic_entity.template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
-        _result = {};
-        return true;
-    }
-
-    Result<void> CommonAwaiter::await_resume() const noexcept {
-        return _result;
-    }
-
     bool resume_deferred_syscall(TCB *tcb) noexcept {
         if (!has_syscall_waiter(tcb)) {
             return true;
@@ -198,16 +148,55 @@ namespace task::wait {
         }
         if (tcb->basic_entity.state == ThreadState::WAITING) {
             loggers::TASK::DEBUG(
-                "调度前恢复 syscall 协程后再次等待: pid=%lu tid=%lu sysno=0x%lx",
+                "调度前恢复 syscall 协程后再次等待: pid=%lu tid=%lu "
+                "sysno=0x%lx",
                 tcb->task->pid, tcb->tid, tcb->syscall_info.syscall_number);
             return false;
         }
 
         loggers::TASK::ERROR(
-            "调度前恢复 syscall 协程后状态异常: pid=%lu tid=%lu sysno=0x%lx state=%d",
+            "调度前恢复 syscall 协程后状态异常: pid=%lu tid=%lu sysno=0x%lx "
+            "state=%d",
             tcb->task->pid, tcb->tid, tcb->syscall_info.syscall_number,
             static_cast<int>(tcb->basic_entity.state));
         return false;
+    }
+
+    Result<void> register_syscall_wait(
+        TCB *tcb, const WaitContext &wait_context) noexcept {
+        if (tcb == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if (tcb->task == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (tcb->schd_class == schd::ClassType::IDLE) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (!wait_context.pending()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (wait_context.suspended_leaf == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        InterruptGuard guard;
+        guard.enter();
+        if (wait_context.ready_predicate && wait_context.ready_predicate()) {
+            void_return();
+        }
+
+        tcb->syscall_info.handle = wait_context.suspended_leaf;
+        loggers::TASK::DEBUG(
+            "线程登记等待: pid=%lu tid=%lu sysno=0x%lx reason=%lu",
+            tcb->task->pid, tcb->tid, tcb->syscall_info.syscall_number,
+            wait_context.wait_reason);
+        auto enqueue_res = WaitReasonManager::inst().enqueue(
+            wait_context.wait_reason, tcb, wait_context.wait_predicate);
+        propagate(enqueue_res);
+        tcb->basic_entity
+            .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+        void_return();
     }
 
     WaitReasonManager &WaitReasonManager::inst() {
@@ -253,7 +242,8 @@ namespace task::wait {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        return _queues.at_nt(id).transform(unwrap_ref<WaitQueue *>())
+        return _queues.at_nt(id)
+            .transform(unwrap_ref<WaitQueue *>())
             .value_or(nullptr);
     }
 
@@ -275,8 +265,8 @@ namespace task::wait {
         tcb->basic_entity.state = ThreadState::WAITING;
         qres.value()->threads.push_back(*tcb);
         loggers::TASK::DEBUG("等待队列入队: pid=%lu tid=%lu reason=%lu",
-                             tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
-                             id);
+                             tcb->task != nullptr ? tcb->task->pid : 0,
+                             tcb->tid, id);
         void_return();
     }
 

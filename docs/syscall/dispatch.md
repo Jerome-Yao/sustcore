@@ -4,15 +4,24 @@
 
 ## 入口
 
-用户态通过 RISC-V `ecall` 进入 trap。`kernel/arch/riscv64/int/exception.cpp` 在 `ECALL_U` 分支处理 syscall:
+用户态通过 RISC-V `ecall` 进入 trap。当前入口已经拆成两层:
 
-1. 将当前 trap context 保存到 `env::inst().trap_context()`。
-2. 读取当前调度线程 `Scheduler::current_tcb()`。
-3. 调用 `Riscv64Context::read_args()` 读取参数。
-4. 调用 `current_tcb->syscall_info.begin(args)`。
-5. 构造 `task::SyscallContext`。
-6. `ctx->sepc += 4`，跳过 `ecall` 指令。
-7. 根据 syscall 是否可挂起选择同步或异步分发。
+1. `kernel/arch/riscv64/int/exception.cpp` 中的 `on_ecall_u()`
+2. `kernel/syscall/syscall.cpp` 中的 `handle_user_ecall(...)`
+
+其中:
+
+- `on_ecall_u()` 只保留架构相关动作
+- `handle_user_ecall(...)` 负责通用 syscall 生命周期
+
+`on_ecall_u()` 负责:
+
+1. 将当前 trap context 保存到 `env::inst().trap_context()`
+2. 读取当前调度线程 `Scheduler::current_tcb()`
+3. 调用 `Riscv64Context::read_args()` 读取参数
+4. 构造 `task::SyscallContext`
+5. `ctx->sepc += 4`，跳过 `ecall` 指令
+6. 调用 `syscall::handle_user_ecall(...)`
 
 参数寄存器约定:
 
@@ -89,11 +98,13 @@ current_tcb->syscall_info.complete(ret);
 
 当前可挂起 syscall 是:
 
+- `SYS_NOTIF_WAIT`
 - `SYS_ENDPOINT_SEND`
 - `SYS_ENDPOINT_RECV`
 - `SYS_ENDPOINT_CALL`
 
-`dispatch_async(tcb)` 返回 `util::cotask<void>`。它会在 endpoint 操作处 `co_await`，等待队列和调度器负责后续恢复。
+`dispatch_async(tcb)` 返回 `task::wait::cotask<void>`。它会在对象操作处
+`co_await`，等待队列和调度器负责后续恢复。
 
 异步 syscall 完成时会调用 `complete_syscall(tcb, ret)`:
 
@@ -101,18 +112,27 @@ current_tcb->syscall_info.complete(ret);
 2. 如果线程在 `WAITING`，把状态改为 `EMPTY` 并唤醒。
 3. 如果所属进程正在退出，则不重新入队。
 
-## coroutine 挂起
+## coroutine 挂起与线程等待
 
-可挂起 syscall 常通过 `task::wait::CommonAwaiter` 挂起。
+可挂起 syscall 当前通过 `task::wait::FutureAwaiter` 挂起 coroutine。
 
-挂起时:
+它与旧模型的关键区别是:
 
-- 当前 coroutine handle 记录到 `tcb->syscall_info.handle`。
-- TCB 加入等待队列。
-- TCB 状态变为 `WAITING`。
-- TCB 设置 `NEED_RESCHED`。
+- `FutureAwaiter` 自己不直接操作 `TCB`
+- `FutureAwaiter` 只写当前 coroutine 的 `WaitContext`
+- `task::wait::cotask` 沿 `co_await` 链传播 `wait_reason`
+- 最外层 syscall 路径根据 `wait_context().pending()` 再决定是否调用
+  `register_syscall_wait(...)`
 
-唤醒时，等待系统会清理队列元数据，并由调度器在切到该线程前调用 `resume_deferred_syscall()` 恢复 coroutine。
+如果 `wait_context().pending()` 为真:
+
+- 最外层会把最内层 suspended leaf 保存到 `syscall_info.handle`
+- TCB 加入等待队列
+- TCB 状态变为 `WAITING`
+- 设置 `NEED_RESCHED`
+
+唤醒时，等待系统会清理队列元数据，并由调度器在切到该线程前调用
+`resume_deferred_syscall()` 恢复最内层 coroutine。
 
 ## 调度器提交 syscall
 

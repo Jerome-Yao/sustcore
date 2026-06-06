@@ -4,6 +4,7 @@
  */
 
 #include <sus/coroutine.h>
+#include <task/wait.h>
 #include <test/coroutine.h>
 
 #include <utility>
@@ -18,7 +19,7 @@ namespace test::coroutine {
                 ++live_count;
             }
 
-            FrameProbe(const FrameProbe&) = delete;
+            FrameProbe(const FrameProbe&)            = delete;
             FrameProbe& operator=(const FrameProbe&) = delete;
 
             ~FrameProbe() {
@@ -115,9 +116,30 @@ namespace test::coroutine {
             co_return value + 9;
         }
 
+        task::wait::cotask<int> wait_leaf(WaitReasonId reason) {
+            auto wait_res = co_await task::wait::FutureAwaiter(
+                reason, {}, []() { return false; });
+            if (!wait_res.has_value()) {
+                co_return -1;
+            }
+            co_return 11;
+        }
+
+        task::wait::cotask<int> wait_parent(WaitReasonId reason) {
+            auto value = co_await wait_leaf(reason);
+            co_return value + 1;
+        }
+
+        task::wait::cotask<int> wait_after_normal_suspend() {
+            auto child = make_value_task(5);
+            auto value = co_await child;
+            co_return value.value;
+        }
+
         class CaseScopedVoidTask : public TestCase {
         public:
-            CaseScopedVoidTask() : TestCase("cotask<void> 作用域析构回收完成帧") {}
+            CaseScopedVoidTask()
+                : TestCase("cotask<void> 作用域析构回收完成帧") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 FrameProbe::reset();
@@ -135,7 +157,8 @@ namespace test::coroutine {
 
         class CaseScopedValueTask : public TestCase {
         public:
-            CaseScopedValueTask() : TestCase("cotask<T> 保留结果并由析构释放帧") {}
+            CaseScopedValueTask()
+                : TestCase("cotask<T> 保留结果并由析构释放帧") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 FrameProbe::reset();
@@ -157,7 +180,8 @@ namespace test::coroutine {
 
         class CaseDetachCompletedTask : public TestCase {
         public:
-            CaseDetachCompletedTask() : TestCase("detach 已完成任务立即释放帧") {}
+            CaseDetachCompletedTask()
+                : TestCase("detach 已完成任务立即释放帧") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 FrameProbe::reset();
@@ -195,7 +219,8 @@ namespace test::coroutine {
         class CaseNormalContinuation : public TestCase {
         public:
             CaseNormalContinuation()
-                : TestCase("普通 co_await 路径恢复 continuation 并保留销毁责任") {}
+                : TestCase(
+                      "普通 co_await 路径恢复 continuation 并保留销毁责任") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 FrameProbe::reset();
@@ -214,7 +239,8 @@ namespace test::coroutine {
         class CaseAwaitCompletedDetachedTask : public TestCase {
         public:
             CaseAwaitCompletedDetachedTask()
-                : TestCase("已完成 detached task 可同步 await_resume 并释放帧") {}
+                : TestCase(
+                      "已完成 detached task 可同步 await_resume 并释放帧") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 FrameProbe::reset();
@@ -231,6 +257,38 @@ namespace test::coroutine {
                 ttest(FrameProbe::destruct_count == 1);
             }
         };
+
+        class CaseWaitCotaskPropagateReason : public TestCase {
+        public:
+            CaseWaitCotaskPropagateReason()
+                : TestCase("wait::cotask 向父协程传播 wait_reason") {}
+
+            void _run(void* env [[maybe_unused]]) const noexcept override {
+                constexpr WaitReasonId WAIT_REASON = 17;
+                auto task                          = wait_parent(WAIT_REASON);
+                ttest(task.valid());
+                ttest(!task.done());
+                ttest(task.wait_context().pending());
+                ttest(task.wait_context().wait_reason == WAIT_REASON);
+                ttest(task.wait_context().suspended_leaf != nullptr);
+            }
+        };
+
+        class CaseWaitCotaskClearOnNormalAwait : public TestCase {
+        public:
+            CaseWaitCotaskClearOnNormalAwait()
+                : TestCase(
+                      "wait::cotask await 普通 awaitable 时清空等待上下文") {}
+
+            void _run(void* env [[maybe_unused]]) const noexcept override {
+                auto task = wait_after_normal_suspend();
+                ttest(task.valid());
+                ttest(task.done());
+                ttest(!task.wait_context().pending());
+                ttest(task.wait_context().wait_reason == 0);
+                ttest(task.result() == 5);
+            }
+        };
     }  // namespace
 
     void collect_tests(TestFramework& framework) {
@@ -241,6 +299,8 @@ namespace test::coroutine {
         cases.push_back(new CaseDetachedContinuation());
         cases.push_back(new CaseNormalContinuation());
         cases.push_back(new CaseAwaitCompletedDetachedTask());
+        cases.push_back(new CaseWaitCotaskPropagateReason());
+        cases.push_back(new CaseWaitCotaskClearOnNormalAwait());
 
         framework.add_category(new TestCategory("coroutine", std::move(cases)));
     }

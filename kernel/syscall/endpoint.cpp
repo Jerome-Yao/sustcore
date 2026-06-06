@@ -172,10 +172,10 @@ namespace syscall {
                 unexpect_return(ErrCode::OUT_OF_BOUNDARY);
             }
             return cap::EndpointMsgView{
-                .msgbuf = reinterpret_cast<const char *>(msg.msgbuf),
-                .msgsz  = msg.msgsz,
+                .msgbuf  = reinterpret_cast<const char *>(msg.msgbuf),
+                .msgsz   = msg.msgsz,
                 .capidxs = msg.caplist,
-                .capsz  = msg.capsz,
+                .capsz   = msg.capsz,
             };
         }
 
@@ -237,8 +237,8 @@ namespace syscall {
         return true;
     }
 
-    util::cotask<Result<void>> endpoint_send_sync(CapIdx endpoint,
-                                                  const MsgPacket &packet) {
+    task::wait::cotask<Result<void>> endpoint_send_sync(
+        CapIdx endpoint, const MsgPacket &packet) {
         MsgPacket packet_copy = packet;
         auto msg_view_res     = msg_view(packet_copy);
         co_propagate(msg_view_res);
@@ -256,9 +256,9 @@ namespace syscall {
         co_return Result<void>{};
     }
 
-    util::cotask<Result<void>> endpoint_recv_sync(CapIdx endpoint,
-                                                  const MsgPacket &packet,
-                                                  UBuffer &&packet_buf) {
+    task::wait::cotask<Result<void>> endpoint_recv_sync(CapIdx endpoint,
+                                                        const MsgPacket &packet,
+                                                        UBuffer &&packet_buf) {
         auto current_tcb_res = current_tcb();
         co_propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
@@ -286,10 +286,12 @@ namespace syscall {
         co_return Result<void>{};
     }
 
-    util::cotask<Result<void>> endpoint_call(CapIdx endpoint,
-                                             const MsgPacket &send_packet,
-                                             const MsgPacket &reply_packet,
-                                             UBuffer &&reply_buf) {
+    task::wait::cotask<Result<void>> endpoint_call(
+        CapIdx endpoint, const MsgPacket &send_packet,
+        const MsgPacket &reply_packet, UBuffer &&reply_buf) {
+        // send the call message
+
+        // create the call message
         MsgPacket request_packet = send_packet;
         auto msg_view_res        = msg_view(request_packet);
         co_propagate(msg_view_res);
@@ -304,15 +306,17 @@ namespace syscall {
         co_propagate(endpoint_res);
         cap::EndpointObject endpoint_obj = endpoint_res.value();
 
-        auto call_awaiter = endpoint_obj.call(
-            current_pid(), holder, msg_view_res.value());
+        // call the endpoint and wait for the response
+        auto call_awaiter =
+            endpoint_obj.call(current_pid(), holder, msg_view_res.value());
         // do the call and co_await for the reply
         auto call_res = co_await call_awaiter;
         co_propagate(call_res);
 
-        // write the reply message back to user space
-        // here we use a guard to ensure the reply message is properly deleted
-        // after we're done
+        // after the call, the reply was written,
+        // and we're ready to write the reply message back to user space
+        // here we use a guard to ensure
+        // the reply message is properly deleted after we're done
         cap::EndpointMessage *reply = call_res.value();
         auto reply_guard            = delete_guard(util::owner(reply));
 
@@ -326,7 +330,8 @@ namespace syscall {
         co_return Result<void>{};
     }
 
-    Result<void> endpoint_reply(CapIdx reply_cap, const MsgPacket &reply_packet) {
+    Result<void> endpoint_reply(CapIdx reply_cap,
+                                const MsgPacket &reply_packet) {
         MsgPacket reply_packet_copy = reply_packet;
         auto msg_view_res           = msg_view(reply_packet_copy);
         propagate(msg_view_res);

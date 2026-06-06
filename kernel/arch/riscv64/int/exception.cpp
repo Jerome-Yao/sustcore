@@ -19,6 +19,7 @@
 #include <sus/types.h>
 #include <task/scheduler.h>
 #include <task/task.h>
+#include <task/wait.h>
 
 #include <new>
 
@@ -647,6 +648,38 @@ namespace exception {
         return false;  // 无法处理该异常
     }
 
+    [[nodiscard]]
+    bool on_ecall_u(umb_t sepc, Riscv64Context *ctx) noexcept {
+        env::inst().trap_context(env::key::trap_context()) = ctx;
+        auto *current_tcb = schd::Scheduler::inst().current_tcb();
+        assert(current_tcb != nullptr);
+        syscall::ArgPack args = ctx->read_args();
+        loggers::INTERRUPT::DEBUG(
+            "系统调用触发: name=%s, no=0x%lx, pid=%lu, tid=%lu",
+            syscall::name_of(args.syscall_number), args.syscall_number,
+            current_tcb->task != nullptr ? current_tcb->task->pid : 0,
+            current_tcb->tid);
+        loggers::INTERRUPT::DEBUG(
+            "系统调用参数: capidx=0x%lx, arg0=0x%lx, arg1=0x%lx, arg2=0x%lx",
+            args.capidx, args.args[0], args.args[1], args.args[2]);
+        loggers::INTERRUPT::DEBUG(
+            "系统调用参数: arg3=0x%lx, arg4=0x%lx, sepc=0x%lx", args.args[3],
+            args.args[4], sepc);
+
+        task::SyscallContext context{
+            .tcb = current_tcb,
+            .pcb = current_tcb->task,
+            .tmm = current_tcb->task != nullptr ? current_tcb->task->tmm.get()
+                                                : nullptr,
+            .trap_context = ctx,
+        };
+        ctx->sepc += 4;
+        syscall::handle_user_ecall(util::nnullforce(current_tcb), args,
+                                   context);
+        env::inst().trap_context(env::key::trap_context()) = nullptr;
+        return true;
+    }
+
     /**
      * @brief 分发并处理同步异常.
      *
@@ -659,84 +692,7 @@ namespace exception {
                    Riscv64Context *ctx) {
         bool processed = false;
         switch (scause.cause) {
-            case ECALL_U: {
-                env::inst().trap_context(env::key::trap_context()) = ctx;
-                auto *current_tcb = schd::Scheduler::inst().current_tcb();
-                assert(current_tcb != nullptr);
-                syscall::ArgPack args = ctx->read_args();
-                loggers::INTERRUPT::DEBUG(
-                    "系统调用触发: name=%s, no=0x%lx, pid=%lu, tid=%lu",
-                    syscall::name_of(args.syscall_number), args.syscall_number,
-                    current_tcb->task != nullptr ? current_tcb->task->pid : 0,
-                    current_tcb->tid);
-                loggers::INTERRUPT::DEBUG(
-                    "系统调用参数: capidx=0x%lx, arg0=0x%lx, arg1=0x%lx, "
-                    "arg2=0x%lx",
-                    args.capidx, args.args[0], args.args[1], args.args[2]);
-                loggers::INTERRUPT::DEBUG(
-                    "系统调用参数: arg3=0x%lx, arg4=0x%lx, sepc=0x%lx",
-                    args.args[3], args.args[4], sepc);
-                current_tcb->syscall_info.begin(args);
-                current_tcb->syscall_info.context = task::SyscallContext{
-                    .tcb          = current_tcb,
-                    .pcb          = current_tcb->task,
-                    .tmm          = current_tcb->task != nullptr
-                                        ? current_tcb->task->tmm.get()
-                                        : nullptr,
-                    .trap_context = ctx,
-                };
-                ctx->sepc += 4;
-                if (!syscall::is_suspendable_syscall(args.syscall_number)) {
-                    auto ret = syscall::dispatch_sync(*current_tcb);
-                    current_tcb->syscall_info.complete(ret);
-                    loggers::INTERRUPT::DEBUG(
-                        "同步 syscall 立即完成: pid=%lu tid=%lu sysno=0x%lx",
-                        current_tcb->task != nullptr ? current_tcb->task->pid
-                                                     : 0,
-                        current_tcb->tid, args.syscall_number);
-                } else {
-                    auto task = syscall::dispatch_async(*current_tcb);
-                    if (current_tcb->syscall_info.completed()) {
-                        loggers::INTERRUPT::DEBUG(
-                            "异步 syscall 立即完成, 不进入协程队列: pid=%lu "
-                            "tid=%lu",
-                            current_tcb->task != nullptr
-                                ? current_tcb->task->pid
-                                : 0,
-                            current_tcb->tid);
-                    } else if (current_tcb->basic_entity.state ==
-                               ThreadState::WAITING)
-                    {
-                        loggers::INTERRUPT::DEBUG(
-                            "syscall 已进入等待, 由等待系统负责恢复: pid=%lu "
-                            "tid=%lu sysno=0x%lx",
-                            current_tcb->task != nullptr
-                                ? current_tcb->task->pid
-                                : 0,
-                            current_tcb->tid,
-                            current_tcb->syscall_info.syscall_number);
-                        task.detach();
-                    } else {
-                        if (current_tcb->syscall_info.handle == nullptr) {
-                            current_tcb->syscall_info.handle = task.handle();
-                        }
-                        current_tcb->basic_entity.template flags_set<
-                            schd::SchedMeta::FLAGS_NEED_RESCHED>();
-                        loggers::INTERRUPT::INFO(
-                            "syscall 协程延后到调度前继续执行: pid=%lu tid=%lu "
-                            "sysno=0x%lx",
-                            current_tcb->task != nullptr
-                                ? current_tcb->task->pid
-                                : 0,
-                            current_tcb->tid,
-                            current_tcb->syscall_info.syscall_number);
-                        task.detach();
-                    }
-                }
-                processed                                          = true;
-                env::inst().trap_context(env::key::trap_context()) = nullptr;
-                break;
-            }
+            case ECALL_U: processed = on_ecall_u(sepc, ctx); break;
             case ILLEGAL_INST:
                 processed = illegal_instruction(scause, sepc, stval, ctx);
                 break;

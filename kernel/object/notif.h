@@ -15,6 +15,7 @@
 #include <cap/capability.h>
 #include <object/perm.h>
 #include <task/task_struct.h>
+#include <task/wait.h>
 
 namespace cap {
     struct NotificationPayload : public _PayloadHelper<PayloadType::NOTIF> {
@@ -75,7 +76,7 @@ namespace cap {
         Result<bool> unsignal(size_t idx);
         Result<bool> set(size_t idx, bool state);
         Result<bool> query(size_t idx);
-        Result<bool> wait(size_t idx);
+        task::wait::cotask<Result<bool>> wait(size_t idx);
     };
 
 }  // namespace cap

@@ -66,6 +66,11 @@ Notification 的权限设计与其它对象不同，不是整对象一组 READ/W
 - `query(idx)`
 - `wait(idx)`
 
+其中:
+
+- 前四个接口仍然同步返回 `Result<bool>`
+- `wait(idx)` 当前返回 `task::wait::cotask<Result<bool>>`
+
 ## 下标合法性
 
 所有操作都会先调用 `check_idx(idx)`，要求:
@@ -137,9 +142,13 @@ idx < perm::notif::MAX_SIGNALS
 
 ### 行为
 
-1. 进入临界区
-2. 如果对应位已经为 1，则立即返回 `true`
-3. 否则调用 `task::wait::deprecated_wait_current(wait_reasons[idx])`
+当前实现已经改为 coroutine 等待路径，大致流程是:
+
+1. 检查 `idx` 与 `QUERY` 权限
+2. 在循环内进入临界区
+3. 如果对应位已经为 1，则立即 `co_return true`
+4. 否则 `co_await task::wait::FutureAwaiter(...)`
+5. 被恢复后重新检查 signalbit，直到该位为 1
 
 ### 重要语义
 
@@ -154,16 +163,17 @@ idx < perm::notif::MAX_SIGNALS
 
 `wait()` 的实现特别强调了一个点:
 
-- “检查信号位”和“加入等待队列”必须放在同一个中断临界区里
+- 对象层仍然需要在临界区内检查 signalbit，避免和 signal/unsignal 并发修改
+- 真正的线程等待登记不再由 `NotificationObject::wait()` 自己完成
+- `FutureAwaiter` 只负责 suspend coroutine 并写入 `WaitContext`
+- 最外层 syscall 路径再根据 `wait_reason` 统一调用
+  `task::wait::register_syscall_wait(...)`
 
-否则会发生经典竞态:
+因此当前 notif wait 的 race-safe 依赖于:
 
-1. 线程看到 signal 未置位
-2. 还未来得及入队
-3. 另一个线程 signal 并立即返回
-4. 当前线程再去睡眠，导致丢事件
-
-当前实现通过 `InterruptGuard` 解决了这个问题。
+1. 对象层的临界区状态检查
+2. `FutureAwaiter` 的 ready predicate
+3. 外层统一的等待登记路径
 
 ## 权限分片的意义
 

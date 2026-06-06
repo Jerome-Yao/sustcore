@@ -21,7 +21,11 @@ namespace task {
     struct TCB;
     struct PCB;
     struct SyscallContext;
-}
+    namespace wait {
+        template <typename T>
+        class cotask;
+    }
+}  // namespace task
 
 namespace syscall {
     class UBuffer;
@@ -95,8 +99,18 @@ namespace syscall {
      * @brief 可挂起 syscall 分发入口.
      *
      * @param tcb 当前系统调用所属线程.
-     * @return util::cotask<void> syscall 协程任务.
+     * @return task::wait::cotask<void> syscall 协程任务.
      */
     [[nodiscard]]
-    util::cotask<void> dispatch_async(util::nonnull<task::TCB *> tcb);
+    task::wait::cotask<void> dispatch_async(util::nonnull<task::TCB *> tcb);
+
+    /**
+     * @brief 处理一次来自用户态 ECALL 的通用 syscall 生命周期.
+     *
+     * @param tcb 当前系统调用所属线程.
+     * @param args 已由架构层解析完成的参数包.
+     * @param context 已由架构层构造完成的 syscall 上下文.
+     */
+    void handle_user_ecall(util::nonnull<task::TCB *> tcb, const ArgPack &args,
+                           const task::SyscallContext &context) noexcept;
 }  // namespace syscall

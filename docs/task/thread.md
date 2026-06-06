@@ -160,19 +160,35 @@
 
 ## syscall 协程等待
 
-`CommonAwaiter` 是可挂起 syscall 的通用等待点。
+`FutureAwaiter` 是当前可挂起 syscall 的通用等待点。
 
-挂起时它会:
+当前等待模型由三部分组成:
 
-1. 从 `syscall::active_context()` 取得当前 TCB。
-2. 拒绝 IDLE 线程等待。
-3. 进入中断保护区。
-4. 若 ready predicate 已满足，则不挂起。
-5. 记录 coroutine handle 到 `tcb->syscall_info.handle`。
-6. 将 TCB 加入等待队列。
-7. 设置 `FLAGS_NEED_RESCHED`。
+1. `FutureAwaiter`
+2. `task::wait::WaitContext`
+3. `task::wait::cotask`
 
-之后线程状态为 `WAITING`，调度器会选择其它线程运行。
+`FutureAwaiter` 挂起时只负责:
+
+1. 检查 ready predicate
+2. 把 `wait_reason`、谓词和 suspended leaf 写入 `WaitContext`
+3. suspend 当前 coroutine
+
+它不直接:
+
+- 写 `syscall_info.handle`
+- 将线程加入等待队列
+- 修改线程状态
+
+这些动作由最外层 syscall 路径根据 `wait::cotask::wait_context()`
+统一处理。若 `wait_context().pending()` 为真，则:
+
+1. 保存最内层 coroutine handle
+2. 将 TCB 加入等待队列
+3. 将线程置为 `WAITING`
+4. 设置 `FLAGS_NEED_RESCHED`
+
+之后调度器会选择其它线程运行。
 
 ## 当前限制
 

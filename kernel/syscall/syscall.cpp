@@ -21,6 +21,7 @@
 #include <syscall/uaccess.h>
 #include <task/scheduler.h>
 #include <task/task_struct.h>
+#include <task/wait.h>
 
 #include <cassert>
 
@@ -148,6 +149,74 @@ namespace syscall {
         void write_serial(const UString &str, size_t len) noexcept {
             sys_write_serial(str.kbuf(), len);
         }
+
+        void begin_user_syscall(task::TCB *tcb, const ArgPack &args,
+                                const task::SyscallContext &context) noexcept {
+            assert(tcb != nullptr);
+            tcb->syscall_info.begin(args);
+            tcb->syscall_info.context = context;
+        }
+
+        void handle_sync_user_syscall(task::TCB *tcb,
+                                      const ArgPack &args) noexcept {
+            assert(tcb != nullptr);
+            auto ret = dispatch_sync(util::nnullforce(tcb));
+            tcb->syscall_info.complete(ret);
+            loggers::SYSCALL::DEBUG(
+                "同步 syscall 立即完成: pid=%lu tid=%lu sysno=0x%lx",
+                tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
+                args.syscall_number);
+        }
+
+        void handle_async_user_syscall(task::TCB *tcb) noexcept {
+            assert(tcb != nullptr);
+            auto task = dispatch_async(util::nnullforce(tcb));
+            if (tcb->syscall_info.completed()) {
+                loggers::SYSCALL::DEBUG(
+                    "异步 syscall 立即完成, 不进入协程队列: pid=%lu tid=%lu",
+                    tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid);
+                return;
+            }
+            if (task.wait_context().pending()) {
+                auto register_res =
+                    task::wait::register_syscall_wait(tcb, task.wait_context());
+                if (!register_res.has_value()) {
+                    loggers::SYSCALL::ERROR(
+                        "登记 syscall 等待失败: pid=%lu tid=%lu sysno=0x%lx "
+                        "err=%s",
+                        tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
+                        tcb->syscall_info.syscall_number,
+                        to_cstring(register_res.error()));
+                    auto ret = RetPack{
+                        .processed = true,
+                        .ret0      = false,
+                        .ret1      = static_cast<b64>(register_res.error()),
+                    };
+                    tcb->syscall_info.complete(ret);
+                    task.detach();
+                    return;
+                }
+                loggers::SYSCALL::DEBUG(
+                    "syscall 已进入等待, 由等待系统负责恢复: pid=%lu tid=%lu "
+                    "sysno=0x%lx",
+                    tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
+                    tcb->syscall_info.syscall_number);
+                task.detach();
+                return;
+            }
+
+            if (tcb->syscall_info.handle == nullptr) {
+                tcb->syscall_info.handle = task.handle();
+            }
+            tcb->basic_entity
+                .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+            loggers::SYSCALL::INFO(
+                "syscall 协程延后到调度前继续执行: pid=%lu tid=%lu "
+                "sysno=0x%lx",
+                tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
+                tcb->syscall_info.syscall_number);
+            task.detach();
+        }
     }  // namespace
 
     constexpr size_t MAX_SYSCALL_PATH = 256;
@@ -218,6 +287,7 @@ namespace syscall {
 
     bool is_suspendable_syscall(b64 sysno) noexcept {
         switch (sysno) {
+            case SYS_NOTIF_WAIT:
             case SYS_ENDPOINT_SEND:
             case SYS_ENDPOINT_RECV:
             case SYS_ENDPOINT_CALL: return true;
@@ -282,12 +352,10 @@ namespace syscall {
                     }
                 }
                 ret = result_value_ret(
-                    "创建进程", pcb_create_process(capidx, path,
-                                                   std::move(caps_buf), arg2,
-                                                   arg3,
-                                                   arg5 == 0 ? nullptr
-                                                             : &startup_buf,
-                                                   arg5));
+                    "创建进程",
+                    pcb_create_process(capidx, path, std::move(caps_buf), arg2,
+                                       arg3, arg5 == 0 ? nullptr : &startup_buf,
+                                       arg5));
                 break;
             }
             case SYS_CREATE_THREAD: {
@@ -304,7 +372,7 @@ namespace syscall {
                     break;
                 }
                 auto fork_res = pcb_fork(capidx, std::move(child_cap_buf));
-                ret = result_value_ret("fork", fork_res);
+                ret           = result_value_ret("fork", fork_res);
                 break;
             }
             case SYS_EXECVE: {
@@ -325,10 +393,9 @@ namespace syscall {
                     }
                 }
                 ret = result_bool_ret(
-                    "execve", pcb_execve(capidx, path, std::move(reserved_buf),
-                                         arg2,
-                                         arg5 == 0 ? nullptr : &startup_buf,
-                                         arg5));
+                    "execve",
+                    pcb_execve(capidx, path, std::move(reserved_buf), arg2,
+                               arg5 == 0 ? nullptr : &startup_buf, arg5));
                 break;
             }
             case SYS_PCB_KILL: {
@@ -338,11 +405,6 @@ namespace syscall {
             }
             case SYS_GETPID: {
                 ret = result_value_ret("get_pid", get_pid(capidx));
-                break;
-            }
-            case SYS_NOTIF_WAIT: {
-                ret = result_bool_ret("等待notification",
-                                      wait_notification(capidx, arg0));
                 break;
             }
             case SYS_NOTIF_SIGNAL: {
@@ -401,9 +463,8 @@ namespace syscall {
                     break;
                 }
                 auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
-                ret =
-                    result_bool_ret("异步发送endpoint消息",
-                                    endpoint_send_async(capidx, packet));
+                ret         = result_bool_ret("异步发送endpoint消息",
+                                              endpoint_send_async(capidx, packet));
                 break;
             }
             case SYS_ENDPOINT_RECV_ASYNC: {
@@ -414,8 +475,8 @@ namespace syscall {
                     break;
                 }
                 auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
-                auto recv_res = endpoint_recv_async(capidx, packet,
-                                                    std::move(packet_buf));
+                auto recv_res =
+                    endpoint_recv_async(capidx, packet, std::move(packet_buf));
                 ret = result_bool_ret("异步接收endpoint消息", recv_res);
                 break;
             }
@@ -446,7 +507,7 @@ namespace syscall {
             case SYS_MEM_QUERY: {
                 UBuffer out_buf((VirAddr)arg0, sizeof(MemQueryRet));
                 auto query_res = mem_query(capidx, std::move(out_buf));
-                ret = result_void_ret("mem_query", query_res);
+                ret            = result_void_ret("mem_query", query_res);
                 break;
             }
             case SYS_ENDPOINT_REPLY: {
@@ -474,7 +535,7 @@ namespace syscall {
         return ret;
     }
 
-    util::cotask<void> dispatch_async(util::nonnull<task::TCB *> tcb) {
+    task::wait::cotask<void> dispatch_async(util::nonnull<task::TCB *> tcb) {
         if (tcb->task == nullptr) {
             complete_syscall(
                 tcb, RetPack{
@@ -507,6 +568,12 @@ namespace syscall {
         };
 
         switch (sysno) {
+            case SYS_NOTIF_WAIT: {
+                auto wait_task        = wait_notification(capidx, arg0);
+                Result<bool> wait_res = co_await wait_task;
+                ret = result_bool_ret("等待notification", wait_res);
+                break;
+            }
             case SYS_ENDPOINT_SEND: {
                 UBuffer packet_buf((VirAddr)arg0, sizeof(MsgPacket));
                 auto sync_res = packet_buf.sync_from_user();
@@ -514,9 +581,8 @@ namespace syscall {
                     ret = result_void_ret("同步发送消息包", sync_res);
                     break;
                 }
-                auto packet =
-                    *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
-                auto send_task = endpoint_send_sync(capidx, packet);
+                auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
+                auto send_task        = endpoint_send_sync(capidx, packet);
                 Result<void> send_res = co_await send_task;
                 ret = result_void_ret("同步发送endpoint消息", send_res);
                 break;
@@ -528,8 +594,7 @@ namespace syscall {
                     ret = result_void_ret("同步接收消息包", sync_res);
                     break;
                 }
-                auto packet =
-                    *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
+                auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
                 auto recv_task =
                     endpoint_recv_sync(capidx, packet, std::move(packet_buf));
                 Result<void> recv_res = co_await recv_task;
@@ -553,9 +618,8 @@ namespace syscall {
                 }
                 auto reply_packet =
                     *reinterpret_cast<MsgPacket *>(reply_buf.kbuf());
-                auto call_task =
-                    endpoint_call(capidx, send_packet, reply_packet,
-                                  std::move(reply_buf));
+                auto call_task = endpoint_call(
+                    capidx, send_packet, reply_packet, std::move(reply_buf));
                 Result<void> call_res = co_await call_task;
                 ret = result_void_ret("endpoint_call", call_res);
                 break;
@@ -572,5 +636,15 @@ namespace syscall {
         complete_syscall(tcb, ret);
         set_active_context(nullptr);
         co_return;
+    }
+
+    void handle_user_ecall(util::nonnull<task::TCB *> tcb, const ArgPack &args,
+                           const task::SyscallContext &context) noexcept {
+        begin_user_syscall(tcb, args, context);
+        if (!is_suspendable_syscall(args.syscall_number)) {
+            handle_sync_user_syscall(tcb, args);
+            return;
+        }
+        handle_async_user_syscall(tcb);
     }
 }  // namespace syscall
