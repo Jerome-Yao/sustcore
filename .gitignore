@@ -6,7 +6,7 @@ build/
 !script/*
 bochsrc.bxrc
 bochsrc
-sustcore.img
+*.img
 bx_enh_dbg.ini
 config.mk
 kernel/logger.h
