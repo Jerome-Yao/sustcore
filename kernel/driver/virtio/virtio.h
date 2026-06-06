@@ -72,7 +72,7 @@ namespace virtio {
     // MMIO 通用寄存器布局（与 offset 命名空间的偏移量严格对应）
     // 基于 Virtio 1.2 规范 Table 4.1，所有寄存器 32 位宽
     // ------------------------------------------------------------------------
-    struct CommonConfiguration {
+    struct CommonConfig {
         // 0x000 : Magic value (R)
         le32 magic_value;
         // 0x004 : Version (R)
@@ -165,64 +165,64 @@ namespace virtio {
         // 0x0FC : Configuration Generation (R)
         le32 config_generation;
     };
-    static_assert(sizeof(CommonConfiguration) == offset::TOTAL_SIZE,
-                  "CommonConfiguration must be exactly 256 bytes");
+    static_assert(sizeof(CommonConfig) == offset::TOTAL_SIZE,
+                  "CommonConfig must be exactly 256 bytes");
 
     // 可选：校验关键字段偏移是否与 offset 命名空间一致
-    static_assert(offsetof(CommonConfiguration, magic_value) ==
+    static_assert(offsetof(CommonConfig, magic_value) ==
                   offset::MAGIC_VALUE);
-    static_assert(offsetof(CommonConfiguration, version) == offset::VERSION);
-    static_assert(offsetof(CommonConfiguration, device_id) ==
+    static_assert(offsetof(CommonConfig, version) == offset::VERSION);
+    static_assert(offsetof(CommonConfig, device_id) ==
                   offset::DEVICE_ID);
-    static_assert(offsetof(CommonConfiguration, vendor_id) ==
+    static_assert(offsetof(CommonConfig, vendor_id) ==
                   offset::VENDOR_ID);
-    static_assert(offsetof(CommonConfiguration, device_features) ==
+    static_assert(offsetof(CommonConfig, device_features) ==
                   offset::DEVICE_FEATURE);
-    static_assert(offsetof(CommonConfiguration, device_features_sel) ==
+    static_assert(offsetof(CommonConfig, device_features_sel) ==
                   offset::DEVICE_FEATURE_SEL);
-    static_assert(offsetof(CommonConfiguration, driver_features) ==
+    static_assert(offsetof(CommonConfig, driver_features) ==
                   offset::DRIVER_FEATURE);
-    static_assert(offsetof(CommonConfiguration, driver_features_sel) ==
+    static_assert(offsetof(CommonConfig, driver_features_sel) ==
                   offset::DRIVER_FEATURE_SEL);
-    static_assert(offsetof(CommonConfiguration, queue_sel) ==
+    static_assert(offsetof(CommonConfig, queue_sel) ==
                   offset::QUEUE_SEL);
-    static_assert(offsetof(CommonConfiguration, queue_num_max) ==
+    static_assert(offsetof(CommonConfig, queue_num_max) ==
                   offset::QUEUE_NUM_MAX);
-    static_assert(offsetof(CommonConfiguration, queue_num) ==
+    static_assert(offsetof(CommonConfig, queue_num) ==
                   offset::QUEUE_NUM);
-    static_assert(offsetof(CommonConfiguration, queue_ready) ==
+    static_assert(offsetof(CommonConfig, queue_ready) ==
                   offset::QUEUE_READY);
-    static_assert(offsetof(CommonConfiguration, queue_notify) ==
+    static_assert(offsetof(CommonConfig, queue_notify) ==
                   offset::QUEUE_NOTIFY);
-    static_assert(offsetof(CommonConfiguration, interrupt_status) ==
+    static_assert(offsetof(CommonConfig, interrupt_status) ==
                   offset::INTERRUPT_STATUS);
-    static_assert(offsetof(CommonConfiguration, interrupt_ack) ==
+    static_assert(offsetof(CommonConfig, interrupt_ack) ==
                   offset::INTERRUPT_ACK);
-    static_assert(offsetof(CommonConfiguration, status) == offset::STATUS);
-    static_assert(offsetof(CommonConfiguration, queue_desc_low) ==
+    static_assert(offsetof(CommonConfig, status) == offset::STATUS);
+    static_assert(offsetof(CommonConfig, queue_desc_low) ==
                   offset::QUEUE_DESC_LO);
-    static_assert(offsetof(CommonConfiguration, queue_desc_high) ==
+    static_assert(offsetof(CommonConfig, queue_desc_high) ==
                   offset::QUEUE_DESC_HI);
-    static_assert(offsetof(CommonConfiguration, queue_driver_low) ==
+    static_assert(offsetof(CommonConfig, queue_driver_low) ==
                   offset::QUEUE_DRIVER_LO);
-    static_assert(offsetof(CommonConfiguration, queue_driver_high) ==
+    static_assert(offsetof(CommonConfig, queue_driver_high) ==
                   offset::QUEUE_DRIVER_HI);
-    static_assert(offsetof(CommonConfiguration, queue_device_low) ==
+    static_assert(offsetof(CommonConfig, queue_device_low) ==
                   offset::QUEUE_DEVICE_LO);
-    static_assert(offsetof(CommonConfiguration, queue_device_high) ==
+    static_assert(offsetof(CommonConfig, queue_device_high) ==
                   offset::QUEUE_DEVICE_HI);
-    static_assert(offsetof(CommonConfiguration, shm_sel) == offset::SHM_SEL);
-    static_assert(offsetof(CommonConfiguration, shm_len_low) ==
+    static_assert(offsetof(CommonConfig, shm_sel) == offset::SHM_SEL);
+    static_assert(offsetof(CommonConfig, shm_len_low) ==
                   offset::SHM_LEN_LO);
-    static_assert(offsetof(CommonConfiguration, shm_len_high) ==
+    static_assert(offsetof(CommonConfig, shm_len_high) ==
                   offset::SHM_LEN_HI);
-    static_assert(offsetof(CommonConfiguration, shm_base_low) ==
+    static_assert(offsetof(CommonConfig, shm_base_low) ==
                   offset::SHM_BASE_LO);
-    static_assert(offsetof(CommonConfiguration, shm_base_high) ==
+    static_assert(offsetof(CommonConfig, shm_base_high) ==
                   offset::SHM_BASE_HI);
-    static_assert(offsetof(CommonConfiguration, queue_reset) ==
+    static_assert(offsetof(CommonConfig, queue_reset) ==
                   offset::QUEUE_RESET);
-    static_assert(offsetof(CommonConfiguration, config_generation) ==
+    static_assert(offsetof(CommonConfig, config_generation) ==
                   offset::CONFIG_GENERATION);
 
     constexpr size_t MAGIC_VALUE = 0x74726976;
