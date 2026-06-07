@@ -1002,7 +1002,8 @@ namespace task {
         child_tcb->reset_kstack();
         auto *child_user_ctx       = child_tcb->push<Context>();
         *child_user_ctx                         = *parent_ctx;
-        child_user_ctx->sepc                   += 4;
+        child_user_ctx->kstack_sp              =
+            reinterpret_cast<umb_t>(child_tcb->kstack_top());
         child_user_ctx->regs[Context::A0_BASE]  = 0;
         child_user_ctx->regs[Context::A0_BASE + 1] =
             static_cast<b64>(ErrCode::SUCCESS);

@@ -26,7 +26,6 @@ static void dump_caps(const char *tag) {
             CapIdx idx = cap::make(group, slot);
             CapInfo info{};
             if (!sys_cap_lookup(idx, &info)) {
-                printf("%s: 编号=%p empty\n", tag, (void *)idx);
                 continue;
             }
             printf("%s: 编号=%p 类型=%s 权限=%p\n", tag, (void *)idx,
@@ -71,7 +70,7 @@ int kmod_main() {
     size_t abi_pcb_pid   = sys_getpid(__pcb_cap);
     size_t child_cap_pid = sys_getpid(child_pcb_cap);
     printf(
-        "test_fork: %s fork后 子进程capidx=%p 子进程pid=%u ABI获得的PCB PID=%u "
+        "test_fork(%s): fork后 子进程capidx=%p 子进程pid=%u ABI获得的PCB PID=%u "
         "子进程PID=%u global=%u shared=%s\n",
         tag, (void *)child_pcb_cap, child_pid, abi_pcb_pid, child_cap_pid,
         global_value, shared_buf);
@@ -84,7 +83,7 @@ int kmod_main() {
         strcpy(shared_buf, "我宣布个事");
     }
 
-    printf("test_fork: %s COW写后 global=%u shared=%s\n", tag, global_value,
+    printf("test_fork(%s): COW写后 global=%u shared=%s\n", tag, global_value,
            shared_buf);
 
     char *private_buf = alloc_page_string("ABC");
@@ -93,33 +92,36 @@ int kmod_main() {
     } else {
         strcpy(private_buf, "UVW");
     }
-    printf("test_fork: %s private buf=%s\n", tag, private_buf);
+    printf("test_fork(%s): private buf=%s\n", tag, private_buf);
 
-    dump_caps(is_child ? "子进程" : "父进程");
+    dump_caps(tag);
 
     if (is_child) {
         CapIdx reserved_caps[] = {exec_notif_cap};
         NotifBootstrap bootstrap{exec_notif_cap};
-        printf("test_fork: child exec test_execve\n");
+        printf("test_fork(%s): child exec test_execve\n", tag);
         if (!execve("/initrd/test_execve.mod", reserved_caps, 1, &bootstrap,
                     sizeof(bootstrap)))
         {
-            printf("test_fork: child exec failed\n");
+            printf("test_fork(%s): child exec failed\n", tag);
         }
         exit(-1);
     }
 
-    printf("test_fork: 发送 SYN\n");
+    printf("test_fork(%s): 发送 SYN\n", tag);
     sys_notif_signal(exec_notif_cap, kSignalSyn);
 
+    printf("test_fork(%s): 等待 SYN-ACK\n", tag);
     sys_notif_wait(exec_notif_cap, kSignalSynAck);
-    printf("test_fork: 接收 SYN-ACK\n");
+
+    printf("test_fork(%s): 接收 SYN-ACK\n", tag);
     sys_notif_unsignal(exec_notif_cap, kSignalSynAck);
 
-    printf("test_fork: 发送 ACK\n");
+    printf("test_fork(%s): 发送 ACK\n", tag);
     sys_notif_signal(exec_notif_cap, kSignalAck);
 
-    printf("test_fork: %s exit\n", tag);
+    printf("test_fork(%s): exit\n", tag);
     exit(0);
+
     return 0;
 }

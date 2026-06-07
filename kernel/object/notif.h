@@ -14,14 +14,15 @@
 #include <arch/riscv64/description.h>
 #include <cap/capability.h>
 #include <object/perm.h>
-#include <task/task_struct.h>
 #include <task/wait.h>
+
+#include <vector>
 
 namespace cap {
     struct NotificationPayload : public _PayloadHelper<PayloadType::NOTIF> {
         // 信号位图, 实际长 24 位
         b32 signalbits = 0;
-        WaitReasonId wait_reasons[perm::notif::MAX_SIGNALS];
+        std::vector<task::wait::Promise<bool>> waiters[perm::notif::MAX_SIGNALS];
 
         NotificationPayload();
 

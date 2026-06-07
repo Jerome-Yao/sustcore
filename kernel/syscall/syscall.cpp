@@ -291,8 +291,8 @@ namespace syscall {
                     ret = result_void_ret("同步execve保留能力列表", sync_res);
                     break;
                 }
-                UBuffer startup_buf((VirAddr)arg4, arg5);
-                if (arg5 != 0) {
+                UBuffer startup_buf((VirAddr)arg3, arg4);
+                if (arg4 != 0) {
                     auto startup_sync_res = startup_buf.sync_from_user();
                     if (!startup_sync_res.has_value()) {
                         ret = result_void_ret("同步execve启动缓冲区",
@@ -303,7 +303,7 @@ namespace syscall {
                 ret = result_bool_ret(
                     "execve",
                     pcb_execve(capidx, path, std::move(reserved_buf), arg2,
-                               arg5 == 0 ? nullptr : &startup_buf, arg5));
+                               arg4 == 0 ? nullptr : &startup_buf, arg4));
                 break;
             }
             case SYS_PCB_KILL: {

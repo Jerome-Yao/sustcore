@@ -15,11 +15,25 @@
 #include <task/wait.h>
 
 namespace cap {
-    NotificationPayload::NotificationPayload() : signalbits(0), wait_reasons{} {
-        for (size_t i = 0; i < perm::notif::MAX_SIGNALS; ++i) {
-            wait_reasons[i] = task::wait::alloc_reason();
+    namespace {
+        Result<void> resolve_waiters(std::vector<task::wait::Promise<bool>> &waiters,
+                                     bool value) {
+            ErrCode err = ErrCode::SUCCESS;
+            for (auto &promise : waiters) {
+                auto set_res = promise.set_value(value);
+                if (!set_res.has_value() && err == ErrCode::SUCCESS) {
+                    err = set_res.error();
+                }
+            }
+            waiters.clear();
+            if (err != ErrCode::SUCCESS) {
+                unexpect_return(err);
+            }
+            void_return();
         }
-    }
+    }  // namespace
+
+    NotificationPayload::NotificationPayload() : signalbits(0), waiters{} {}
 
     static Result<void> check_idx(size_t idx) {
         if (idx >= perm::notif::MAX_SIGNALS) {
@@ -53,8 +67,8 @@ namespace cap {
         InterruptGuard guard;
         guard.enter();
         _obj->signalbits |= (static_cast<b32>(1U) << idx);
-        auto wake_res     = task::wait::wake_all(_obj->wait_reasons[idx]);
-        propagate(wake_res);
+        auto resolve_res = resolve_waiters(_obj->waiters[idx], true);
+        propagate(resolve_res);
         return true;
     }
 
@@ -76,8 +90,8 @@ namespace cap {
         guard.enter();
         if (state) {
             _obj->signalbits |= (static_cast<b32>(1U) << idx);
-            auto wake_res     = task::wait::wake_all(_obj->wait_reasons[idx]);
-            propagate(wake_res);
+            auto resolve_res = resolve_waiters(_obj->waiters[idx], true);
+            propagate(resolve_res);
         } else {
             _obj->signalbits &= ~(static_cast<b32>(1U) << idx);
         }
@@ -97,15 +111,19 @@ namespace cap {
         propagate(check_idx(idx));
         propagate(check_query_perm(_cap, idx));
 
-        task::wait::Promise<bool> promise;
-        auto future = promise.future();
-
         InterruptGuard guard;
         guard.enter();
         if ((_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0) {
+            task::wait::Promise<bool> promise;
+            auto future  = promise.future();
             auto set_res = promise.set_value(true);
             propagate(set_res);
+            return future;
         }
+
+        task::wait::Promise<bool> promise;
+        auto future = promise.future();
+        _obj->waiters[idx].push_back(std::move(promise));
         return future;
     }
 }  // namespace cap

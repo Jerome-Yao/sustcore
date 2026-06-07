@@ -275,12 +275,13 @@ namespace syscall {
             assert(commit_res.has_value());
         });
 
+        auto commit_res = child_cap_buf.commit_to_user();
+        propagate(commit_res);
+
         auto fork_res = task::TaskManager::inst().fork_current(child_pcb_cap);
         propagate(fork_res);
 
         restore_out_guard.release();
-        auto commit_res = child_cap_buf.commit_to_user();
-        propagate(commit_res);
         return fork_res.value().child_pid;
     }
 

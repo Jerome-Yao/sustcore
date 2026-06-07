@@ -26,15 +26,19 @@ int kmod_main() {
     CapIdx notif_cap = bootstrap_notif();
     printf("test_execve: notification cap=%p\n", (void *)notif_cap);
 
+    printf("test_execve: 等待 SYN\n");
     sys_notif_wait(notif_cap, kSignalSyn);
+
     printf("test_execve: 接收 SYN\n");
     sys_notif_unsignal(notif_cap, kSignalSyn);
 
-    sys_notif_signal(notif_cap, kSignalSynAck);
     printf("test_execve: 发送 SYN-ACK\n");
+    sys_notif_signal(notif_cap, kSignalSynAck);
 
+    printf("test_execve: 等待 ACK\n");
     sys_notif_wait(notif_cap, kSignalAck);
-    printf("test_execve: 接收 ACK\n");
+
+    printf("test_execve: 接收并取消 ACK\n");
     sys_notif_unsignal(notif_cap, kSignalAck);
 
     printf("test_execve: 握手完成!\n");
