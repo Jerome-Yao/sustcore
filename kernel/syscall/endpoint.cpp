@@ -367,31 +367,27 @@ namespace syscall {
 
         auto caller_cap_res = holder->lookup(slots.caller);
         propagate(caller_cap_res);
-        cap::ReplyObject reply_obj(util::nnullforce(caller_cap_res.value()));
-        auto reply_future_res = reply_obj.recv();
-        propagate(reply_future_res);
 
+        // send and wait
         auto send_future_res = endpoint_obj.send(current_pid(), call_msg);
         propagate(send_future_res);
         auto send_wait_res = task::wait::wait_for(send_future_res.value());
-        if (!send_wait_res.has_value()) {
-            auto cancel_res = reply_future_res.value().cancle();
-            if (!cancel_res.has_value() &&
-                cancel_res.error() != ErrCode::FUTURE_CANCLED &&
-                cancel_res.error() != ErrCode::FUTURE_CONSUMED)
-            {
-                loggers::SYSCALL::WARN("取消 endpoint_call reply future 失败: %s",
-                                       to_cstring(cancel_res.error()));
-            }
-            propagate_return(send_wait_res);
-        }
-
+        propagate(send_wait_res);
+        // once we're able to send the message,
+        // and the message was successfully received,
+        // we'll release the guard cuz the cleanup logic is now moved to the receiver side
         replier_guard.release();
+        caller_guard.release();
+
+        // receive the reply
+        cap::ReplyObject reply_obj(util::nnullforce(caller_cap_res.value()));
+        auto reply_future_res = reply_obj.recv();
+        propagate(reply_future_res);
         auto reply_wait_res = task::wait::wait_for(reply_future_res.value());
         propagate(reply_wait_res);
-        cap::EndpointMessage *reply = reply_wait_res.value();
-        auto reply_guard            = delete_guard(util::owner(reply));
-        caller_guard.release();
+
+        auto reply = util::owner(reply_wait_res.value());
+        auto reply_guard            = delete_guard(reply);
 
         auto *reply_out = reinterpret_cast<MsgPacket *>(reply_buf.kbuf());
         auto write_reply_res =
