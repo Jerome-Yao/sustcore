@@ -93,27 +93,19 @@ namespace cap {
         return (_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0;
     }
 
-    task::wait::cotask<Result<bool>> NotificationObject::wait(size_t idx) {
-        co_propagate(check_idx(idx));
-        co_propagate(check_query_perm(_cap, idx));
+    Result<task::wait::Future<bool>> NotificationObject::wait(size_t idx) {
+        propagate(check_idx(idx));
+        propagate(check_query_perm(_cap, idx));
 
-        while (true) {
-            {
-                InterruptGuard guard;
-                guard.enter();
-                if ((_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0) {
-                    co_return true;
-                }
-            }
+        task::wait::Promise<bool> promise;
+        auto future = promise.future();
 
-            auto wait_res = co_await task::wait::FutureAwaiter(
-                _obj->wait_reasons[idx], {},
-                [payload = _obj, idx]() {
-                    return payload != nullptr &&
-                           (payload->signalbits &
-                            (static_cast<b32>(1U) << idx)) != 0;
-                });
-            co_propagate(wait_res);
+        InterruptGuard guard;
+        guard.enter();
+        if ((_obj->signalbits & (static_cast<b32>(1U) << idx)) != 0) {
+            auto set_res = promise.set_value(true);
+            propagate(set_res);
         }
+        return future;
     }
 }  // namespace cap

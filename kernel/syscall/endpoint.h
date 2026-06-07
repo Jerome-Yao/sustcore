@@ -29,8 +29,7 @@ namespace syscall {
      * @return Result<void> 成功表示消息发送完成.
      */
     [[nodiscard]]
-    task::wait::cotask<Result<void>> endpoint_send_sync(
-        CapIdx endpoint, const MsgPacket &packet);
+    Result<void> endpoint_send_sync(CapIdx endpoint, const MsgPacket &packet);
     /**
      * @brief 异步向指定endpoint发送消息
      *
@@ -49,9 +48,8 @@ namespace syscall {
      * @return Result<void> 成功表示消息已接收并写回用户缓冲区.
      */
     [[nodiscard]]
-    task::wait::cotask<Result<void>> endpoint_recv_sync(CapIdx endpoint,
-                                                        const MsgPacket &packet,
-                                                        UBuffer &&packet_buf);
+    Result<void> endpoint_recv_sync(CapIdx endpoint, const MsgPacket &packet,
+                                    UBuffer &&packet_buf);
     /**
      * @brief 从端点处接收信息 (异步版本)
      *
@@ -71,9 +69,9 @@ namespace syscall {
      * 发送后阻塞等待CALLER端收到回复, 最后清理调用方reply cap.
      */
     [[nodiscard]]
-    task::wait::cotask<Result<void>> endpoint_call(
-        CapIdx endpoint, const MsgPacket &send_packet,
-        const MsgPacket &reply_packet, UBuffer &&reply_buf);
+    Result<void> endpoint_call(CapIdx endpoint, const MsgPacket &send_packet,
+                               const MsgPacket &reply_packet,
+                               UBuffer &&reply_buf);
     /**
      * @brief 向ReplyObject写入回复并移除当前CSpace中的reply cap.
      */

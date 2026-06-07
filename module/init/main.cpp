@@ -18,8 +18,8 @@ int kmod_main() {
 
     // sys_create_process("/initrd/test_fork.mod", nullptr, 0, SCHED_CLASS_RR);
     sys_create_process("/initrd/test_thread.mod", nullptr, 0, SCHED_CLASS_RR);
-    // sys_create_process("/initrd/test_endpoint_master.mod", nullptr, 0, SCHED_CLASS_FCFS);
-    // sys_create_process("/initrd/test_call_service.mod", nullptr, 0, SCHED_CLASS_FCFS);
+    sys_create_process("/initrd/test_endpoint_master.mod", nullptr, 0, SCHED_CLASS_FCFS);
+    sys_create_process("/initrd/test_call_service.mod", nullptr, 0, SCHED_CLASS_FCFS);
     sys_create_process("/initrd/test_rpc_server.mod", nullptr, 0, SCHED_CLASS_FCFS);
 
     printf("init: 启动完成, 退出\n");

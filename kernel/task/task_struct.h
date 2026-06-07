@@ -23,7 +23,6 @@
 #include <sustcore/addr.h>
 #include <syscall/syscall.h>
 
-#include <coroutine>
 #include <cstddef>
 #include <functional>
 
@@ -79,8 +78,6 @@ namespace task {
             syscall::RetPack syscall_result{};
             /// syscall 当前状态.
             State syscall_state = State::NONE;
-            /// syscall coroutine 句柄.
-            std::coroutine_handle<> handle = nullptr;
             /// syscall 协程的显式执行上下文.
             SyscallContext context{};
 

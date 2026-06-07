@@ -41,12 +41,10 @@ namespace schd {
 
         constexpr Scheduler(util::nonnull<TCB *> idle_tcb,
                             util::nonnull<TCB *> init_tcb) {
-            idle_tcb->basic_entity.state = ThreadState::RUNNING;
-            _idle_schd.cursched          = &idle_tcb->basic_entity;
+            idle_tcb->basic_entity.state = ThreadState::READY;
+            _idle_schd.ready             = &idle_tcb->basic_entity;
             init_tcb->basic_entity.state = ThreadState::READY;
             _init_schd.ready             = &init_tcb->basic_entity;
-            idle_tcb->basic_entity
-                .template flags_set<SchedMeta::FLAGS_NEED_RESCHED>();
         }
 
         util::nonnull<RQ *> rq();
@@ -151,11 +149,9 @@ namespace schd {
         /**
          * @brief 调度入口
          * 进入后将会判断是否需要进行调度,
-         * 如果需要则选择下一个要运行的调度单元并切换到它 注意的是,
-         * 只有在current_tcb不为null时, 调度器才开始工作 这意味着, 你需要通过
-         * init() 方法将 current_tcb 设置为一个有效的 TCB 后, 调度器才会开始调度
-         * 一般来说, init() 方法会将其设置为 IDLE 调度类中的 IDLE TCB,
-         * 这样调度器就会在没有其他可运行线程时调度到这个 IDLE 线程上
+         * 如果需要则选择下一个要运行的调度单元并切换到它.
+         * 注意的是, 在 bootstrap_tasks() 之前 current_tcb/current_pcb
+         * 均保持为空, 此时 schedule() 只会直接返回, 不会启动任务调度.
          *
          */
         void schedule();

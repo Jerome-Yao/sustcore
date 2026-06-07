@@ -27,6 +27,11 @@
 
 namespace syscall {
     namespace {
+        struct ReplySlots {
+            CapIdx caller  = cap::null;
+            CapIdx replier = cap::null;
+        };
+
         /**
          * @brief 查找并包装当前CSpace中的EndpointObject.
          */
@@ -179,6 +184,35 @@ namespace syscall {
             };
         }
 
+        [[nodiscard]]
+        Result<ReplySlots> create_reply_slots(cap::CHolder *holder) {
+            if (holder == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+
+            auto reply_payload = util::owner(new cap::ReplyPayload());
+            if (reply_payload == nullptr) {
+                unexpect_return(ErrCode::ALLOCATION_FAILED);
+            }
+            auto reply_guard = delete_guard(reply_payload);
+
+            auto caller_slot_res =
+                holder->insert_to_free(reply_payload, perm::reply::CALLER);
+            if (!caller_slot_res.has_value()) {
+                propagate_return(caller_slot_res);
+            }
+            reply_guard.release();
+
+            CapIdx caller_slot = caller_slot_res.value();
+            auto replier_slot_res = holder->insert_to_free(
+                reply_payload,
+                perm::reply::REPLIER | perm::basic::MIGRATE_ONCE);
+            propagate(replier_slot_res);
+
+            return ReplySlots{.caller = caller_slot,
+                              .replier = replier_slot_res.value()};
+        }
+
     }  // namespace
 
     Result<CapIdx> endpoint_create() {
@@ -200,10 +234,17 @@ namespace syscall {
         propagate(endpoint_res);
         cap::EndpointObject obj = endpoint_res.value();
 
-        // to send asynchronously
-        auto send_res = obj.send_async(current_pid(), msg_view_res.value());
-        propagate(send_res);
-        return send_res.value();
+        auto future_res = obj.send(current_pid(), msg_view_res.value());
+        propagate(future_res);
+        auto future = future_res.value();
+        if (future.readable()) {
+            auto wait_res = future.value();
+            propagate(wait_res);
+            return true;
+        }
+        auto cancel_res = future.cancle();
+        propagate(cancel_res);
+        return false;
     }
 
     Result<bool> endpoint_recv_async(CapIdx endpoint, const MsgPacket &packet,
@@ -217,14 +258,18 @@ namespace syscall {
         propagate(endpoint_res);
         cap::EndpointObject obj = endpoint_res.value();
 
-        // to receive asynchronously
-        auto recv_res = obj.recv_async();
-        propagate(recv_res);
-
-        cap::EndpointMessage *msg = recv_res.value();
-        if (msg == nullptr) {
+        auto future_res = obj.recv();
+        propagate(future_res);
+        auto future = future_res.value();
+        if (!future.readable()) {
+            auto cancel_res = future.cancle();
+            propagate(cancel_res);
             return false;
         }
+
+        auto recv_res = future.value();
+        propagate(recv_res);
+        cap::EndpointMessage *msg = recv_res.value();
         auto msg_guard = delete_guard(util::owner(msg));
 
         auto *packet_out = reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
@@ -237,42 +282,41 @@ namespace syscall {
         return true;
     }
 
-    task::wait::cotask<Result<void>> endpoint_send_sync(
-        CapIdx endpoint, const MsgPacket &packet) {
+    Result<void> endpoint_send_sync(CapIdx endpoint, const MsgPacket &packet) {
         MsgPacket packet_copy = packet;
         auto msg_view_res     = msg_view(packet_copy);
-        co_propagate(msg_view_res);
+        propagate(msg_view_res);
 
+        // send the message
         auto endpoint_res = endpoint_object(endpoint);
-        co_propagate(endpoint_res);
+        propagate(endpoint_res);
         cap::EndpointObject obj = endpoint_res.value();
 
-        // to send synchronously
-        // so here we have to co_await the send method
-        // until the message is actually sent
-        auto send_res =
-            co_await obj.send_sync(current_pid(), msg_view_res.value());
-        co_propagate(send_res);
-        co_return Result<void>{};
+        // wait for the send future to be ready
+        auto future_res = obj.send(current_pid(), msg_view_res.value());
+        propagate(future_res);
+        auto wait_res = task::wait::wait_for(future_res.value());
+        propagate(wait_res);
+        void_return();
     }
 
-    task::wait::cotask<Result<void>> endpoint_recv_sync(CapIdx endpoint,
-                                                        const MsgPacket &packet,
-                                                        UBuffer &&packet_buf) {
+    Result<void> endpoint_recv_sync(CapIdx endpoint, const MsgPacket &packet,
+                                    UBuffer &&packet_buf) {
         auto current_tcb_res = current_tcb();
-        co_propagate(current_tcb_res);
+        propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
-        co_propagate(holder_res);
+        propagate(holder_res);
 
         auto endpoint_res = endpoint_object(endpoint);
-        co_propagate(endpoint_res);
+        propagate(endpoint_res);
         cap::EndpointObject endpoint_obj = endpoint_res.value();
 
-        // to receive synchronously
-        // so here we have to co_await the recv method
-        // until a message is actually received
-        auto recv_res = co_await endpoint_obj.recv_sync();
-        co_propagate(recv_res);
+        // receive the message and get the future
+        auto future_res = endpoint_obj.recv();
+        propagate(future_res);
+        // wait for the future to be ready and get the message
+        auto recv_res = task::wait::wait_for(future_res.value());
+        propagate(recv_res);
 
         cap::EndpointMessage *msg = recv_res.value();
         auto msg_guard            = delete_guard(util::owner(msg));
@@ -280,54 +324,82 @@ namespace syscall {
         auto *packet_out = reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
         auto write_res =
             write_received_msg(holder_res.value(), msg, packet, packet_out);
-        co_propagate(write_res);
+        propagate(write_res);
         auto commit_res = packet_buf.commit_to_user();
-        co_propagate(commit_res);
-        co_return Result<void>{};
+        propagate(commit_res);
+        void_return();
     }
 
-    task::wait::cotask<Result<void>> endpoint_call(
-        CapIdx endpoint, const MsgPacket &send_packet,
-        const MsgPacket &reply_packet, UBuffer &&reply_buf) {
-        // send the call message
-
-        // create the call message
+    Result<void> endpoint_call(CapIdx endpoint, const MsgPacket &send_packet,
+                               const MsgPacket &reply_packet,
+                               UBuffer &&reply_buf) {
         MsgPacket request_packet = send_packet;
         auto msg_view_res        = msg_view(request_packet);
-        co_propagate(msg_view_res);
+        propagate(msg_view_res);
 
         auto current_tcb_res = current_tcb();
-        co_propagate(current_tcb_res);
+        propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
-        co_propagate(holder_res);
+        propagate(holder_res);
         cap::CHolder *holder = holder_res.value();
 
         auto endpoint_res = endpoint_object(endpoint);
-        co_propagate(endpoint_res);
+        propagate(endpoint_res);
         cap::EndpointObject endpoint_obj = endpoint_res.value();
 
-        // call the endpoint and wait for the response
-        auto call_awaiter =
-            endpoint_obj.call(current_pid(), holder, msg_view_res.value());
-        // do the call and co_await for the reply
-        auto call_res = co_await call_awaiter;
-        co_propagate(call_res);
+        auto slots_res = create_reply_slots(holder);
+        propagate(slots_res);
+        ReplySlots slots = slots_res.value();
+        auto caller_guard = remove_guard(holder, slots.caller);
+        auto replier_guard = remove_guard(holder, slots.replier);
 
-        // after the call, the reply was written,
-        // and we're ready to write the reply message back to user space
-        // here we use a guard to ensure
-        // the reply message is properly deleted after we're done
-        cap::EndpointMessage *reply = call_res.value();
+        CapIdx call_capidxs[MAX_MSG_CAPS]{};
+        for (size_t i = 0; i < send_packet.capsz; ++i) {
+            call_capidxs[i] = send_packet.caplist[i];
+        }
+        call_capidxs[send_packet.capsz] = slots.replier;
+        cap::EndpointMsgView call_msg{
+            .msgbuf = reinterpret_cast<const char *>(send_packet.msgbuf),
+            .msgsz = send_packet.msgsz,
+            .capidxs = call_capidxs,
+            .capsz = send_packet.capsz + 1,
+        };
+
+        auto caller_cap_res = holder->lookup(slots.caller);
+        propagate(caller_cap_res);
+        cap::ReplyObject reply_obj(util::nnullforce(caller_cap_res.value()));
+        auto reply_future_res = reply_obj.recv();
+        propagate(reply_future_res);
+
+        auto send_future_res = endpoint_obj.send(current_pid(), call_msg);
+        propagate(send_future_res);
+        auto send_wait_res = task::wait::wait_for(send_future_res.value());
+        if (!send_wait_res.has_value()) {
+            auto cancel_res = reply_future_res.value().cancle();
+            if (!cancel_res.has_value() &&
+                cancel_res.error() != ErrCode::FUTURE_CANCLED &&
+                cancel_res.error() != ErrCode::FUTURE_CONSUMED)
+            {
+                loggers::SYSCALL::WARN("取消 endpoint_call reply future 失败: %s",
+                                       to_cstring(cancel_res.error()));
+            }
+            propagate_return(send_wait_res);
+        }
+
+        replier_guard.release();
+        auto reply_wait_res = task::wait::wait_for(reply_future_res.value());
+        propagate(reply_wait_res);
+        cap::EndpointMessage *reply = reply_wait_res.value();
         auto reply_guard            = delete_guard(util::owner(reply));
+        caller_guard.release();
 
-        // write into the user space
         auto *reply_out = reinterpret_cast<MsgPacket *>(reply_buf.kbuf());
         auto write_reply_res =
             write_received_msg(holder, reply, reply_packet, reply_out);
-        co_propagate(write_reply_res);
+        propagate(write_reply_res);
         auto commit_res = reply_buf.commit_to_user();
-        co_propagate(commit_res);
-        co_return Result<void>{};
+        propagate(commit_res);
+        void_return();
     }
 
     Result<void> endpoint_reply(CapIdx reply_cap,

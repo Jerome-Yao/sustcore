@@ -45,13 +45,14 @@ namespace syscall {
         return cap::NotificationObject(util::nnullforce(cap));
     }
 
-    task::wait::cotask<Result<bool>> wait_notification(CapIdx capidx,
-                                                       size_t idx) {
+    Result<bool> wait_notification(CapIdx capidx, size_t idx) {
         auto notif_res = notif_object(capidx);
-        co_propagate(notif_res);
-        auto wait_res = co_await notif_res.value().wait(idx);
-        co_propagate(wait_res);
-        co_return wait_res.value();
+        propagate(notif_res);
+        auto future_res = notif_res.value().wait(idx);
+        propagate(future_res);
+        auto wait_res = task::wait::wait_for(future_res.value());
+        propagate(wait_res);
+        return wait_res.value();
     }
 
     Result<bool> notification_signal(CapIdx capidx, size_t idx, bool state) {

@@ -33,6 +33,9 @@ enum class ErrCode : int {
     ALLOCATION_FAILED        = GENERIC_ERROR | 0x0007,
     KEY_DUPLICATED           = GENERIC_ERROR | 0x0008,
     FUTURE_ERROR             = GENERIC_ERROR | 0x0009,
+    FUTURE_PENDING           = GENERIC_ERROR | 0x000A,
+    FUTURE_CANCLED           = GENERIC_ERROR | 0x000B,
+    FUTURE_CONSUMED          = GENERIC_ERROR | 0x000C,
     // capability errors
     CAP_ERROR                = 0x01'0000,
     INVALID_CAPABILITY       = CAP_ERROR | 0x0001,
@@ -75,6 +78,9 @@ constexpr const char *to_cstring(ErrCode err) {
         case ErrCode::NULLPTR:            return "NULLPTR";
         case ErrCode::ALLOCATION_FAILED:  return "ALLOCATION_FAILED";
         case ErrCode::FUTURE_ERROR:       return "FUTURE_ERROR";
+        case ErrCode::FUTURE_PENDING:     return "FUTURE_PENDING";
+        case ErrCode::FUTURE_CANCLED:     return "FUTURE_CANCLED";
+        case ErrCode::FUTURE_CONSUMED:    return "FUTURE_CONSUMED";
         case ErrCode::INVALID_CAPABILITY: return "INVALID_CAPABILITY";
         case ErrCode::INSUFFICIENT_PERMISSIONS:
             return "INSUFFICIENT_PERMISSIONS";

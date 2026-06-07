@@ -266,7 +266,7 @@ namespace {
                 return;
             }
 
-            units::time next_interval = _interval;
+            units::time next_interval = _interval * 2;
             auto *next_action         = new TimeKeeperLogAction(
                 event.now, event.now + next_interval, next_interval);
             if (next_action == nullptr) {
@@ -444,8 +444,8 @@ Result<void> init_scheduler() {
 
     auto task = load_res.value();
     assert(task->threads.size() == 1);
-    env::hart_ctx->current_tcb() = idle_res.value();
-    env::hart_ctx->current_pcb() = idle_res.value()->task;
+    env::hart_ctx->current_tcb() = nullptr;
+    env::hart_ctx->current_pcb() = nullptr;
     schd::Scheduler::init(idle_res.value(), task->threads.front());
     schd::Scheduler::inst().init();
     register_scheduler_tick_action();
@@ -559,11 +559,11 @@ void after_init() {
 #endif
 
 #ifdef __CONF_KERNEL_TESTS
-    // auto kthread_test_res = test::kthread::start_logger_yield_test();
-    // if (!kthread_test_res.has_value()) {
-    //     loggers::SUSTCORE::ERROR("启动 kthread logger yield 测试失败: %s",
-    //                              to_cstring(kthread_test_res.error()));
-    // }
+    auto wait_event_test_res = test::kthread::start_wait_event_test();
+    if (!wait_event_test_res.has_value()) {
+        loggers::SUSTCORE::ERROR("启动 wait_event kthread 测试失败: %s",
+                                 to_cstring(wait_event_test_res.error()));
+    }
 #endif
 
     // Kernel tests

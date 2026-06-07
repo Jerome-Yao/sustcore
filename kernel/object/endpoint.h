@@ -48,6 +48,22 @@ namespace cap {
         util::ListHead<EndpointMessage> list_head{};
     };
 
+    struct PendingEndpointSend {
+        util::ListHead<PendingEndpointSend> list_head{};
+        EndpointMessage *message = nullptr;
+        task::wait::Promise<void> promise{};
+    };
+
+    struct PendingEndpointRecv {
+        util::ListHead<PendingEndpointRecv> list_head{};
+        task::wait::Promise<EndpointMessage *> promise{};
+    };
+
+    struct PendingReplyRecv {
+        util::ListHead<PendingReplyRecv> list_head{};
+        task::wait::Promise<EndpointMessage *> promise{};
+    };
+
     /**
      * @brief Endpoint对象的payload.
      *
@@ -57,9 +73,10 @@ namespace cap {
     struct EndpointPayload : public _PayloadHelper<PayloadType::ENDPOINT> {
         util::IntrusiveList<EndpointMessage, &EndpointMessage::list_head>
             messages = {};
-        // 等待队列
-        WaitReasonId send_wait_reason;
-        WaitReasonId recv_wait_reason;
+        util::IntrusiveList<PendingEndpointSend, &PendingEndpointSend::list_head>
+            pending_sends = {};
+        util::IntrusiveList<PendingEndpointRecv, &PendingEndpointRecv::list_head>
+            pending_recvs = {};
 
         EndpointPayload();
         ~EndpointPayload() override;
@@ -73,7 +90,8 @@ namespace cap {
      */
     struct ReplyPayload : public _PayloadHelper<PayloadType::REPLY> {
         EndpointMessage *message = nullptr;
-        WaitReasonId recv_wait_reason;
+        util::IntrusiveList<PendingReplyRecv, &PendingReplyRecv::list_head>
+            pending_recvs = {};
 
         ReplyPayload();
         ~ReplyPayload() override;
@@ -85,32 +103,18 @@ namespace cap {
             : CapObj<EndpointPayload>(cap) {}
 
         /**
-         * @brief 异步向endpoint写入消息.
+         * @brief 向endpoint发送消息, 返回异步完成句柄.
+         *
+         * Future就绪表示该消息已经被接收方消费.
          */
-        Result<bool> send_async(pid_t sender_pid, const EndpointMsgView &msg);
-        /**
-         * @brief 同步发送endpoint消息, 直到消息被接收方消费.
-         */
-        task::wait::cotask<Result<void>> send_sync(
+        Result<task::wait::Future<void>> send(
             pid_t sender_pid, const EndpointMsgView &msg);
         /**
-         * @brief 异步接收endpoint消息.
+         * @brief 发起一次接收请求, 返回异步结果句柄.
          *
+         * Future就绪后可读取接收到的消息指针.
          */
-        Result<EndpointMessage *> recv_async();
-        /**
-         * @brief 同步接收endpoint消息.
-         *
-         */
-        task::wait::cotask<Result<EndpointMessage *>> recv_sync();
-        /**
-         * @brief 发起同步调用, 并返回调用方收到的回复消息.
-         *
-         * 调用过程中会在 holder 中创建 caller/replier Reply Capability,
-         * 将 replier cap 附加到请求消息, 发送后等待 caller 端收到回复.
-         */
-        task::wait::cotask<Result<EndpointMessage *>> call(
-            pid_t sender_pid, CHolder *holder, const EndpointMsgView &msg);
+        Result<task::wait::Future<EndpointMessage *>> recv();
     };
 
     /**
@@ -135,15 +139,8 @@ namespace cap {
         Result<void> reply(pid_t sender_pid, CHolder *holder, CapIdx reply_cap,
                            const EndpointMsgView &msg);
         /**
-         * @brief 非阻塞读取ReplyObject中的回复消息.
-         *
-         * 调用者必须持有CALLER权限; 无消息时返回nullptr.
+         * @brief 发起一次回复读取请求, 返回异步结果句柄.
          */
-        Result<EndpointMessage *> recv_async();
-
-        /**
-         * @brief 同步接收ReplyObject中的回复消息.
-         */
-        task::wait::cotask<Result<EndpointMessage *>> recv_sync();
+        Result<task::wait::Future<EndpointMessage *>> recv();
     };
 }  // namespace cap

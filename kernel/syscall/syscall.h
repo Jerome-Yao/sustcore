@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include <sus/coroutine.h>
 #include <sus/nonnull.h>
 #include <sus/types.h>
 #include <sustcore/errcode.h>
@@ -21,10 +20,6 @@ namespace task {
     struct TCB;
     struct PCB;
     struct SyscallContext;
-    namespace wait {
-        template <typename T>
-        class cotask;
-    }
 }  // namespace task
 
 namespace syscall {
@@ -77,16 +72,6 @@ namespace syscall {
     const char *name_of(b64 sysno);
 
     /**
-     * @brief 判断给定 syscall 是否属于可挂起的协程路径.
-     *
-     * @param sysno syscall 编号.
-     * @return true 该 syscall 可能挂起.
-     * @return false 该 syscall 应同步完成.
-     */
-    [[nodiscard]]
-    bool is_suspendable_syscall(b64 sysno) noexcept;
-
-    /**
      * @brief 同步 syscall 分发入口.
      *
      * @param tcb 当前系统调用所属线程.
@@ -94,15 +79,6 @@ namespace syscall {
      */
     [[nodiscard]]
     RetPack dispatch_sync(util::nonnull<task::TCB *> tcb);
-
-    /**
-     * @brief 可挂起 syscall 分发入口.
-     *
-     * @param tcb 当前系统调用所属线程.
-     * @return task::wait::cotask<void> syscall 协程任务.
-     */
-    [[nodiscard]]
-    task::wait::cotask<void> dispatch_async(util::nonnull<task::TCB *> tcb);
 
     /**
      * @brief 处理一次来自用户态 ECALL 的通用 syscall 生命周期.

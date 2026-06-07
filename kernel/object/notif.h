@@ -76,7 +76,7 @@ namespace cap {
         Result<bool> unsignal(size_t idx);
         Result<bool> set(size_t idx, bool state);
         Result<bool> query(size_t idx);
-        task::wait::cotask<Result<bool>> wait(size_t idx);
+        Result<task::wait::Future<bool>> wait(size_t idx);
     };
 
 }  // namespace cap

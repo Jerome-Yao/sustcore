@@ -4,11 +4,15 @@
  */
 
 #include <logger.h>
+#include <env.h>
 #include <schd/fcfs.h>
+#include <schd/idle.h>
+#include <schd/init.h>
 #include <sus/nonnull.h>
 #include <sus/queue.h>
 #include <sus/tostring.h>
 #include <sustcore/errcode.h>
+#include <task/scheduler.h>
 #include <test/schd/fcfs.h>
 
 #include <algorithm>
@@ -93,6 +97,57 @@ namespace test::schd_test::fcfs {
                     "yield 调用成功");
             ttest((current.basic_entity.flags &
                    schd::SchedMeta::FLAGS_NEED_RESCHED) != 0);
+        }
+    };
+
+    class CaseScheduleReturnsWhenCurrentNull : public TestCase {
+    public:
+        CaseScheduleReturnsWhenCurrentNull()
+            : TestCase("Scheduler 在 bootstrap 前 current 为空时直接返回") {}
+
+        struct FakeThread {
+            task::PCB *task = nullptr;
+            schd::ClassType schd_class = schd::ClassType::BOT;
+            task::TCB::SyscallInfo syscall_info{};
+            schd::SchedMeta basic_entity{};
+            Context kernel_ctx{};
+
+            [[nodiscard]]
+            Context *kernel_context_ptr() noexcept {
+                return &kernel_ctx;
+            }
+        };
+
+        struct FakeScheduler {
+            schd::idle::IDLE<FakeThread> idle_schd;
+            schd::init::INIT<FakeThread> init_schd;
+        };
+
+        void _run(void *env [[maybe_unused]]) const noexcept override {
+            env::HartContext hart_ctx{};
+            auto *previous_hart_ctx = env::hart_ctx;
+            env::hart_ctx           = &hart_ctx;
+
+            FakeThread idle{};
+            FakeThread init{};
+            FakeScheduler fake_scheduler{};
+
+            idle.basic_entity.state = ThreadState::READY;
+            idle.schd_class         = schd::ClassType::IDLE;
+            init.basic_entity.state = ThreadState::READY;
+            init.schd_class         = schd::ClassType::INIT;
+            fake_scheduler.idle_schd.ready = &idle.basic_entity;
+            fake_scheduler.init_schd.ready = &init.basic_entity;
+
+            hart_ctx.current_tcb() = nullptr;
+            hart_ctx.current_pcb() = nullptr;
+
+            expect("current 为空时调用 schedule 应直接返回且不写 current");
+            reinterpret_cast<schd::Scheduler &>(fake_scheduler).schedule();
+            ttest(hart_ctx.current_tcb() == nullptr);
+            ttest(hart_ctx.current_pcb() == nullptr);
+
+            env::hart_ctx = previous_hart_ctx;
         }
     };
 
@@ -245,6 +300,7 @@ namespace test::schd_test::fcfs {
         cases.push_back(new CaseEmptyQueue());
         cases.push_back(new CaseQueueOrder());
         cases.push_back(new CaseYieldFlag());
+        cases.push_back(new CaseScheduleReturnsWhenCurrentNull());
         cases.push_back(new CaseTestRunning());
         framework.add_category(new TestCategory("schd.fcfs", std::move(cases)));
     }

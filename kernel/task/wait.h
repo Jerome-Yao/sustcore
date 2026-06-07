@@ -32,14 +32,19 @@ namespace task::wait {
     template <typename T>
     class Future;
 
+    template <typename T>
+    class Promise;
+
     struct promise_base;
 
     WaitReasonId alloc_reason();
 
     enum class FutureState {
-        COMPLETE,
         PENDING,
+        COMPLETE,
         ERROR,
+        CANCLED,
+        CONSUMED,
     };
 
     struct WaitContext {
@@ -158,6 +163,19 @@ namespace task::wait {
         template <typename T>
         using future_wait_result_t = typename future_wait_result<T>::type;
 
+        template <typename T>
+        struct future_value_storage {
+            using type = Optional<T>;
+        };
+
+        template <>
+        struct future_value_storage<void> {
+            struct type {};
+        };
+
+        template <typename T>
+        using future_value_storage_t = typename future_value_storage<T>::type;
+
         template <typename Promise>
         concept HasWaitContextAccessor = requires(Promise &promise) {
             {
@@ -233,6 +251,35 @@ namespace task::wait {
                 return _awaiter.await_resume();
             }
         };
+
+        template <typename T>
+        struct AsyncState {
+            FutureState state = FutureState::PENDING;
+            WaitReasonId wait_reason = 0;
+            size_t ref_count = 0;
+            ErrCode error = ErrCode::FUTURE_ERROR;
+            future_value_storage_t<T> value{};
+            std::function<Result<void>()> cancel_callback{};
+
+            AsyncState() = default;
+
+            explicit AsyncState(WaitReasonId reason) noexcept
+                : state(FutureState::PENDING),
+                  wait_reason(reason),
+                  ref_count(0),
+                  error(ErrCode::FUTURE_ERROR),
+                  value(),
+                  cancel_callback() {}
+        };
+
+        template <typename T>
+        [[nodiscard]]
+        constexpr bool future_ready_state(FutureState state) noexcept {
+            return state == FutureState::COMPLETE ||
+                   state == FutureState::ERROR ||
+                   state == FutureState::CANCLED ||
+                   state == FutureState::CONSUMED;
+        }
     }  // namespace detail
 
     template <typename T>
@@ -625,34 +672,75 @@ namespace task::wait {
         using value_type       = T;
         using wait_result_type = detail::future_wait_result_t<T>;
 
-        Future() noexcept
-            : _wait_reason(alloc_reason()),
-              _completed(false),
-              _consumed(false),
-              _value() {}
+        Future() noexcept = default;
 
-        Future(const Future &)            = delete;
-        Future &operator=(const Future &) = delete;
-        Future(Future &&)                 = delete;
-        Future &operator=(Future &&)      = delete;
+        explicit Future(detail::AsyncState<T> *state) noexcept : _state(state) {
+            acquire();
+        }
+
+        Future(const Future &other) noexcept : _state(other._state) {
+            acquire();
+        }
+
+        Future &operator=(const Future &other) noexcept {
+            if (this != &other) {
+                release();
+                _state = other._state;
+                acquire();
+            }
+            return *this;
+        }
+
+        Future(Future &&other) noexcept : _state(other._state) {
+            other._state = nullptr;
+        }
+
+        Future &operator=(Future &&other) noexcept {
+            if (this != &other) {
+                release();
+                _state = other._state;
+                other._state = nullptr;
+            }
+            return *this;
+        }
+
+        ~Future() {
+            release();
+        }
+
+        [[nodiscard]]
+        bool valid() const noexcept {
+            return _state != nullptr;
+        }
+
+        [[nodiscard]]
+        FutureState state() const noexcept {
+            return _state != nullptr ? _state->state : FutureState::ERROR;
+        }
 
         [[nodiscard]]
         bool completed() const noexcept {
-            return _completed;
+            return _state != nullptr && _state->state == FutureState::COMPLETE;
         }
 
         [[nodiscard]]
         bool consumed() const noexcept {
-            return _consumed;
+            return _state != nullptr && _state->state == FutureState::CONSUMED;
+        }
+
+        [[nodiscard]]
+        bool readable() const noexcept {
+            return _state != nullptr &&
+                   detail::future_ready_state<T>(_state->state);
         }
 
         [[nodiscard]]
         WaitReasonId wait_reason() const noexcept {
-            return _wait_reason;
+            return _state != nullptr ? _state->wait_reason : 0;
         }
 
-        Result<void> set_value(T value);
-        Result<T> take_value();
+        Result<void> cancle() noexcept;
+        wait_result_type value();
 
         struct awaiter {
         private:
@@ -663,12 +751,12 @@ namespace task::wait {
 
             [[nodiscard]]
             bool await_ready() const noexcept {
-                return future == nullptr || future->completed();
+                return future == nullptr || future->readable();
             }
 
             template <typename Promise>
             bool await_suspend(std::coroutine_handle<Promise> handle) noexcept {
-                if (future == nullptr || future->completed()) {
+                if (future == nullptr || future->readable()) {
                     return false;
                 }
                 if constexpr (!detail::HasWaitContextAccessor<Promise>) {
@@ -679,8 +767,8 @@ namespace task::wait {
                     wait_context.state           = FutureState::PENDING;
                     wait_context.wait_reason     = future->wait_reason();
                     wait_context.wait_predicate  = {};
-                    wait_context.ready_predicate = [future = future]() {
-                        return future != nullptr && future->completed();
+                    wait_context.ready_predicate = [future = future]() noexcept {
+                        return future != nullptr && future->readable();
                     };
                     wait_context.suspended_leaf = handle;
                     promise.propagate_wait_context_chain();
@@ -698,10 +786,236 @@ namespace task::wait {
         awaiter operator co_await() const = delete;
 
     private:
-        WaitReasonId _wait_reason;
-        bool _completed;
-        bool _consumed;
-        Optional<T> _value;
+        void acquire() noexcept {
+            if (_state != nullptr) {
+                ++_state->ref_count;
+            }
+        }
+
+        void release() noexcept {
+            if (_state == nullptr) {
+                return;
+            }
+            assert(_state->ref_count > 0);
+            --_state->ref_count;
+            if (_state->ref_count == 0) {
+                delete _state;
+            }
+            _state = nullptr;
+        }
+
+        detail::AsyncState<T> *_state = nullptr;
+    };
+
+    template <typename T>
+    class Promise {
+    public:
+        Promise() : _state(new detail::AsyncState<T>(alloc_reason())) {
+            assert(_state != nullptr);
+            _state->ref_count = 1;
+        }
+
+        Promise(const Promise &)            = delete;
+        Promise &operator=(const Promise &) = delete;
+
+        Promise(Promise &&other) noexcept : _state(other._state) {
+            other._state = nullptr;
+        }
+
+        Promise &operator=(Promise &&other) noexcept {
+            if (this != &other) {
+                release();
+                _state = other._state;
+                other._state = nullptr;
+            }
+            return *this;
+        }
+
+        ~Promise() {
+            release();
+        }
+
+        [[nodiscard]]
+        Future<T> future() const noexcept {
+            return Future<T>(_state);
+        }
+
+        [[nodiscard]]
+        WaitReasonId wait_reason() const noexcept {
+            return _state != nullptr ? _state->wait_reason : 0;
+        }
+
+        Result<void> set_value(T value);
+        Result<void> set_error(ErrCode error) noexcept;
+        Result<void> set_cancled() noexcept;
+        Result<void> set_cancel_callback(
+            std::function<Result<void>()> callback) noexcept {
+            if (_state == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            _state->cancel_callback = std::move(callback);
+            void_return();
+        }
+
+    private:
+        void release() noexcept {
+            if (_state == nullptr) {
+                return;
+            }
+            assert(_state->ref_count > 0);
+            --_state->ref_count;
+            if (_state->ref_count == 0) {
+                delete _state;
+            }
+            _state = nullptr;
+        }
+
+        detail::AsyncState<T> *_state = nullptr;
+    };
+
+    template <>
+    class Future<void> {
+    public:
+        using value_type = void;
+        using wait_result_type = Result<void>;
+
+        Future() noexcept = default;
+
+        explicit Future(detail::AsyncState<void> *state) noexcept
+            : _state(state) {
+            acquire();
+        }
+
+        Future(const Future &other) noexcept : _state(other._state) {
+            acquire();
+        }
+
+        Future &operator=(const Future &other) noexcept {
+            if (this != &other) {
+                release();
+                _state = other._state;
+                acquire();
+            }
+            return *this;
+        }
+
+        Future(Future &&other) noexcept : _state(other._state) {
+            other._state = nullptr;
+        }
+
+        Future &operator=(Future &&other) noexcept {
+            if (this != &other) {
+                release();
+                _state = other._state;
+                other._state = nullptr;
+            }
+            return *this;
+        }
+
+        ~Future() {
+            release();
+        }
+
+        [[nodiscard]]
+        bool valid() const noexcept {
+            return _state != nullptr;
+        }
+
+        [[nodiscard]]
+        bool readable() const noexcept {
+            return _state != nullptr &&
+                   detail::future_ready_state<void>(_state->state);
+        }
+
+        [[nodiscard]]
+        WaitReasonId wait_reason() const noexcept {
+            return _state != nullptr ? _state->wait_reason : 0;
+        }
+
+        Result<void> cancle() noexcept;
+        Result<void> value();
+
+    private:
+        void acquire() noexcept {
+            if (_state != nullptr) {
+                ++_state->ref_count;
+            }
+        }
+
+        void release() noexcept {
+            if (_state == nullptr) {
+                return;
+            }
+            assert(_state->ref_count > 0);
+            --_state->ref_count;
+            if (_state->ref_count == 0) {
+                delete _state;
+            }
+            _state = nullptr;
+        }
+
+        detail::AsyncState<void> *_state = nullptr;
+    };
+
+    template <>
+    class Promise<void> {
+    public:
+        Promise() : _state(new detail::AsyncState<void>(alloc_reason())) {
+            assert(_state != nullptr);
+            _state->ref_count = 1;
+        }
+
+        Promise(const Promise &)            = delete;
+        Promise &operator=(const Promise &) = delete;
+
+        Promise(Promise &&other) noexcept : _state(other._state) {
+            other._state = nullptr;
+        }
+
+        Promise &operator=(Promise &&other) noexcept {
+            if (this != &other) {
+                release();
+                _state = other._state;
+                other._state = nullptr;
+            }
+            return *this;
+        }
+
+        ~Promise() {
+            release();
+        }
+
+        [[nodiscard]]
+        Future<void> future() const noexcept {
+            return Future<void>(_state);
+        }
+
+        Result<void> set_value();
+        Result<void> set_error(ErrCode error) noexcept;
+        Result<void> set_cancled() noexcept;
+        Result<void> set_cancel_callback(
+            std::function<Result<void>()> callback) noexcept {
+            if (_state == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            _state->cancel_callback = std::move(callback);
+            void_return();
+        }
+
+    private:
+        void release() noexcept {
+            if (_state == nullptr) {
+                return;
+            }
+            assert(_state->ref_count > 0);
+            --_state->ref_count;
+            if (_state->ref_count == 0) {
+                delete _state;
+            }
+            _state = nullptr;
+        }
+
+        detail::AsyncState<void> *_state = nullptr;
     };
 
     /**
@@ -799,15 +1113,7 @@ namespace task::wait {
 
     template <typename T>
     typename detail::future_wait_result_t<T> take_wait_result(Future<T> &future) {
-        auto value_res = future.take_value();
-        if constexpr (detail::is_result_type_v<T>) {
-            if (!value_res.has_value()) {
-                return std::unexpected(value_res.error());
-            }
-            return value_res.value();
-        } else {
-            return value_res;
-        }
+        return future.value();
     }
 
     // 等待队列
@@ -865,22 +1171,17 @@ namespace task::wait {
     Result<void> deprecated_wait_current(WaitReasonId id,
                                          WaitPredicate predicate);
     /**
-     * @brief 将 syscall 线程登记到等待队列中.
+     * @brief 等待指定事件变为就绪.
      *
-     * 调用者需要先确保 `tcb->syscall_info.handle` 已经指向最内层挂起的
-     * coroutine handle.
-     */
-    Result<void> register_syscall_wait(
-        TCB *tcb, const WaitContext &wait_context) noexcept;
-    /**
-     * @brief 在目标线程真正被调度运行前恢复其挂起的 syscall 协程.
+     * 该接口面向普通线程阻塞场景: 在每次进入等待前以及被唤醒返回后
+     * 都会重新检查 ready_predicate, 直到其返回 true.
      *
-     * @param tcb 即将进入运行态的线程.
-     * @return true 该线程可以继续参与本轮调度.
-     * @return false 该线程恢复后重新进入等待或恢复失败, 需要跳过.
+     * @param id 等待原因号, 必须非 0.
+     * @param ready_predicate 事件就绪判断函数, 必须非空.
+     * @return Result<void> 成功返回空结果, 失败返回错误码.
      */
-    [[nodiscard]]
-    bool resume_deferred_syscall(TCB *tcb) noexcept;
+    Result<void> wait_event(WaitReasonId id,
+                            WaitReadyPredicate ready_predicate) noexcept;
     Result<TCB *> peek_one(WaitReasonId id);
     Result<size_t> wake_one(WaitReasonId id);
     Result<size_t> wake_all(WaitReasonId id);

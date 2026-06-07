@@ -157,8 +157,9 @@ namespace test::coroutine {
         }
 
         task::wait::cotask<Result<int>> co_await_ready_future() {
-            task::wait::Future<int> future;
-            auto set_res = future.set_value(31);
+            task::wait::Promise<int> promise;
+            auto future  = promise.future();
+            auto set_res = promise.set_value(31);
             if (!set_res.has_value()) {
                 co_return std::unexpected(set_res.error());
             }
@@ -167,8 +168,9 @@ namespace test::coroutine {
         }
 
         task::wait::cotask<Result<int>> co_await_result_future() {
-            task::wait::Future<Result<int>> future;
-            auto set_res = future.set_value(Result<int>{47});
+            task::wait::Promise<Result<int>> promise;
+            auto future  = promise.future();
+            auto set_res = promise.set_value(Result<int>{47});
             if (!set_res.has_value()) {
                 co_return std::unexpected(set_res.error());
             }

@@ -94,7 +94,6 @@ namespace task {
         syscall_number = 0;
         syscall_result = {};
         syscall_state  = State::NONE;
-        handle         = nullptr;
         context        = {};
     }
 

@@ -17,8 +17,7 @@
 #include <cstddef>
 
 namespace syscall {
-    task::wait::cotask<Result<bool>> wait_notification(CapIdx capidx,
-                                                       size_t idx);
+    Result<bool> wait_notification(CapIdx capidx, size_t idx);
     Result<bool> notification_signal(CapIdx capidx, size_t idx, bool state);
     Result<bool> check_notification(CapIdx capidx, size_t idx);
     Result<CapIdx> notification_create();

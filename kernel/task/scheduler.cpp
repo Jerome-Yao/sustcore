@@ -184,13 +184,6 @@ namespace schd {
                 return false;
             }
         }
-        if (tcb->syscall_info.executing()) {
-            loggers::SUSTCORE::ERROR(
-                "跳过仍在执行 syscall 的线程: pid=%lu tid=%lu sysno=0x%lx",
-                tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
-                tcb->syscall_info.syscall_number);
-            return false;
-        }
         return true;
     }
 
@@ -200,12 +193,6 @@ namespace schd {
             propagate(next_res);
             TCB *next = next_res.value();
             prepare_switch(next);
-
-            if (!task::wait::resume_deferred_syscall(next)) {
-                next->basic_entity
-                    .template flags_set<SchedMeta::FLAGS_NEED_RESCHED>();
-                continue;
-            }
 
             if (can_schedule_tcb(next)) {
                 return util::nnullforce(next);
@@ -397,25 +384,20 @@ namespace schd {
     }
 
     void Scheduler::init() {
-        // Scheduler构造时已经将内核idle线程设为当前线程, INIT线程为ready.
-        if (current_tcb() == nullptr || current_pcb() == nullptr) {
-            loggers::SUSTCORE::ERROR("IDLE线程无效");
+        if (_idle_schd.ready == nullptr || _init_schd.ready == nullptr) {
+            loggers::SUSTCORE::ERROR("调度器启动前实体无效");
+            panic("调度器崩溃!");
+        }
+        if (current_tcb() != nullptr || current_pcb() != nullptr) {
+            loggers::SUSTCORE::ERROR("调度器初始化阶段 current 不应已就绪");
             panic("调度器崩溃!");
         }
     }
 
     [[noreturn]]
     void Scheduler::bootstrap_tasks() {
-        auto *current = current_tcb();
-        if (current == nullptr) {
-            loggers::SUSTCORE::ERROR("没有当前线程, 无法启动调度");
-            panic("调度器崩溃!");
-        }
-        auto put_prev_res = prepare_prev_task(current);
-        if (!put_prev_res.has_value()) {
-            loggers::SUSTCORE::ERROR(
-                "bootstrap_tasks 准备当前线程失败: %s",
-                to_cstring(put_prev_res.error()));
+        if (current_tcb() != nullptr || current_pcb() != nullptr) {
+            loggers::SUSTCORE::ERROR("bootstrap_tasks 前 current 必须为空");
             panic("调度器崩溃!");
         }
         auto next_res = prepare_next_task();
