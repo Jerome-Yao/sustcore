@@ -16,13 +16,25 @@
 #include <sustcore/addr.h>
 #include <sustcore/capability.h>
 #include <syscall/cap.h>
+#include <task/scheduler.h>
 namespace syscall {
+    namespace {
+        [[nodiscard]]
+        Result<task::TCB *> running_tcb() noexcept {
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current == nullptr || current->task == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return current;
+        }
+    }  // namespace
+
     /**
      * @brief 获取当前线程的 capability holder.
      */
     [[nodiscard]]
     static Result<cap::CHolder *> current_holder() noexcept {
-        auto tcb_res = current_tcb();
+        auto tcb_res = running_tcb();
         propagate(tcb_res);
         if (tcb_res.value()->task->cholder == nullptr)
         {
@@ -56,7 +68,7 @@ namespace syscall {
     }
 
     Result<bool> sys_cap_lookup(CapIdx idx, UBuffer &&info_buf) {
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto *current = current_tcb_res.value();
         auto *holder = current->task->cholder;

@@ -16,12 +16,24 @@
 #include <sustcore/capability.h>
 #include <sustcore/errcode.h>
 #include <syscall/notif.h>
+#include <task/scheduler.h>
 namespace syscall {
+    namespace {
+        [[nodiscard]]
+        Result<task::TCB *> running_tcb() noexcept {
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current == nullptr || current->task == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return current;
+        }
+    }  // namespace
+
     /**
      * @brief 获取当前线程的 capability holder.
      */
     static Result<cap::CHolder *> current_holder() {
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto *current_tcb = current_tcb_res.value();
         if (current_tcb->task == nullptr ||

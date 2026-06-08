@@ -18,8 +18,6 @@
 struct Riscv64Context;
 namespace task {
     struct TCB;
-    struct PCB;
-    struct SyscallContext;
 }  // namespace task
 
 namespace syscall {
@@ -38,55 +36,28 @@ namespace syscall {
         b64 ret1;
     };
 
-    /**
-     * @brief 当前正在由专用协程线程执行的 syscall 上下文.
-     *
-     * @return task::SyscallContext* 当前上下文.
-     */
-    [[nodiscard]]
-    task::SyscallContext *active_context() noexcept;
-
-    /**
-     * @brief 设置当前专用协程线程绑定的 syscall 上下文.
-     *
-     * @param context 要绑定的上下文.
-     */
-    void set_active_context(task::SyscallContext *context) noexcept;
-
-    /**
-     * @brief 获取当前 syscall 所属线程.
-     *
-     * @return Result<task::TCB *> 成功时返回线程指针.
-     */
-    [[nodiscard]]
-    Result<task::TCB *> current_tcb() noexcept;
-
-    /**
-     * @brief 获取当前 syscall 所属进程.
-     *
-     * @return Result<task::PCB *> 成功时返回进程指针.
-     */
-    [[nodiscard]]
-    Result<task::PCB *> current_pcb() noexcept;
-
     const char *name_of(b64 sysno);
 
     /**
      * @brief 同步 syscall 分发入口.
      *
      * @param tcb 当前系统调用所属线程.
+     * @param trap_context 当前系统调用对应的 trap 上下文.
+     * @param args 已由架构层解析完成的参数包.
      * @return RetPack 同步执行结果.
      */
     [[nodiscard]]
-    RetPack dispatch_sync(util::nonnull<task::TCB *> tcb);
+    RetPack dispatch_sync(util::nonnull<task::TCB *> tcb,
+                          util::nonnull<Riscv64Context *> trap_context,
+                          const ArgPack &args);
 
     /**
      * @brief 处理一次来自用户态 ECALL 的通用 syscall 生命周期.
      *
      * @param tcb 当前系统调用所属线程.
      * @param args 已由架构层解析完成的参数包.
-     * @param context 已由架构层构造完成的 syscall 上下文.
      */
-    void handle_user_ecall(util::nonnull<task::TCB *> tcb, const ArgPack &args,
-                           const task::SyscallContext &context) noexcept;
+    void handle_user_ecall(util::nonnull<task::TCB *> tcb,
+                           util::nonnull<Riscv64Context *> trap_context,
+                           const ArgPack &args) noexcept;
 }  // namespace syscall

@@ -15,18 +15,12 @@ namespace cap {
     namespace {
         /**
          * @brief 获取当前正在驱动对象操作的线程.
-         *
-         * syscall 轻量协程路径优先使用显式 syscall 上下文;
-         * 其他路径退化为调度器当前线程.
+         * 统一退化为调度器当前线程.
          *
          * @return task::TCB* 当前线程指针.
          */
         [[nodiscard]]
         task::TCB *current_object_tcb() noexcept {
-            auto *sysctx = syscall::active_context();
-            if (sysctx != nullptr && sysctx->tcb != nullptr) {
-                return sysctx->tcb;
-            }
             return schd::Scheduler::inst().current_tcb();
         }
     }  // namespace

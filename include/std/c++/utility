@@ -11,29 +11,15 @@
 
 #pragma once
 
+#include <bits/move.h>
 #include <type_traits>
 
 namespace std {
-
-    template <typename T>
-    constexpr typename remove_reference<T>::type&& move(T&& t) {
-        return static_cast<typename remove_reference<T>::type&&>(t);
-    }
     template <class T>
     constexpr void swap(T& a, T& b) {
         T temp = std::move(a);
         a      = std::move(b);
         b      = std::move(temp);
-    }
-
-    template <typename T>
-    constexpr T&& forward(typename remove_reference<T>::type& t) {
-        return static_cast<T&&>(t);
-    }
-
-    template <typename T>
-    constexpr T&& forward(typename remove_reference<T>::type&& t) {
-        return static_cast<T&&>(t);
     }
 
     // interger_sequence
@@ -60,8 +46,8 @@ namespace std {
 
     template <class _T1, class _T2>
     struct pair {
-        typedef _T1 first_type;
-        typedef _T2 second_type;
+        using first_type = _T1;
+        using second_type = _T2;
 
         _T1 first;
         _T2 second;

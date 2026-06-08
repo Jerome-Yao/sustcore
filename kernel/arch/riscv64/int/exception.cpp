@@ -666,16 +666,9 @@ namespace exception {
             "系统调用参数: arg3=0x%lx, arg4=0x%lx, sepc=0x%lx", args.args[3],
             args.args[4], sepc);
 
-        task::SyscallContext context{
-            .tcb = current_tcb,
-            .pcb = current_tcb->task,
-            .tmm = current_tcb->task != nullptr ? current_tcb->task->tmm.get()
-                                                : nullptr,
-            .trap_context = ctx,
-        };
         ctx->sepc += 4;
-        syscall::handle_user_ecall(util::nnullforce(current_tcb), args,
-                                   context);
+        syscall::handle_user_ecall(util::nnullforce(current_tcb),
+                                   util::nnullforce(ctx), args);
         env::inst().trap_context(env::key::trap_context()) = nullptr;
         return true;
     }

@@ -35,19 +35,6 @@ namespace task {
     struct PCB;
     using KThreadEntry = void (*)(void *);
 
-    /**
-     * @brief syscall 协程执行时使用的显式上下文.
-     *
-     * 轻量级内核协程不能依赖 current_tcb/current_pcb/tmm 等动态全局状态,
-     * 因此所有 syscall 协程都必须通过该上下文访问其所属线程和地址空间.
-     */
-    struct SyscallContext {
-        TCB *tcb                    = nullptr;
-        PCB *pcb                    = nullptr;
-        TaskMemoryManager *tmm      = nullptr;
-        Context *trap_context       = nullptr;
-    };
-
     namespace wait {
         using WaitPredicate      = std::function<bool(TCB *tcb)>;
         using WaitReadyPredicate = std::function<bool()>;
@@ -78,8 +65,6 @@ namespace task {
             syscall::RetPack syscall_result{};
             /// syscall 当前状态.
             State syscall_state = State::NONE;
-            /// syscall 协程的显式执行上下文.
-            SyscallContext context{};
 
             /**
              * @brief 清空 syscall 生命周期状态.

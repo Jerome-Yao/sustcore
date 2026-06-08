@@ -23,12 +23,24 @@
 #include <sustcore/capability.h>
 #include <syscall/task.h>
 #include <syscall/uaccess.h>
+#include <task/scheduler.h>
 #include <task/task.h>
 
 #include <cassert>
 #include <cstring>
 
 namespace syscall {
+    namespace {
+        [[nodiscard]]
+        Result<task::TCB *> running_tcb() noexcept {
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current == nullptr || current->task == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return current;
+        }
+    }  // namespace
+
     /**
      * @brief 获取当前线程.
      */
@@ -36,7 +48,7 @@ namespace syscall {
      * @brief 获取当前线程所属的 capability holder.
      */
     static Result<cap::CHolder *> current_holder() {
-        auto tcb_res = current_tcb();
+        auto tcb_res = running_tcb();
         propagate(tcb_res);
         if (tcb_res.value()->task->cholder == nullptr) {
             unexpect_return(ErrCode::INVALID_PARAM);
@@ -234,7 +246,7 @@ namespace syscall {
         cap::PCBObject obj(util::nnullforce(cap));
         auto target_res = obj.require_new_thread();
         propagate(target_res);
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto *current = current_tcb_res.value();
         if (current->task != target_res.value()) {
@@ -253,7 +265,7 @@ namespace syscall {
         cap::PCBObject obj(util::nnullforce(cap));
         auto target_res = obj.require_new_process();
         propagate(target_res);
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto *current = current_tcb_res.value();
         if (current->task != target_res.value()) {
@@ -340,7 +352,7 @@ namespace syscall {
     }
 
     bool pcb_is_current(CapIdx pcb_cap) {
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         if (!current_tcb_res.has_value()) {
             return false;
         }

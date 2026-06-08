@@ -27,9 +27,6 @@
 
 namespace syscall {
     namespace {
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-        task::SyscallContext *inst_active_context = nullptr;
-
         /**
          * @brief 生成布尔型 syscall 返回包.
          *
@@ -117,17 +114,17 @@ namespace syscall {
             sys_write_serial(str.kbuf(), len);
         }
 
-        void begin_user_syscall(task::TCB *tcb, const ArgPack &args,
-                                const task::SyscallContext &context) noexcept {
+        void begin_user_syscall(task::TCB *tcb, const ArgPack &args) noexcept {
             assert(tcb != nullptr);
             tcb->syscall_info.begin(args);
-            tcb->syscall_info.context = context;
         }
 
-        void handle_sync_user_syscall(task::TCB *tcb,
+        void handle_sync_user_syscall(task::TCB *tcb, Context *trap_context,
                                       const ArgPack &args) noexcept {
             assert(tcb != nullptr);
-            auto ret = dispatch_sync(util::nnullforce(tcb));
+            assert(trap_context != nullptr);
+            auto ret = dispatch_sync(util::nnullforce(tcb),
+                                     util::nnullforce(trap_context), args);
             tcb->syscall_info.complete(ret);
             loggers::SYSCALL::DEBUG(
                 "同步 syscall 立即完成: pid=%lu tid=%lu sysno=0x%lx",
@@ -138,32 +135,6 @@ namespace syscall {
     }  // namespace
 
     constexpr size_t MAX_SYSCALL_PATH = 256;
-
-    task::SyscallContext *active_context() noexcept {
-        return inst_active_context;
-    }
-
-    void set_active_context(task::SyscallContext *context) noexcept {
-        inst_active_context = context;
-    }
-
-    Result<task::TCB *> current_tcb() noexcept {
-        if (inst_active_context == nullptr ||
-            inst_active_context->tcb == nullptr)
-        {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-        return inst_active_context->tcb;
-    }
-
-    Result<task::PCB *> current_pcb() noexcept {
-        if (inst_active_context == nullptr ||
-            inst_active_context->pcb == nullptr)
-        {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-        return inst_active_context->pcb;
-    }
 
     const char *name_of(b64 sysno) {
         switch (sysno) {
@@ -203,7 +174,9 @@ namespace syscall {
         }
     }
 
-    RetPack dispatch_sync(util::nonnull<task::TCB *> tcb) {
+    RetPack dispatch_sync(util::nonnull<task::TCB *> tcb,
+                          util::nonnull<Context *> trap_context,
+                          const ArgPack &args) {
         if (tcb->task == nullptr) {
             return RetPack{
                 .processed = false,
@@ -211,16 +184,6 @@ namespace syscall {
                 .ret1      = static_cast<b64>(ErrCode::INVALID_PARAM),
             };
         }
-        task::SyscallContext context{
-            .tcb          = tcb,
-            .pcb          = tcb->task,
-            .tmm          = tcb->task->tmm.get(),
-            .trap_context = tcb->syscall_info.context.trap_context,
-        };
-        set_active_context(&context);
-        tcb->syscall_info.context = context;
-
-        ArgPack args = tcb->syscall_info.syscall_args;
         b64 arg0     = args.args[0];
         b64 arg1     = args.args[1];
         b64 arg2     = args.args[2];
@@ -492,14 +455,15 @@ namespace syscall {
                 break;
             }
         }
-        set_active_context(nullptr);
+        trap_context->write_ret(ret);
         return ret;
     }
 
-    void handle_user_ecall(util::nonnull<task::TCB *> tcb, const ArgPack &args,
-                           const task::SyscallContext &context) noexcept {
+    void handle_user_ecall(util::nonnull<task::TCB *> tcb,
+                           util::nonnull<Context *> trap_context,
+                           const ArgPack &args) noexcept {
         Interrupt::sti();
-        begin_user_syscall(tcb, args, context);
-        handle_sync_user_syscall(tcb, args);
+        begin_user_syscall(tcb, args);
+        handle_sync_user_syscall(tcb.get(), trap_context.get(), args);
     }
 }  // namespace syscall

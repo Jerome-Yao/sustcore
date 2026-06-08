@@ -20,12 +20,28 @@
 #include <cstring>
 
 namespace {
+    [[nodiscard]]
+    Result<task::TCB *> running_tcb() noexcept {
+        auto *current = schd::Scheduler::inst().current_tcb();
+        if (current == nullptr || current->task == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return current;
+    }
+
+    [[nodiscard]]
+    Result<task::PCB *> running_pcb() noexcept {
+        auto tcb_res = running_tcb();
+        propagate(tcb_res);
+        return tcb_res.value()->task;
+    }
+
     /**
      * @brief 获取当前线程的 capability holder.
      */
     [[nodiscard]]
     Result<cap::CHolder *> current_holder() noexcept {
-        auto tcb_res = syscall::current_tcb();
+        auto tcb_res = running_tcb();
         propagate(tcb_res);
         if (tcb_res.value()->task->cholder == nullptr)
         {
@@ -78,7 +94,7 @@ namespace syscall {
         cap::Capability *cap = nullptr;
         auto memory_res      = lookup_memory(idx, &cap);
         propagate(memory_res);
-        auto pcb_res = syscall::current_pcb();
+        auto pcb_res = running_pcb();
         propagate(pcb_res);
         auto *tmm = pcb_res.value()->tmm.get();
         if (tmm == nullptr) {
@@ -95,7 +111,7 @@ namespace syscall {
         auto memory_res      = lookup_memory(idx, &cap);
         propagate(memory_res);
         cap::MemoryObject obj(util::nnullforce(cap));
-        auto pcb_res    = syscall::current_pcb();
+        auto pcb_res    = running_pcb();
         propagate(pcb_res);
         auto *tmm       = pcb_res.value()->tmm.get();
         auto resize_res = obj.resize_in(tmm, newsz);

@@ -17,6 +17,7 @@
 #include <syscall/endpoint.h>
 #include <syscall/syscall.h>
 #include <syscall/uaccess.h>
+#include <task/scheduler.h>
 #include <task/task.h>
 #include <task/wait.h>
 
@@ -27,6 +28,15 @@
 
 namespace syscall {
     namespace {
+        [[nodiscard]]
+        Result<task::TCB *> running_tcb() noexcept {
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current == nullptr || current->task == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            return current;
+        }
+
         struct ReplySlots {
             CapIdx caller  = cap::null;
             CapIdx replier = cap::null;
@@ -37,7 +47,7 @@ namespace syscall {
          */
         [[nodiscard]]
         Result<cap::EndpointObject> endpoint_object(CapIdx capidx) noexcept {
-            auto tcb_res = current_tcb();
+            auto tcb_res = running_tcb();
             propagate(tcb_res);
             auto *holder = tcb_res.value()->task->cholder;
             if (holder == nullptr) {
@@ -57,7 +67,7 @@ namespace syscall {
          */
         [[nodiscard]]
         Result<cap::ReplyObject> reply_object(CapIdx capidx) noexcept {
-            auto tcb_res = current_tcb();
+            auto tcb_res = running_tcb();
             propagate(tcb_res);
             auto *holder = tcb_res.value()->task->cholder;
             if (holder == nullptr) {
@@ -77,7 +87,7 @@ namespace syscall {
          */
         [[nodiscard]]
         pid_t current_pid() noexcept {
-            auto tcb_res = current_tcb();
+            auto tcb_res = running_tcb();
             return tcb_res.has_value() ? tcb_res.value()->task->pid : 0;
         }
 
@@ -216,7 +226,7 @@ namespace syscall {
     }  // namespace
 
     Result<CapIdx> endpoint_create() {
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
         propagate(holder_res);
@@ -249,7 +259,7 @@ namespace syscall {
 
     Result<bool> endpoint_recv_async(CapIdx endpoint, const MsgPacket &packet,
                                      UBuffer &&packet_buf) {
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
         propagate(holder_res);
@@ -302,7 +312,7 @@ namespace syscall {
 
     Result<void> endpoint_recv_sync(CapIdx endpoint, const MsgPacket &packet,
                                     UBuffer &&packet_buf) {
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
         propagate(holder_res);
@@ -337,7 +347,7 @@ namespace syscall {
         auto msg_view_res        = msg_view(request_packet);
         propagate(msg_view_res);
 
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
         propagate(holder_res);
@@ -404,7 +414,7 @@ namespace syscall {
         auto msg_view_res           = msg_view(reply_packet_copy);
         propagate(msg_view_res);
 
-        auto current_tcb_res = current_tcb();
+        auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);
         auto holder_res = current_holder(current_tcb_res.value());
         propagate(holder_res);

@@ -138,22 +138,6 @@ namespace schd {
         return util::nnullforce(next);
     }
 
-    Result<void> Scheduler::commit_completed_syscall(TCB *tcb) noexcept {
-        if (tcb == nullptr || !tcb->syscall_info.completed()) {
-            void_return();
-        }
-
-        loggers::SYSCALL::DEBUG(
-            "提交 syscall 返回值: pid=%lu tid=%lu sysno=0x%lx ret0=0x%lx "
-            "ret1=0x%lx",
-            tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
-            tcb->syscall_info.syscall_number, tcb->syscall_info.syscall_result.ret0,
-            tcb->syscall_info.syscall_result.ret1);
-        tcb->context()->write_ret(tcb->syscall_info.syscall_result);
-        tcb->syscall_info.reset();
-        void_return();
-    }
-
     Result<void> Scheduler::prepare_prev_task(TCB *tcb) noexcept {
         if (tcb == nullptr || tcb->basic_entity.state == ThreadState::WAITING) {
             void_return();
@@ -173,16 +157,6 @@ namespace schd {
     bool Scheduler::can_schedule_tcb(TCB *tcb) noexcept {
         if (tcb == nullptr) {
             return false;
-        }
-        if (tcb->syscall_info.completed()) {
-            auto commit_res = commit_completed_syscall(tcb);
-            if (!commit_res.has_value()) {
-                loggers::SUSTCORE::ERROR(
-                    "提交已完成 syscall 失败: pid=%lu tid=%lu err=%s",
-                    tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
-                    to_cstring(commit_res.error()));
-                return false;
-            }
         }
         return true;
     }
@@ -241,17 +215,6 @@ namespace schd {
         if (current == nullptr) {
             // 没有正在运行的线程, 调度器未启动, 直接返回
             return;
-        }
-
-        if (current->syscall_info.completed()) {
-            auto commit_res = commit_completed_syscall(current);
-            if (!commit_res.has_value()) {
-                loggers::SUSTCORE::ERROR(
-                    "提交当前线程已完成 syscall 失败: pid=%lu tid=%lu err=%s",
-                    current->task != nullptr ? current->task->pid : 0,
-                    current->tid, to_cstring(commit_res.error()));
-                panic("调度器崩溃!");
-            }
         }
 
         // 判断是否需要重新调度

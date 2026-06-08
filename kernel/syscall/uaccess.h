@@ -15,6 +15,7 @@
 #include <logger.h>
 #include <mem/vma.h>
 #include <object/memory.h>
+#include <task/scheduler.h>
 #include <sus/owner.h>
 #include <sus/range.h>
 #include <sustcore/addr.h>
@@ -48,11 +49,9 @@ namespace syscall {
                 return _tmm;
             }
 
-            auto current_tcb_res = syscall::current_tcb();
-            if (current_tcb_res.has_value() &&
-                current_tcb_res.value()->task != nullptr)
-            {
-                _tmm = current_tcb_res.value()->task->tmm.get();
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current != nullptr && current->task != nullptr) {
+                _tmm = current->task->tmm.get();
             } else {
                 _tmm = env::inst().tmm();
             }

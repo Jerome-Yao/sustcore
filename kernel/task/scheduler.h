@@ -126,7 +126,6 @@ namespace schd {
 
         Result<util::nonnull<TCB *>> pick_next_task();
         Result<util::nonnull<TCB *>> prepare_next_task();
-        Result<void> commit_completed_syscall(TCB *tcb) noexcept;
         Result<void> prepare_prev_task(TCB *tcb) noexcept;
         [[nodiscard]]
         bool can_schedule_tcb(TCB *tcb) noexcept;

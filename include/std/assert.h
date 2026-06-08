@@ -43,6 +43,10 @@ void panic_failure(const char *expression, const char *file,
  * @param format 格式化字符串
  * @param ... 可变参数
  */
+
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void panic(const char *format, ...);
 
 #ifndef ASSERT_IMPLEMENTED
