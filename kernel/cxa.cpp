@@ -11,6 +11,8 @@
 
 #include <mem/alloc.h>
 
+#include <std/assert.h>
+
 // 全局new/delete操作符重载, 使用线性增长分配器
 // 但绝大多数情况下, 你都应该使用slab分配器或其他更高级的分配器
 // 这要求你为你的类实现自定义的new/delete操作符
@@ -63,3 +65,13 @@ void __sus_cxa_throw(const std::exception& e) {
     while (true);
 }
 }
+
+namespace std {
+    [[noreturn]]
+    void __stdlib_assert_fail(const char *__file, int __line,
+                              const char *__function,
+                              const char *__condition) {
+        panic("stdlib assert failed: %s (%s:%d, %s)",
+              __condition, __file, __line, __function);
+    }
+}  // namespace std

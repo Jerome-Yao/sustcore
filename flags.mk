@@ -12,8 +12,9 @@ flags-common-cpp := -std=gnu++26 -nostdlib -fno-builtin -ffreestanding \
 	-fno-stack-protector -fno-toplevel-reorder -fno-tree-scev-cprop \
 	-mcmodel=medany -freflection
 
-flags-no-rtti-cpp := -D__SUS_NO_RTTI__ -fno-rtti
-flags-no-exceptions-cpp := -D__SUS_NO_EXCEPTIONS__ -fno-exceptions
+flags-use-sustcore-features := -DUSE_SUSTCORE_FEATURES
+flags-no-rtti-cpp := -fno-rtti
+flags-no-exceptions-cpp := -fno-exceptions
 
 flags-common-ld := -nostdlib
 flags-kernel-ld := -z max-page-size=0x100

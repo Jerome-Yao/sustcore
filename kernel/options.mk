@@ -29,4 +29,4 @@ flags-cpp := $(flags-common-cpp) -nostdinc $(flags-no-rtti-cpp) $(flags-no-excep
 include-cpp := -I$(path-include) -I$(path-include)/std -I$(path-include)/std/c++ \
 	-I$(path-third_party)/include -I$(path-third_party)/include/libfdt \
 	-I$(path-third_party)/include/std -I$(component-root) -I$(path-include)/arch
-defs-cpp := -DASSERT_IMPLEMENTED=1 $(base-feature-defs) $(kernel-feature-defs) $(defs-mode-cpp)
+defs-cpp := -DASSERT_IMPLEMENTED=1 -DUSE_SUSTCORE_FEATURES $(base-feature-defs) $(kernel-feature-defs) $(defs-mode-cpp)

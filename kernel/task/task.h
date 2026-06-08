@@ -19,6 +19,7 @@
 #include <sus/nonnull.h>
 #include <sus/queue.h>
 #include <task/task_struct.h>
+#include <atomic>
 #include <unordered_map>
 
 namespace task {
@@ -29,8 +30,8 @@ namespace task {
 
     class TaskManager {
     private:
-        size_t __tid_alloc = 1;
-        size_t __pid_alloc = 1;
+        std::atomic<size_t> __tid_alloc = 1;
+        std::atomic<size_t> __pid_alloc = 1;
 
         size_t alloc_tid() {
             return __tid_alloc++;

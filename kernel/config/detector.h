@@ -18,5 +18,5 @@
 
 #ifndef __SUS_NO_EXCEPTIONS__
 #error \
-    "Exceptions are not supported in the kernel. Please define __SUS_NO_EXCEPTIONS__ to compile."
+    "Exceptions are not supported in the kernel. Please enable Sustcore no-exception features to compile."
 #endif

@@ -6,7 +6,7 @@ variant.default.target := $(path-bin)/libs/$(architecture)/libbasecpp.a
 variant.default.dir-obj := $(path-objects)/bcl/$(architecture)
 variant.kernel.target := $(path-bin)/libs/$(architecture)/libkerbasecpp.a
 variant.kernel.dir-obj := $(path-objects)/kernel/bcl/$(architecture)
-variant.kernel.flags-cpp := $(flags-no-rtti-cpp) $(flags-no-exceptions-cpp)
+variant.kernel.flags-cpp := $(flags-no-rtti-cpp) $(flags-no-exceptions-cpp) -DUSE_SUSTCORE_FEATURES
 
 flags-c := $(flags-common-c) -nostdinc $(flags-mode-c)
 include-c := -I$(path-include) -I$(path-include)/std -I$(path-include)/libs \

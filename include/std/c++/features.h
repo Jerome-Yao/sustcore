@@ -11,16 +11,11 @@
 
 #pragma once
 
-#ifdef __SUSTCORE_CONFIG__
-#include <features/sus/config.h>
+#ifdef USE_SUSTCORE_FEATURES
+#include <features/sus/collect.h>
 #else
-#include <features/std/config.h>
+#include <features/std/collect.h>
 #endif
 
-#ifdef __SUS_NO_EXCEPTIONS__
-#include <features/sus/exception.h>
-#else
-#include <features/std/exception.h>
-#endif
-
+#include <features/exception.h>
 #include <features/diagnostic.h>
