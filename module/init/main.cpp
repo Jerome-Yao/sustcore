@@ -16,14 +16,37 @@
 int kmod_main() {
     printf("进入 init 模块!\n");
 
-    sys_create_process("/initrd/test_fork.mod", nullptr, 0, SCHED_CLASS_RR);
-    sys_create_process("/initrd/test_thread.mod", nullptr, 0, SCHED_CLASS_RR);
-    sys_create_process("/initrd/test_endpoint_master.mod", nullptr, 0, SCHED_CLASS_RR);
-    sys_create_process("/initrd/test_call_service.mod", nullptr, 0, SCHED_CLASS_RR);
-    sys_create_process("/initrd/test_rpc_server.mod", nullptr, 0, SCHED_CLASS_RR);
+    int fd = kmod_fopen("/initrd/test_fork.mod", "x");
+    if (fd >= 0) {
+        sys_create_process(kmod_getcap(fd), nullptr, 0, SCHED_CLASS_RR);
+        kmod_fclose(fd);
+    }
+
+    fd = kmod_fopen("/initrd/test_thread.mod", "x");
+    if (fd >= 0) {
+        sys_create_process(kmod_getcap(fd), nullptr, 0, SCHED_CLASS_RR);
+        kmod_fclose(fd);
+    }
+
+    fd = kmod_fopen("/initrd/test_endpoint_master.mod", "x");
+    if (fd >= 0) {
+        sys_create_process(kmod_getcap(fd), nullptr, 0, SCHED_CLASS_RR);
+        kmod_fclose(fd);
+    }
+
+    fd = kmod_fopen("/initrd/test_call_service.mod", "x");
+    if (fd >= 0) {
+        sys_create_process(kmod_getcap(fd), nullptr, 0, SCHED_CLASS_RR);
+        kmod_fclose(fd);
+    }
+
+    fd = kmod_fopen("/initrd/test_rpc_server.mod", "x");
+    if (fd >= 0) {
+        sys_create_process(kmod_getcap(fd), nullptr, 0, SCHED_CLASS_RR);
+        kmod_fclose(fd);
+    }
 
     printf("init: 启动完成, 退出\n");
     exit(0);
     return 0;
 }
-

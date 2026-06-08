@@ -40,10 +40,15 @@ int kmod_main() {
 
     CapIdx initial_caps[] = {endpoint};
     EndpointBootstrap bootstrap{endpoint};
-    CapIdx slave_pcb = sys_create_process("/initrd/test_endpoint_slave.mod",
-                                          (CapIdx *)initial_caps, 1,
-                                          SCHED_CLASS_RR, &bootstrap,
-                                          sizeof(bootstrap));
+    int fd = kmod_fopen("/initrd/test_endpoint_slave.mod", "x");
+    CapIdx slave_pcb =
+        fd < 0 ? cap::error
+               : sys_create_process(kmod_getcap(fd), (CapIdx *)initial_caps, 1,
+                                    SCHED_CLASS_RR, &bootstrap,
+                                    sizeof(bootstrap));
+    if (fd >= 0) {
+        kmod_fclose(fd);
+    }
     if (slave_pcb == cap::error) {
         printf("test-endpoint-master: 创建 test-endpoint-slave 失败!\n");
         exit(-1);

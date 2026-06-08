@@ -29,18 +29,20 @@
 
 ## 创建进程
 
-`pcb_create_process(pcb_cap, path, caps_buf, caps_sz, sched_class, startup_buf, startup_buf_sz)` 对应创建子进程。
+`pcb_create_process(pcb_cap, image_cap, caps_buf, caps_sz, sched_class, startup_buf, startup_buf_sz)` 对应创建子进程。
 
 流程:
 
 1. lookup `pcb_cap` 并构造 `PCBObject`。
 2. 调用 `require_new_process_execute()`，要求 `NEW_PROCESS | EXECUTE`。
-3. 解析用户请求的调度类，只允许 `RT`、`RR`、`FCFS`。
-4. 创建子进程 holder。
-5. 从父进程 holder 复制用户指定的初始 capability。
-6. 使用配置好的子 holder 调用 `TaskManager::load_elf_into()`。
-7. 将子进程 PCB capability 插入当前 holder 的空闲槽。
-8. 返回该槽位。
+3. lookup `image_cap`，要求 payload 类型是 `VFILE` 且 capability 具备 `perm::vfile::EXEC`。
+4. 解析用户请求的调度类，只允许 `RT`、`RR`、`FCFS`。
+5. 创建子进程 holder。
+6. 从父进程 holder 复制用户指定的初始 capability。
+7. 在子 holder 中额外插入一个仅带 `EXEC` 权限的镜像文件 capability。
+8. 使用配置好的子 holder 调用 `TaskManager::load_elf_into()`。
+9. 将子进程 PCB capability 插入当前 holder 的空闲槽。
+10. 返回该槽位。
 
 复制初始 capability 时，每个源 capability 必须拥有 `perm::basic::CLONE`。非 shared memory 会额外保护父进程现有映射为 COW。
 
@@ -73,13 +75,14 @@
 
 ## execve
 
-`pcb_execve(pcb_cap, path, reserved_buf, reserved_sz, startup_buf, startup_buf_sz)`:
+`pcb_execve(pcb_cap, image_cap, reserved_buf, reserved_sz, startup_buf, startup_buf_sz)`:
 
 1. lookup PCB capability。
 2. 调用 `PCBObject::require_execute()`，要求 `EXECUTE`。
-3. 从用户缓冲区读取 reserved cap 列表。
-4. 可选读取 startup buffer。
-5. 调用 `TaskManager::exec_pcb()` 替换目标进程镜像。
+3. lookup `image_cap`，要求 payload 类型是 `VFILE` 且 capability 具备 `perm::vfile::EXEC`。
+4. 从用户缓冲区读取 reserved cap 列表。
+5. 可选读取 startup buffer。
+6. 调用 `TaskManager::exec_pcb()` 替换目标进程镜像。
 
 reserved cap 列表决定 exec 后保留哪些 capability。PCB capability 自身也必须保留。
 
@@ -140,5 +143,6 @@ kill 会清空目标 holder 并把线程标记为 `WAITING`，最后由 PCB payl
 
 - 创建线程只能作用于当前进程。
 - 创建线程不自动分配用户栈。
+- 程序镜像必须先由 VFS 打开成 `EXEC` 文件 capability，再传给 create_process / execve。
 - `pcb_create_process` 的失败清理仍有 TODO 注释。
 - fork 输出 child cap slot 通过用户缓冲区返回，接口语义较底层。

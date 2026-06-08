@@ -20,6 +20,7 @@
 #include <sus/path.h>
 #include <sus/refcount.h>
 #include <sustcore/errcode.h>
+#include <sustcore/files.h>
 #include <vfs/ops.h>
 
 #include <string>
@@ -29,6 +30,7 @@ class VFsDriver;
 class VSuperblock;
 class VINode;
 class VFile;
+class VDirectory;
 class VFS;
 
 class VFsDriver : public util::refc<VFsDriver> {
@@ -123,6 +125,33 @@ public:
     util::nonnull<VINode *> vinode() const {
         return util::nnullforce(_vind.get());
     }
+
+    [[nodiscard]]
+    const util::Path &mount_path() const {
+        return _mount_path;
+    }
+};
+
+class VDirectory : public cap::_PayloadHelper<PayloadType::VDIR> {
+private:
+    util::refc_ptr<VINode> _vind;
+    util::Path _mount_path;
+    VFS *_vfs;
+
+public:
+    VDirectory(VINode &vind, const util::Path &mount_path, VFS &vfs);
+    ~VDirectory() override = default;
+    void destruct() override;
+
+    [[nodiscard]]
+    util::nonnull<VINode *> vinode() const {
+        return util::nnullforce(_vind.get());
+    }
+
+    [[nodiscard]]
+    const util::Path &mount_path() const {
+        return _mount_path;
+    }
 };
 
 enum class MountFlags { NONE = 0 };
@@ -140,7 +169,24 @@ private:
     std::unordered_map<util::Path, MountRecord> mount_table;
 
     [[nodiscard]]
+    Result<util::refc_ptr<VINode>> _resolve_from(
+        util::refc_ptr<VINode> base, const util::Path &path,
+        VSuperblock &vsb) const;
+
+    [[nodiscard]]
+    Result<VFile *> _open_file_at(VINode &parent, const util::Path &mount_path,
+                                  const char *relpath);
+
+    [[nodiscard]]
+    Result<VDirectory *> _open_dir_at(VINode &parent,
+                                      const util::Path &mount_path,
+                                      const char *relpath);
+
+    [[nodiscard]]
     Result<VFile *> _open_file(const char *filepath);
+
+    [[nodiscard]]
+    Result<VDirectory *> _open_dir(const char *filepath);
 
     [[nodiscard]]
     Result<std::pair<util::Path, VSuperblock *>> _resolve_mount(
@@ -180,6 +226,17 @@ public:
     Result<void> umount(const char *mountpoint);
     // 打开文件并直接插入到指定 holder 中
     Result<CapIdx> open(const char *filepath, cap::CHolder &holder);
+    [[nodiscard]]
+    Result<CapIdx> open(cap::Capability &parent_dir_cap, const char *relpath,
+                        flags::oflg_t oflags, cap::CHolder &holder);
+    [[nodiscard]]
+    Result<CapIdx> opendir(cap::Capability &parent_dir_cap, const char *relpath,
+                           flags::oflg_t oflags, cap::CHolder &holder);
+    [[nodiscard]]
+    Result<CapIdx> open_initrd(cap::CHolder &holder);
+    [[nodiscard]]
+    Result<CapIdx> open_dir(const char *filepath, cap::CHolder &holder,
+                            b64 perm);
     // 仅供测试代码使用的调试接口
     Result<VFile *> __debug_open(const char *filepath);
 
@@ -193,6 +250,8 @@ public:
     Result<size_t> size(VFile &vfile) const;
     // 刷新文件内容到存储设备
     Result<void> sync(VFile &vfile) const;
+    Result<void> sync(VDirectory &vdir) const;
 
     friend class VFile;
+    friend class VDirectory;
 };

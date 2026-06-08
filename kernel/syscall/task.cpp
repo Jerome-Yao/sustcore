@@ -17,6 +17,7 @@
 #include <object/memory.h>
 #include <object/perm.h>
 #include <object/task.h>
+#include <object/vfile.h>
 #include <schd/schdbase.h>
 #include <sus/nonnull.h>
 #include <sus/raii.h>
@@ -94,6 +95,20 @@ namespace syscall {
         return memory;
     }
 
+    static Result<cap::Capability *> lookup_vfile(CapIdx idx) {
+        auto holder_res = current_holder();
+        propagate(holder_res);
+        auto cap_res = holder_res.value()->lookup(idx);
+        propagate(cap_res);
+        if (cap_res.value()->payload()->type_id() != PayloadType::VFILE) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        if (!cap_res.value()->imply(perm::vfile::EXEC)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        return cap_res.value();
+    }
+
     /**
      * @brief 将父进程指定 capability 按相同 CapIdx 复制到子 CHolder.
      *
@@ -162,14 +177,14 @@ namespace syscall {
         }
     }
 
-    Result<CapIdx> pcb_create_process(CapIdx pcb_cap, const UString &path,
+    Result<CapIdx> pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
                                       UBuffer &&caps_buf, size_t caps_sz,
                                       size_t sched_class, UBuffer *startup_buf,
                                       size_t startup_buf_sz) {
         loggers::SYSCALL::DEBUG(
-            "创建进程: pcb=%p path=%s, caps_uaddr=%p, caps_sz=%u, "
+            "创建进程: pcb=%p image_cap=%p, caps_uaddr=%p, caps_sz=%u, "
             "sched_class=%u",
-            pcb_cap, path.kbuf(), caps_buf.uaddr().addr(), caps_sz, sched_class);
+            pcb_cap, image_cap, caps_buf.uaddr().addr(), caps_sz, sched_class);
 
         cap::Capability *pcb_cap_obj = nullptr;
         auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
@@ -184,6 +199,8 @@ namespace syscall {
 
         auto sched_res = parse_user_sched_class(sched_class);
         propagate(sched_res);
+        auto image_res = lookup_vfile(image_cap);
+        propagate(image_res);
 
         // 1) 获取当前 CSpace 作为能力来源
         auto current_holder_res = current_holder();
@@ -204,9 +221,13 @@ namespace syscall {
             caps_sz == 0 ? nullptr : &caps_buf, caps_sz);
         propagate(copy_res);
 
+        auto child_image_cap_res = child_holder->insert_to_free(
+            image_res.value()->payload(), perm::vfile::EXEC);
+        propagate(child_image_cap_res);
+
         // 2) 使用已预配置的 CHolder 加载子进程 ELF
         auto load_res = task::TaskManager::inst().load_elf_into(
-            path.kbuf(), child_holder, sched_res.value(),
+            child_image_cap_res.value(), child_holder, sched_res.value(),
             startup_buf_sz == 0 || startup_buf == nullptr
                 ? nullptr
                 : startup_buf->kbuf(),
@@ -232,8 +253,8 @@ namespace syscall {
             child_pcb_cap_res.value()->perm());
         propagate(ret_insert_res);
 
-        loggers::SYSCALL::DEBUG("创建进程成功: path=%s, pid=%d", path.kbuf(),
-                               pcb->pid);
+        loggers::SYSCALL::DEBUG("创建进程成功: image_cap=%p, pid=%d", image_cap,
+                                pcb->pid);
         pcb_guard.release();
         return ret_insert_res.value();
     }
@@ -323,7 +344,7 @@ namespace syscall {
         return true;
     }
 
-    Result<bool> pcb_execve(CapIdx pcb_cap, const UString &path,
+    Result<bool> pcb_execve(CapIdx pcb_cap, CapIdx image_cap,
                             UBuffer &&reserved_buf, size_t reserved_sz,
                             UBuffer *startup_buf, size_t startup_buf_sz) {
         cap::Capability *cap = nullptr;
@@ -332,6 +353,8 @@ namespace syscall {
         cap::PCBObject obj(util::nnullforce(cap));
         auto target_res = obj.require_execute();
         propagate(target_res);
+        auto image_res = lookup_vfile(image_cap);
+        propagate(image_res);
         CapIdx *reserved = nullptr;
         if (reserved_sz != 0) {
             reserved = reinterpret_cast<CapIdx *>(reserved_buf.kbuf());
@@ -341,7 +364,7 @@ namespace syscall {
         }
 
         auto exec_res = task::TaskManager::inst().exec_pcb(
-            util::nnullforce(target_res.value()), path.kbuf(), reserved,
+            util::nnullforce(target_res.value()), image_cap, reserved,
             reserved_sz,
             startup_buf_sz == 0 || startup_buf == nullptr
                 ? nullptr

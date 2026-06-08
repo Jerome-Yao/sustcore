@@ -25,7 +25,7 @@ namespace syscall {
      * @brief 创建进程, 用户路径与 capability 列表已由 dispatcher 预处理.
      */
     [[nodiscard]]
-    Result<CapIdx> pcb_create_process(CapIdx pcb_cap, const UString &path,
+    Result<CapIdx> pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
                                       UBuffer &&caps_buf, size_t caps_sz,
                                       size_t sched_class,
                                       UBuffer *startup_buf = nullptr,
@@ -74,7 +74,7 @@ namespace syscall {
      * @brief execve, 预留 capability 列表已由 dispatcher 预处理.
      */
     [[nodiscard]]
-    Result<bool> pcb_execve(CapIdx pcb_cap, const UString &path,
+    Result<bool> pcb_execve(CapIdx pcb_cap, CapIdx image_cap,
                             UBuffer &&reserved_buf, size_t reserved_sz,
                             UBuffer *startup_buf = nullptr,
                             size_t startup_buf_sz = 0);

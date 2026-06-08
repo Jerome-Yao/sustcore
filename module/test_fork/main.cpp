@@ -100,10 +100,15 @@ int kmod_main() {
         CapIdx reserved_caps[] = {exec_notif_cap};
         NotifBootstrap bootstrap{exec_notif_cap};
         printf("test_fork(%s): child exec test_execve\n", tag);
-        if (!execve("/initrd/test_execve.mod", reserved_caps, 1, &bootstrap,
+        int fd = kmod_fopen("/initrd/test_execve.mod", "x");
+        if (fd < 0 ||
+            !execve(kmod_getcap(fd), reserved_caps, 1, &bootstrap,
                     sizeof(bootstrap)))
         {
             printf("test_fork(%s): child exec failed\n", tag);
+        }
+        if (fd >= 0) {
+            kmod_fclose(fd);
         }
         exit(-1);
     }

@@ -123,3 +123,9 @@ namespace perm::vfile {
     constexpr b64 WRITE = 0x02'0000;
     constexpr b64 EXEC  = 0x04'0000;
 }  // namespace perm::vfile
+
+namespace perm::vdir {
+    constexpr b64 READ  = 0x01'0000;
+    constexpr b64 WRITE = 0x02'0000;
+    constexpr b64 EXEC  = 0x04'0000;
+}  // namespace perm::vdir

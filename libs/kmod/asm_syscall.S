@@ -25,7 +25,7 @@ sys_pcb_kill:
     .global sys_pcb_create_process
     .type   sys_pcb_create_process, @function
 sys_pcb_create_process:
-    /* a0 = pcb cap slot, a1 = path, a2 = initial caps, a3 = size, a4 = sched,
+    /* a0 = pcb cap slot, a1 = image cap, a2 = initial caps, a3 = size, a4 = sched,
        a5 = startup blob ptr, a6 = startup blob size */
     li a7, SYS_CREATE_PROCESS
     ecall
@@ -56,7 +56,7 @@ sys_pcb_fork:
     .global sys_pcb_execve
     .type   sys_pcb_execve, @function
 sys_pcb_execve:
-    /* a0 = pcb cap slot, a1 = path, a2 = reserved caps, a3 = reserved caps size,
+    /* a0 = pcb cap slot, a1 = image cap, a2 = reserved caps, a3 = reserved caps size,
        a4 = startup blob ptr, a5 = startup blob size */
     li a7, SYS_EXECVE
     ecall
@@ -250,5 +250,61 @@ sys_mem_resize:
 sys_mem_query:
     /* a0 = cap slot, a1 = MemQueryRet out ptr */
     li a7, SYS_MEM_QUERY
+    ecall
+    ret
+
+    .global sys_vfs_opendir
+    .type sys_vfs_opendir, @function
+sys_vfs_opendir:
+    /* a0 = parent dir cap, a1 = path, a2 = oflags */
+    li a7, SYS_VFS_OPENDIR
+    ecall
+    ret
+
+    .global sys_vfs_open
+    .type sys_vfs_open, @function
+sys_vfs_open:
+    /* a0 = parent dir cap, a1 = path, a2 = oflags */
+    li a7, SYS_VFS_OPEN
+    ecall
+    ret
+
+    .global sys_vfs_read
+    .type sys_vfs_read, @function
+sys_vfs_read:
+    /* a0 = file cap, a1 = offset, a2 = buf, a3 = len */
+    li a7, SYS_VFS_READ
+    ecall
+    ret
+
+    .global sys_vfs_write
+    .type sys_vfs_write, @function
+sys_vfs_write:
+    /* a0 = file cap, a1 = offset, a2 = buf, a3 = len */
+    li a7, SYS_VFS_WRITE
+    ecall
+    ret
+
+    .global sys_vfs_size
+    .type sys_vfs_size, @function
+sys_vfs_size:
+    /* a0 = file cap */
+    li a7, SYS_VFS_SIZE
+    ecall
+    ret
+
+    .global sys_vfs_sync
+    .type sys_vfs_sync, @function
+sys_vfs_sync:
+    /* a0 = cap */
+    li a7, SYS_VFS_SYNC
+    ecall
+    ret
+
+    .global sys_open_initrd
+    .type sys_open_initrd, @function
+sys_open_initrd:
+    li a0, 0
+    li a7, SYS_OPEN_INITRD
     ecall
     ret

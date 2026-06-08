@@ -782,7 +782,7 @@ namespace task {
         return pcb;
     }
 
-    Result<CapIdx> TaskManager::preload(const char *path, TaskSpec &spec,
+    Result<CapIdx> TaskManager::preload(CapIdx image_cap, TaskSpec &spec,
                                         LoadPrm &prm) {
         // 构造cholder
         auto create_res = cap::CHolderManager::inst().create_holder();
@@ -793,7 +793,7 @@ namespace task {
         }
         auto holder = create_res.value();
 
-        auto preload_res = preload_into(path, holder, spec, prm);
+        auto preload_res = preload_into(image_cap, holder, spec, prm);
         if (!preload_res.has_value()) {
             auto rm_res =
                 cap::CHolderManager::inst().remove_holder(holder->id());
@@ -803,10 +803,10 @@ namespace task {
         return preload_res;
     }
 
-    Result<CapIdx> TaskManager::preload_into(const char *path,
+    Result<CapIdx> TaskManager::preload_into(CapIdx image_cap,
                                              cap::CHolder *holder,
                                              TaskSpec &spec, LoadPrm &prm) {
-        if (path == nullptr || holder == nullptr) {
+        if (holder == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
 
@@ -818,21 +818,26 @@ namespace task {
         }
         auto tmm = util::owner(new TaskMemoryManager(gfp_res.value()));
 
-        // 打开文件并直接加载到 CHolder 中
-        auto insert_res = VFS::inst().open(path, *holder);
-        propagate(insert_res);
+        auto cap_res = holder->lookup(image_cap);
+        propagate(cap_res);
+        if (cap_res.value()->payload()->type_id() != PayloadType::VFILE) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        if (!cap_res.value()->imply(perm::vfile::EXEC)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
 
         // 设置spec参数
         spec.holder = holder;
         spec.tmm    = tmm;
 
         // 设置prm参数
-        prm.src_path       = path;
-        prm.image_file_cap = insert_res.value();
-        return insert_res.value();
+        prm.src_path       = "<cap>";
+        prm.image_file_cap = image_cap;
+        return image_cap;
     }
 
-    Result<void> TaskManager::load_task_spec(const char *path,
+    Result<void> TaskManager::load_task_spec(CapIdx image_cap,
                                              cap::CHolder *holder,
                                              const void *startup_blob,
                                              size_t startup_blob_size,
@@ -850,9 +855,9 @@ namespace task {
             spec.startup_blob_size = startup_blob_size;
         }
 
-        auto preload_res = holder == nullptr ? preload(path, spec, prm)
-                                             : preload_into(path, holder, spec,
-                                                            prm);
+        auto preload_res = holder == nullptr
+                               ? preload(image_cap, spec, prm)
+                               : preload_into(image_cap, holder, spec, prm);
         if (!preload_res.has_value()) {
             loggers::SUSTCORE::ERROR("预加载程序资源失败! 错误码: %s",
                                      to_cstring(preload_res.error()));
@@ -869,11 +874,11 @@ namespace task {
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_task_image(
-        const char *path, cap::CHolder *holder, schd::ClassType schd_class,
+        CapIdx image_cap, cap::CHolder *holder, schd::ClassType schd_class,
         bool wakeup, const void *startup_blob, size_t startup_blob_size) {
         TaskSpec spec = empty_task_spec();
         LoadPrm load_prm{};
-        auto load_spec_res = load_task_spec(path, holder, startup_blob,
+        auto load_spec_res = load_task_spec(image_cap, holder, startup_blob,
                                             startup_blob_size, spec, load_prm);
         if (!load_spec_res.has_value()) {
             destroy_unowned_task_memory(spec);
@@ -894,20 +899,40 @@ namespace task {
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_elf(
-        const char *path, schd::ClassType schd_class) {
-        return load_task_image(path, nullptr, schd_class, true);
+        CapIdx image_cap, schd::ClassType schd_class) {
+        return load_task_image(image_cap, nullptr, schd_class, true);
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_elf_into(
-        const char *path, cap::CHolder *holder, schd::ClassType schd_class,
+        CapIdx image_cap, cap::CHolder *holder, schd::ClassType schd_class,
         const void *startup_blob, size_t startup_blob_size) {
-        return load_task_image(path, holder, schd_class, true, startup_blob,
+        return load_task_image(image_cap, holder, schd_class, true,
+                               startup_blob,
                                startup_blob_size);
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_init(const char *path) {
         constexpr schd::ClassType INIT_SCHED_CLASS = schd::ClassType::INIT;
-        return load_task_image(path, nullptr, INIT_SCHED_CLASS, false);
+        if (path == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto create_res = cap::CHolderManager::inst().create_holder();
+        if (!create_res.has_value()) {
+            unexpect_return(ErrCode::CREATION_FAILED);
+        }
+        auto *holder = create_res.value();
+        auto holder_guard = util::Guard([holder]() {
+            auto rm_res =
+                cap::CHolderManager::inst().remove_holder(holder->id());
+            assert(rm_res.has_value());
+        });
+        auto image_res = VFS::inst().open(path, *holder);
+        propagate(image_res);
+        auto load_res = load_task_image(image_res.value(), holder,
+                                        INIT_SCHED_CLASS, false);
+        propagate(load_res);
+        holder_guard.release();
+        return load_res.value();
     }
 
     Result<size_t> TaskManager::lookup_holder_id(pid_t pid) {
@@ -1125,19 +1150,19 @@ namespace task {
         return cap_res.value();
     }
 
-    Result<void> TaskManager::exec_current(const char *path,
+    Result<void> TaskManager::exec_current(CapIdx image_cap,
                                            const CapIdx *reserved_caps,
                                            size_t reserved_count) {
         auto *current_tcb = schd::Scheduler::inst().current_tcb();
         if (current_tcb == nullptr || current_tcb->task == nullptr) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
-        return exec_pcb(util::nnullforce(current_tcb->task), path,
+        return exec_pcb(util::nnullforce(current_tcb->task), image_cap,
                         reserved_caps, reserved_count, nullptr, 0);
     }
 
     Result<void> TaskManager::exec_pcb(util::nonnull<PCB *> target,
-                                       const char *path,
+                                       CapIdx image_cap,
                                        const CapIdx *reserved_caps,
                                        size_t reserved_count,
                                        const void *startup_blob,
@@ -1146,7 +1171,7 @@ namespace task {
         if (pcb->is_kernel) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
-        if (pcb->tmm == nullptr || pcb->cholder == nullptr || path == nullptr) {
+        if (pcb->tmm == nullptr || pcb->cholder == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
         if (startup_blob_size != 0 && startup_blob == nullptr) {
@@ -1166,7 +1191,8 @@ namespace task {
 
         TaskSpec spec = empty_task_spec();
         LoadPrm load_prm{};
-        auto load_spec_res = load_task_spec(path, pcb->cholder, startup_blob,
+        auto load_spec_res = load_task_spec(image_cap, pcb->cholder,
+                                            startup_blob,
                                             startup_blob_size, spec, load_prm);
         propagate(load_spec_res);
         bool spec_owned  = true;
@@ -1175,12 +1201,8 @@ namespace task {
                 destroy_unowned_task_memory(spec);
             }
         });
-        auto image_guard = remove_guard(pcb->cholder, load_prm.image_file_cap);
-
         // TODO: 接下来的操作会对当前进程的内存空间和能力空间进行大幅修改,
         // 应妥善处理执行失败的情况
-
-        image_guard.release();
 
         // 2) 清空当前 PCB 中会被新镜像替换的主体状态, 只保留指定能力.
         auto prune_res = remove_unreserved_caps(pcb->cholder, pcb->pcb_cap,
@@ -1234,7 +1256,8 @@ namespace task {
         };
         destroy_unowned_task_memory(old_spec);
 
-        loggers::SUSTCORE::DEBUG("execve成功: path=%s pid=%d", path, pcb->pid);
+        loggers::SUSTCORE::DEBUG("execve成功: image_cap=%p pid=%d", image_cap,
+                                 pcb->pid);
         void_return();
     }
 

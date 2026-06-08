@@ -19,6 +19,7 @@
 #include <syscall/syscall.h>
 #include <syscall/task.h>
 #include <syscall/uaccess.h>
+#include <syscall/vfs.h>
 #include <task/scheduler.h>
 #include <task/task_struct.h>
 #include <task/wait.h>
@@ -170,6 +171,13 @@ namespace syscall {
             case SYS_MEM_UNMAP:           return "SYS_MEM_UNMAP";
             case SYS_MEM_RESIZE:          return "SYS_MEM_RESIZE";
             case SYS_MEM_QUERY:           return "SYS_MEM_QUERY";
+            case SYS_VFS_OPENDIR:         return "SYS_VFS_OPENDIR";
+            case SYS_VFS_OPEN:            return "SYS_VFS_OPEN";
+            case SYS_VFS_READ:            return "SYS_VFS_READ";
+            case SYS_VFS_WRITE:           return "SYS_VFS_WRITE";
+            case SYS_VFS_SIZE:            return "SYS_VFS_SIZE";
+            case SYS_VFS_SYNC:            return "SYS_VFS_SYNC";
+            case SYS_OPEN_INITRD:         return "SYS_OPEN_INITRD";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -206,7 +214,6 @@ namespace syscall {
                 break;
             }
             case SYS_CREATE_PROCESS: {
-                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 UBuffer caps_buf((VirAddr)arg1, arg2 * sizeof(CapIdx));
                 auto sync_res = caps_buf.sync_from_user();
                 if (!sync_res.has_value()) {
@@ -224,7 +231,7 @@ namespace syscall {
                 }
                 ret = result_value_ret(
                     "创建进程",
-                    pcb_create_process(capidx, path, std::move(caps_buf), arg2,
+                    pcb_create_process(capidx, arg0, std::move(caps_buf), arg2,
                                        arg3, arg5 == 0 ? nullptr : &startup_buf,
                                        arg5));
                 break;
@@ -247,7 +254,6 @@ namespace syscall {
                 break;
             }
             case SYS_EXECVE: {
-                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 UBuffer reserved_buf((VirAddr)arg1, arg2 * sizeof(CapIdx));
                 auto sync_res = reserved_buf.sync_from_user();
                 if (!sync_res.has_value()) {
@@ -265,8 +271,48 @@ namespace syscall {
                 }
                 ret = result_bool_ret(
                     "execve",
-                    pcb_execve(capidx, path, std::move(reserved_buf), arg2,
+                    pcb_execve(capidx, arg0, std::move(reserved_buf), arg2,
                                arg4 == 0 ? nullptr : &startup_buf, arg4));
+                break;
+            }
+            case SYS_VFS_OPENDIR: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret = result_value_ret("opendir",
+                                       vfs_opendir(capidx, path, arg1));
+                break;
+            }
+            case SYS_VFS_OPEN: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret = result_value_ret("open", vfs_open(capidx, path, arg1));
+                break;
+            }
+            case SYS_VFS_READ: {
+                UBuffer buf((VirAddr)arg1, arg2);
+                ret = result_value_ret("read", vfs_read(capidx, arg0,
+                                                        std::move(buf), arg2));
+                break;
+            }
+            case SYS_VFS_WRITE: {
+                UBuffer buf((VirAddr)arg1, arg2);
+                auto sync_res = buf.sync_from_user();
+                if (!sync_res.has_value()) {
+                    ret = result_void_ret("同步write缓冲区", sync_res);
+                    break;
+                }
+                ret = result_value_ret("write", vfs_write(capidx, arg0,
+                                                          std::move(buf), arg2));
+                break;
+            }
+            case SYS_VFS_SIZE: {
+                ret = result_value_ret("size", vfs_size(capidx));
+                break;
+            }
+            case SYS_VFS_SYNC: {
+                ret = result_bool_ret("sync", vfs_sync(capidx));
+                break;
+            }
+            case SYS_OPEN_INITRD: {
+                ret = result_value_ret("open_initrd", open_initrd());
                 break;
             }
             case SYS_PCB_KILL: {

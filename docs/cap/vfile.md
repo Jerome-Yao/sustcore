@@ -14,6 +14,7 @@ class VFile : public cap::_PayloadHelper<PayloadType::VFILE>
 
 - `VFile` 既是 VFS 内部文件句柄, 也是 capability payload
 - `VFileObject` 只是它的权限封装与能力接口
+- 程序装载路径也会直接消费 `VFile` payload, 但那条路径只要求 `EXEC` 权限, 不经过 `VFileObject`
 
 ## `VFile` payload
 
@@ -66,8 +67,12 @@ class VFile : public cap::_PayloadHelper<PayloadType::VFILE>
 
 - `READ`
 - `WRITE`
+- `EXEC`
 
-`EXEC` 目前尚未在 `VFileObject` 方法中直接使用。
+其中:
+
+- `READ` / `WRITE` 由 `VFileObject` 的普通文件 I/O 接口使用
+- `EXEC` 用于 `create_process` / `execve` / ELF loader 的程序镜像加载路径
 
 ## `read()`
 
@@ -154,5 +159,6 @@ VFile capability 的特点是:
 - **对象层极薄, 只做权限检查与转发**
 - **`VINode` 只保留在 VFS 内部与 payload 私有状态中**
 - **适合和 capability 传递结合, 作为进程间可转交文件句柄**
+- **可执行文件 capability 可以只携带 `EXEC` 权限, 供 ELF loader 直接消费**
 
 它本质上是“VFS 文件句柄的 capability 封装”。

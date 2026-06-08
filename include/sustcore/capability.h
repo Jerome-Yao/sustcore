@@ -23,13 +23,14 @@ enum class PayloadType : b64 {
     INTOBJ   = 0x001,
     SINTOBJ  = 0x002,
     VFILE    = 0x003,
-    NOTIF    = 0x004,
-    MUTEX    = 0x005,
-    PCB      = 0x006,
-    TCB      = 0x007,
-    ENDPOINT = 0x008,
-    MEMORY   = 0x009,
-    REPLY    = 0x00A,
+    VDIR     = 0x004,
+    NOTIF    = 0x005,
+    MUTEX    = 0x006,
+    PCB      = 0x007,
+    TCB      = 0x008,
+    ENDPOINT = 0x009,
+    MEMORY   = 0x00A,
+    REPLY    = 0x00B,
 };
 
 constexpr bool operator&(PayloadType a, PayloadType b) {
@@ -42,6 +43,7 @@ constexpr const char *to_string(PayloadType type) {
         case PayloadType::INTOBJ:   return "INTOBJ";
         case PayloadType::SINTOBJ:  return "SINTOBJ";
         case PayloadType::VFILE:    return "VFILE";
+        case PayloadType::VDIR:     return "VDIR";
         case PayloadType::NOTIF:    return "NOTIF";
         case PayloadType::MUTEX:    return "MUTEX";
         case PayloadType::PCB:      return "PCB";

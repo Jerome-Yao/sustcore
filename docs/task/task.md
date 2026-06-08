@@ -50,26 +50,26 @@ PCB 和 TCB 都使用 KOP 对象池，`task::init_kop()` 会初始化 `kop::pcb`
 
 用户进程创建通常从 `preload()` / `preload_into()` 开始。
 
-`preload(path, spec, prm)` 会:
+`preload(image_cap, spec, prm)` 会:
 
 1. 创建新的 `cap::CHolder`。
 2. 调用 `preload_into()` 填充 `TaskSpec` 和 `LoadPrm`。
 3. 出错时移除新创建的 holder。
 
-`preload_into(path, holder, spec, prm)` 会:
+`preload_into(image_cap, holder, spec, prm)` 会:
 
 1. 分配一个页表根页。
 2. 构造 `TaskMemoryManager`。
-3. 通过 `VFS::inst().open(path, *holder)` 将 ELF 文件能力插入 holder。
+3. 校验 `image_cap` 在 `holder` 中存在，payload 类型是 `VFILE`，并且具备 `perm::vfile::EXEC`。
 4. 把 holder、tmm 和 image file cap 记录到 `TaskSpec` / `LoadPrm`。
 
-因此 ELF 文件本身也是通过 capability 进入加载器的。
+因此用户态进程加载路径现在完全依赖“已打开的程序文件 capability”，而不是路径字符串。
 
 ### ELF 加载
 
 `loader::elf::load(spec, load_prm)` 会:
 
-1. 通过 `VFileObject` 读取 ELF 文件。
+1. 从 `holder` 中取出 `image_file_cap` 对应的 `VFile` payload，并要求该 capability 具备 `EXEC`。
 2. 校验 ELF64、RISC-V、`ET_EXEC`。
 3. 为每个 `PT_LOAD` 段创建 `MemoryPayload` 和 VMA。
 4. 为堆创建 `HEAP` VMA，并把 heap memory cap 插入 holder。
@@ -121,9 +121,9 @@ PCB 和 TCB 都使用 KOP 对象池，`task::init_kop()` 会初始化 `kop::pcb`
 
 ### `load_elf` / `load_elf_into`
 
-`load_elf(path, schd_class)` 会创建新的 holder、预加载、加载 ELF，再创建进程。
+`load_elf(image_cap, schd_class)` 会创建新的 holder、预加载、加载 ELF，再创建进程。
 
-`load_elf_into(path, holder, schd_class, startup_blob, startup_blob_size)` 使用调用方已经配置好的 holder。该接口主要用于 syscall 创建子进程时先复制初始 capability，再加载新镜像。
+`load_elf_into(image_cap, holder, schd_class, startup_blob, startup_blob_size)` 使用调用方已经配置好的 holder。该接口主要用于 syscall 创建子进程时先复制初始 capability，再加载新镜像。
 
 ## fork
 
@@ -145,7 +145,7 @@ PCB 和 TCB 都使用 KOP 对象池，`task::init_kop()` 会初始化 `kop::pcb`
 
 ## exec
 
-`exec_current(path, reserved_caps, reserved_count)` 会调用 `exec_pcb()` 替换当前进程镜像。
+`exec_current(image_cap, reserved_caps, reserved_count)` 会调用 `exec_pcb()` 替换当前进程镜像。
 
 `exec_pcb()` 的关键语义:
 
@@ -186,6 +186,7 @@ PCB 和 TCB 都使用 KOP 对象池，`task::init_kop()` 会初始化 `kop::pcb`
 
 - PCB 树关系尚未成为 wait/parent 语义的一部分。
 - exec 破坏旧镜像后的失败回滚仍不完整。
+- `load_init(const char *path)` 仍保留一条内核内部的路径加载入口，用于启动早期从 `/initrd/` 拉起 init 进程。
 - `terminate_pcb()` 释放页表根页，但页表中间页释放仍有 TODO。
 - `lookup_holder_id()` 只返回 holder id，不暴露更完整的进程查询接口。
 - 退出回收依赖 trap 入口触发 `reap_recycled()`。

@@ -51,10 +51,15 @@ int kmod_main() {
 
     CapIdx initial_caps[] = {endpoint};
     EndpointBootstrap bootstrap{endpoint};
-    CapIdx client_pcb     = sys_create_process("/initrd/test_rpc_client.mod",
-                                               initial_caps, 1,
-                                               SCHED_CLASS_FCFS, &bootstrap,
-                                               sizeof(bootstrap));
+    int fd                = kmod_fopen("/initrd/test_rpc_client.mod", "x");
+    CapIdx client_pcb     =
+        fd < 0 ? cap::error
+               : sys_create_process(kmod_getcap(fd), initial_caps, 1,
+                                    SCHED_CLASS_FCFS, &bootstrap,
+                                    sizeof(bootstrap));
+    if (fd >= 0) {
+        kmod_fclose(fd);
+    }
     if (client_pcb == cap::error) {
         printf("Failed to create test_rpc_client\n");
         exit(0);

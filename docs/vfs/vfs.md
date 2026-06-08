@@ -9,7 +9,7 @@ VFS 当前承担四类职责:
 1. **文件系统注册表**: 通过文件系统名称管理 `IFsDriver` 实例。
 2. **挂载表**: 将规范化后的挂载路径映射到 `VSuperblock` 和可选 `BufferCache`。
 3. **路径解析**: 从全局路径找到对应挂载点，再沿目录逐级 lookup 到目标 inode。
-4. **能力对象入口**: `open()` 创建 `VFile` payload 并插入 `cap::CHolder`，后续文件操作经 `cap::VFileObject` 转回 VFS。
+4. **能力对象入口**: `open()` / `opendir()` 创建 `VFile` / `VDirectory` payload 并插入 `cap::CHolder`，后续文件操作经 capability 对象转回 VFS。
 
 ## 初始化
 
@@ -75,6 +75,20 @@ VFS 当前承担四类职责:
 - `VFS *_vfs`
 
 `VFile::destruct()` 会通知 VFS 当前挂载点少了一个活跃文件，然后 `delete this`。这也是 `VFS::umount()` 判断 busy 状态的基础。
+
+### `VDirectory`
+
+`VDirectory` 是 capability 系统中的 `PayloadType::VDIR` payload。它与 `VFile` 一样持有:
+
+- `util::refc_ptr<VINode> _vind`
+- `util::Path _mount_path`
+- `VFS *_vfs`
+
+其主要用途是:
+
+- 表示“已打开目录”
+- 作为 `open(parent_dir_cap, relpath, ...)` / `opendir(parent_dir_cap, relpath, ...)` 的父目录 capability
+- 通过 `cap::VDirectoryObject` 暴露有限的目录能力接口
 
 ## 注册与卸载文件系统
 
@@ -208,6 +222,21 @@ struct MountRecord {
 
 公开接口 `open(filepath, holder)` 会把 `VFile` 插入到 `cap::CHolder` 的空闲 capability 槽中，并返回 `CapIdx`。如果插入失败，会立即 `destruct()` 刚创建的 `VFile`，避免活跃计数泄漏。
 
+当前还提供两组基于目录 capability 的打开入口:
+
+- `open(parent_dir_cap, relpath, oflg_t, holder)`
+- `opendir(parent_dir_cap, relpath, oflg_t, holder)`
+
+规则如下:
+
+- `parent_dir_cap` 必须是 `VDIR`
+- `relpath` 必须是相对路径
+- 文件目标只允许 `R`、`W`、`RW`、`X`
+- 文件目标带 `X` 时必须是纯 `X`
+- 目录目标允许 `R/W/X` 的任意非零组合
+
+VFS 还提供临时辅助入口 `open_initrd(holder)`，它直接把 `"/initrd/"` 目录作为 `VDIR` capability 插入到指定 holder。当前 `libkmod` 依赖它实现 `kmod_fopen("/initrd/...", options)`。
+
 `__debug_open()` 只供测试使用，直接返回裸 `VFile *`。
 
 ## 文件操作
@@ -234,6 +263,12 @@ VFS 提供四个运行时文件接口:
 
 权限检查通过后，所有操作都会转发到 `VFS::inst()`。
 
+`kernel/object/vdir.cpp` 中的 `cap::VDirectoryObject` 是目录 capability 的薄包装:
+
+- `sync()` 需要 `perm::vdir::WRITE`
+
+当前目录 capability 的主要用途仍是“作为父目录继续打开子项”，而不是提供完整目录 I/O。
+
 ## 当前限制
 
 当前 VFS 运行时层仍有一些限制:
@@ -243,4 +278,5 @@ VFS 提供四个运行时文件接口:
 - 目录遍历只依赖 `lookup()`，没有 readdir/listdir 接口。
 - `INodeCachePolicy::SHARED` 当前不会在引用计数归零时主动从 `_inode_cache` 移除。
 - VFS 不负责创建、删除、重命名文件或目录。
+- `open_initrd()` 只是当前系统挂载布局下的临时入口，它返回的是 `"/initrd/"`，不是真正意义上的 `/`。
 - `__debug_open()` 返回裸指针，仅应在测试代码中使用。

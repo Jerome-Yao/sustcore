@@ -17,8 +17,9 @@
 #include <logger.h>
 #include <mem/vma.h>
 #include <object/memory.h>
-#include <object/vfile.h>
+#include <object/perm.h>
 #include <sustcore/addr.h>
+#include <vfs/vfs.h>
 
 #include <cstring>
 #include <limits>
@@ -78,16 +79,25 @@ namespace loader::elf {
          * @param len 需要写入的总长度.
          */
         [[nodiscard]]
-        Result<void> load_file_into_memory(cap::VFileObject &fop,
-                                           cap::MemoryPayload &memory,
+        Result<size_t> read_exact(VFile &file, off_t offset, void *buf,
+                                  size_t len) {
+            auto read_res = VFS::inst().read(file, offset, buf, len);
+            propagate(read_res);
+            if (read_res.value() != len) {
+                unexpect_return(ErrCode::IO_ERROR);
+            }
+            return len;
+        }
+
+        Result<void> load_file_into_memory(VFile &file, cap::MemoryPayload &memory,
                                            off_t file_offset,
                                            size_t mem_offset, size_t len) {
             char buffer[SEGMENT_IO_CHUNK_SIZE];
             size_t loaded = 0;
             while (loaded < len) {
                 size_t chunk = min_size(len - loaded, sizeof(buffer));
-                auto read_res =
-                    fop.read_exact(file_offset + loaded, buffer, chunk);
+                auto read_res = read_exact(file, file_offset + loaded, buffer,
+                                           chunk);
                 propagate(read_res);
                 auto write_res = memory.write(mem_offset + loaded, buffer, chunk);
                 propagate(write_res);
@@ -225,12 +235,12 @@ namespace loader::elf {
      * @brief 将所有 PT_LOAD 段内容写入对应的 MemoryPayload.
      */
     [[nodiscard]]
-    Result<void> loadsegs(cap::VFileObject &fop, TaskMemoryManager &tmm,
+    Result<void> loadsegs(VFile &file, TaskMemoryManager &tmm,
                           const Elf64_Ehdr &ehdr) {
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
-            auto read_phdr_res = fop.read_exact(offset, &phdr, sizeof(phdr));
+            auto read_phdr_res = read_exact(file, offset, &phdr, sizeof(phdr));
             propagate(read_phdr_res);
 
             if (!is_load_segment(phdr)) {
@@ -249,7 +259,7 @@ namespace loader::elf {
                 static_cast<unsigned long>(phdr.p_memsz), mem_offset);
 
             auto load_res = load_file_into_memory(
-                fop, *vma.memory, phdr.p_offset, mem_offset, phdr.p_filesz);
+                file, *vma.memory, phdr.p_offset, mem_offset, phdr.p_filesz);
             propagate(load_res);
 
             if (phdr.p_memsz > phdr.p_filesz) {
@@ -275,9 +285,15 @@ namespace loader::elf {
         // Get file capabilty from CHolder
         auto access_res = spec.holder->access(prm.image_file_cap);
         propagate(access_res);
-        cap::VFileObject fop(util::nnullforce(access_res.value()));
+        auto *file = access_res.value()->payload_as<VFile>();
+        if (file == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        if (!access_res.value()->imply(perm::vfile::EXEC)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
 
-        auto fsz_res = fop.size();
+        auto fsz_res = VFS::inst().size(*file);
         if (!fsz_res.has_value()) {
             propagate_return(fsz_res);
         }
@@ -287,7 +303,7 @@ namespace loader::elf {
         }
 
         Elf64_Ehdr ehdr{};
-        auto read_hdr_res = fop.read_exact(0, &ehdr, sizeof(ehdr));
+        auto read_hdr_res = read_exact(*file, 0, &ehdr, sizeof(ehdr));
         propagate(read_hdr_res);
 
         auto valid_res = validate_elf64(ehdr, file_size);
@@ -301,7 +317,8 @@ namespace loader::elf {
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
-            auto read_phdr_res = fop.read_exact(offset, &phdr, sizeof(phdr));
+            auto read_phdr_res = read_exact(*file, offset, &phdr,
+                                            sizeof(phdr));
             propagate(read_phdr_res);
 
             if (!is_load_segment(phdr)) {
@@ -371,7 +388,7 @@ namespace loader::elf {
                                     vma.varea.end.addr(), vma.size());
         }
 
-        auto load_res = loadsegs(fop, *spec.tmm, ehdr);
+        auto load_res = loadsegs(*file, *spec.tmm, ehdr);
         propagate(load_res);
         // loadsegs() writes executable bytes into MemoryPayload pages.
         // RISC-V requires fence.i before those freshly written bytes are

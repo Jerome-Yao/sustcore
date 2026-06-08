@@ -365,6 +365,7 @@ perm::imply(old_perm, new_perm)
 - `perm::notif`
 - `perm::pcb`
 - `perm::sintobj`
+- `perm::vdir`
 - `perm::vfile`
 
 其中 `notif` 比较特殊: 每个 signal 占 2 个权限位，分别控制:
@@ -379,6 +380,7 @@ perm::imply(old_perm, new_perm)
 - `INTOBJ`
 - `SINTOBJ`
 - `VFILE`
+- `VDIR`
 - `NOTIF`
 - `MUTEX`
 - `PCB`

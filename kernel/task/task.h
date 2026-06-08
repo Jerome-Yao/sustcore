@@ -201,29 +201,29 @@ namespace task {
         /**
          * @brief 预加载可执行文件相关信息到 TaskSpec 与 LoadPrm, 但不创建任务.
          *
-         * @param path 可执行文件路径, 以 NUL 结尾的字符串.
+         * @param image_cap 可执行文件能力.
          * @param spec 输出的 TaskSpec, 将被填充所需信息.
          * @param prm 输出的 LoadPrm, 包含加载时的参数.
          * @return Result<void> 成功返回 SUCCESS, 失败返回错误码.
          * @return Image File 的能力索引, 成功返回该索引, 失败返回相应错误码.
          */
-        Result<CapIdx> preload(const char *path, TaskSpec &spec, LoadPrm &prm);
+        Result<CapIdx> preload(CapIdx image_cap, TaskSpec &spec, LoadPrm &prm);
 
         /**
          * @brief 预加载可执行文件相关信息到指定的 TaskSpec, LoadPrm 与 holder
          *
-         * @param path 可执行文件路径, 以 NUL 结尾的字符串.
+         * @param image_cap 可执行文件能力.
          * @param holder 能力持有者, 用于执行能力移除操作.
          * @param spec 输出的 TaskSpec, 将被填充所需信息.
          * @param prm 输出的 LoadPrm, 包含加载时的参数.
          * @return Image File 的能力索引, 成功返回该索引, 失败返回相应错误码.
          */
-        Result<CapIdx> preload_into(const char *path, cap::CHolder *holder,
+        Result<CapIdx> preload_into(CapIdx image_cap, cap::CHolder *holder,
                                     TaskSpec &spec, LoadPrm &prm);
         /**
          * @brief 复制启动缓冲区、预加载并装载 ELF 到 TaskSpec.
          */
-        Result<void> load_task_spec(const char *path, cap::CHolder *holder,
+        Result<void> load_task_spec(CapIdx image_cap, cap::CHolder *holder,
                                     const void *startup_blob,
                                     size_t startup_blob_size, TaskSpec &spec,
                                     LoadPrm &prm);
@@ -231,7 +231,8 @@ namespace task {
          * @brief 装载 ELF 并直接构造对应的用户进程.
          */
         Result<util::nonnull<PCB *>> load_task_image(
-            const char *path, cap::CHolder *holder, schd::ClassType schd_class,
+            CapIdx image_cap, cap::CHolder *holder,
+            schd::ClassType schd_class,
             bool wakeup, const void *startup_blob = nullptr,
             size_t startup_blob_size = 0);
 
@@ -321,19 +322,19 @@ namespace task {
         /**
          * @brief 用指定ELF替换当前进程镜像, 并保留指定能力. 
          *
-         * @param path 新程序路径. 
+         * @param image_cap 新程序文件能力. 
          * @param reserved_caps 需要保留的能力槽位列表, 可为空. 
          * @param reserved_count reserved_caps 中的元素数量. 
          * @return Result<void> 成功不返回旧用户镜像, 失败保持当前进程不变. 
          */
-        Result<void> exec_current(const char *path, const CapIdx *reserved_caps,
+        Result<void> exec_current(CapIdx image_cap, const CapIdx *reserved_caps,
                                   size_t reserved_count);
         /**
          * @brief 用指定ELF替换目标 PCB 的进程镜像.
          *
          * 目标为当前进程时复用当前 TCB; 目标为其他进程时移除旧线程并重建主线程.
          */
-        Result<void> exec_pcb(util::nonnull<PCB *> pcb, const char *path,
+        Result<void> exec_pcb(util::nonnull<PCB *> pcb, CapIdx image_cap,
                               const CapIdx *reserved_caps,
                               size_t reserved_count,
                               const void *startup_blob = nullptr,
@@ -356,13 +357,13 @@ namespace task {
         /**
          * @brief 加载 ELF 可执行文件并创建对应的 PCB, 设置指定的调度类.
          *
-         * @param path 可执行文件路径.
+         * @param image_cap 可执行文件能力.
          * @param schd_class 指定的调度器类别.
          * @return Result<util::nonnull<PCB *>> 成功返回 PCB 的非空指针,
          * 失败返回错误码.
          * @note 该函数会解析 ELF 并分配必要资源, 调用者需在错误情况下负责清理.
          */
-        Result<util::nonnull<PCB *>> load_elf(const char *path,
+        Result<util::nonnull<PCB *>> load_elf(CapIdx image_cap,
                                               schd::ClassType schd_class);
         /**
          * @brief 使用调用方提供的 CHolder 加载 ELF 并创建进程. 
@@ -371,13 +372,14 @@ namespace task {
          * capability 配置, 再把 holder 传入. ELF image、heap/stack Memory、
          * PCB/TCB capability 会在该 holder 的空闲槽中继续创建. 
          *
-         * @param path 可执行文件路径. 
+         * @param image_cap 可执行文件能力. 
          * @param holder 预先构造并配置好的进程 CHolder. 
          * @param schd_class 调度类别. 
          * @return 创建成功的 PCB. 
          */
         Result<util::nonnull<PCB *>> load_elf_into(
-            const char *path, cap::CHolder *holder, schd::ClassType schd_class,
+            CapIdx image_cap, cap::CHolder *holder,
+            schd::ClassType schd_class,
             const void *startup_blob = nullptr, size_t startup_blob_size = 0);
         /**
          * @brief 加载并创建 init 进程的 PCB, 路径通常指向系统初始化程序.

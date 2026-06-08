@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <sustcore/capability.h>
+#include <sustcore/files.h>
 #include <sustcore/msg.h>
 
 extern CapIdx __pcb_cap;
@@ -38,11 +39,11 @@ void sys_write_serial(const char *str, size_t len);
 bool sys_pcb_kill(CapIdx pcb_cap, int exit_code);
 bool sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, void *vaddr, uint64_t rwx,
                  uint64_t growth);
-CapIdx sys_pcb_create_process(CapIdx pcb_cap, const char *path, CapIdx *caps,
+CapIdx sys_pcb_create_process(CapIdx pcb_cap, CapIdx image_cap, CapIdx *caps,
                               size_t caps_sz, size_t sched_class,
                               const void *startup_blob,
                               size_t startup_blob_size);
-CapIdx sys_create_process(const char *path, CapIdx *caps, size_t caps_sz,
+CapIdx sys_create_process(CapIdx image_cap, CapIdx *caps, size_t caps_sz,
                           size_t sched_class, const void *startup_blob = nullptr,
                           size_t startup_blob_size = 0);
 CapIdx sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
@@ -50,15 +51,26 @@ CapIdx sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
 CapIdx sys_create_thread(void (*entry)(), void *stack_addr, size_t stack_size);
 size_t sys_pcb_fork(CapIdx pcb_cap, CapIdx *child_pcb_cap);
 size_t fork(CapIdx *child_pcb_cap);
-bool sys_pcb_execve(CapIdx pcb_cap, const char *path, CapIdx *rsvdlst,
+bool sys_pcb_execve(CapIdx pcb_cap, CapIdx image_cap, CapIdx *rsvdlst,
                     size_t rsvdsz, const void *startup_blob,
                     size_t startup_blob_size);
-bool sys_execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz,
+bool sys_execve(CapIdx image_cap, CapIdx *rsvdlst, size_t rsvdsz,
                 const void *startup_blob = nullptr,
                 size_t startup_blob_size = 0);
-bool execve(const char *path, CapIdx *rsvdlst, size_t rsvdsz,
+bool execve(CapIdx image_cap, CapIdx *rsvdlst, size_t rsvdsz,
             const void *startup_blob = nullptr,
             size_t startup_blob_size = 0);
+
+CapIdx sys_vfs_opendir(CapIdx parent_dir_cap, const char *path,
+                       flags::oflg_t oflags);
+CapIdx sys_vfs_open(CapIdx parent_dir_cap, const char *path,
+                    flags::oflg_t oflags);
+size_t sys_vfs_read(CapIdx file_cap, size_t offset, void *buf, size_t len);
+size_t sys_vfs_write(CapIdx file_cap, size_t offset, const void *buf,
+                     size_t len);
+size_t sys_vfs_size(CapIdx file_cap);
+bool sys_vfs_sync(CapIdx capidx);
+CapIdx sys_open_initrd();
 
 CapIdx sys_cap_clone(CapIdx src);
 bool sys_cap_downgrade(CapIdx idx, uint64_t new_perm);
@@ -118,4 +130,10 @@ int kputs(const char *str);
 size_t brk(size_t newbrk);
 void *sbrk(ptrdiff_t increment);
 void exit(int exit_code);
+
+int kmod_fopen(const char *path, const char *options);
+size_t kmod_fread(int fd, void *buf, size_t len);
+size_t kmod_fwrite(int fd, const void *buf, size_t len);
+CapIdx kmod_getcap(int fd);
+void kmod_fclose(int fd);
 }
