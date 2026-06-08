@@ -27,6 +27,7 @@
 #include <test/printf.h>
 #include <test/raii.h>
 #include <test/ranges.h>
+#include <test/ringbuf.h>
 #include <test/schd/fcfs.h>
 #include <test/schd/rr.h>
 #include <test/slub.h>
@@ -47,6 +48,7 @@ void collect_tests(TestFramework& framework) {
     test::fs::collect_tests(framework);
     // test::functional::collect_tests(framework);
     test::meta::collect_tests(framework);
+    test::ringbuf::collect_tests(framework);
     test::wait::collect_tests(framework);
     // test::optional::collect_tests(framework);
     // test::path::collect_tests(framework);

@@ -13,7 +13,6 @@
 
 #include <cap/capability.h>
 #include <sus/map.h>
-#include <sus/queue.h>
 #include <sus/raii.h>
 #include <sustcore/capability.h>
 #include <sustcore/errcode.h>

@@ -9,7 +9,6 @@
 #include <schd/idle.h>
 #include <schd/init.h>
 #include <sus/nonnull.h>
-#include <sus/queue.h>
 #include <sus/tostring.h>
 #include <sustcore/errcode.h>
 #include <task/scheduler.h>

@@ -17,7 +17,6 @@
 #include <sus/list.h>
 #include <sus/map.h>
 #include <sus/nonnull.h>
-#include <sus/queue.h>
 #include <task/task_struct.h>
 
 #include <atomic>
