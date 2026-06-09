@@ -59,7 +59,6 @@ namespace {
 
     Result<void> init_vfs() {
         blk::BlkManager::init();
-        blk::BlockRequestLayer::init();
         VFS::init();
         auto &vfs = VFS::inst();
 

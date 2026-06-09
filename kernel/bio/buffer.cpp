@@ -15,12 +15,16 @@
 #include <cstring>
 
 namespace blk {
-    BufferCache::BufferCache(size_t devno, size_t blksz)
-        : _devno(devno), _blksz(blksz) {
+    BufferCache::BufferCache(size_t devno, size_t blksz,
+                             util::owner<BlockRequestLayer *> request_layer)
+        : _devno(devno), _blksz(blksz), _request_layer(request_layer) {
         assert(_blksz != 0);
+        assert(_request_layer.get() != nullptr);
     }
 
     BufferCache::~BufferCache() {
+        delete _request_layer.get();
+        _request_layer = util::owner<BlockRequestLayer *>(nullptr);
         for (size_t i = 0; i < MAX_CACHE_SIZE; ++i) {
             if (_buffers[i].get() == nullptr) {
                 continue;
@@ -32,10 +36,9 @@ namespace blk {
         _mapping.clear();
     }
 
-    FutureResult<void> BufferCache::make_void_future(
-        Result<void> result) {
+    FutureResult<void> BufferCache::make_void_future(Result<void> result) {
         PromiseResult<void> promise;
-        auto future = promise.future();
+        auto future  = promise.future();
         auto set_res = promise.set_value(result);
         assert(set_res.has_value());
         return future;
@@ -44,7 +47,7 @@ namespace blk {
     FutureResult<BufferHandler> BufferCache::make_handler_future(
         Result<BufferHandler> result) {
         PromiseResult<BufferHandler> promise;
-        auto future = promise.future();
+        auto future  = promise.future();
         auto set_res = promise.set_value(std::move(result));
         assert(set_res.has_value());
         return future;
@@ -112,12 +115,12 @@ namespace blk {
         propagate(free_res);
 
         auto *buffer = new Buffer{
-            .blkno = blkno,
-            .data = new char[_blksz],
-            .dirty = false,
-            .valid = false,
+            .blkno    = blkno,
+            .data     = new char[_blksz],
+            .dirty    = false,
+            .valid    = false,
             .inflight = false,
-            .refcnt = 0,
+            .refcnt   = 0,
         };
         if (buffer == nullptr || buffer->data == nullptr) {
             delete[] (buffer == nullptr ? nullptr : buffer->data);
@@ -144,9 +147,9 @@ namespace blk {
         }
 
         buffer.inflight = true;
-        auto lower_future = BlockRequestLayer::inst().submit_write_async(
-            _devno, buffer.blkno, buffer.data, 1);
-        auto lower_res = task::wait::kthread_wait_for(lower_future);
+        auto lower_future =
+            _request_layer->submit_write_async(buffer.blkno, buffer.data, 1);
+        auto lower_res  = task::wait::kthread_wait_for(lower_future);
         buffer.inflight = false;
         if (!lower_res.has_value()) {
             return make_void_future(std::unexpected(lower_res.error()));
@@ -157,8 +160,8 @@ namespace blk {
 
         buffer.dirty = false;
 
-        auto flush_future = BlockRequestLayer::inst().submit_flush_async(_devno);
-        auto flush_res = task::wait::kthread_wait_for(flush_future);
+        auto flush_future = _request_layer->submit_flush_async();
+        auto flush_res    = task::wait::kthread_wait_for(flush_future);
         if (!flush_res.has_value()) {
             return make_void_future(std::unexpected(flush_res.error()));
         }
@@ -174,7 +177,7 @@ namespace blk {
             }
             BufferHandler handler(util::nnullforce(buffer), *this);
             auto sync_future = sync(handler);
-            auto sync_res = task::wait::kthread_wait_for(sync_future);
+            auto sync_res    = task::wait::kthread_wait_for(sync_future);
             if (!sync_res.has_value()) {
                 return make_void_future(std::unexpected(sync_res.error()));
             }
@@ -184,7 +187,7 @@ namespace blk {
 
     FutureResult<void> BufferCache::tidy() {
         auto sync_future = sync_all();
-        auto sync_res = task::wait::kthread_wait_for(sync_future);
+        auto sync_res    = task::wait::kthread_wait_for(sync_future);
         if (!sync_res.has_value()) {
             return make_void_future(std::unexpected(sync_res.error()));
         }
@@ -202,8 +205,7 @@ namespace blk {
         return make_void_future({});
     }
 
-    FutureResult<BufferHandler> BufferCache::get_buffer_async(
-        lba_t blkno) {
+    FutureResult<BufferHandler> BufferCache::get_buffer_async(lba_t blkno) {
         auto idx_res = ensure_buffer(blkno);
         if (!idx_res.has_value()) {
             return make_handler_future(std::unexpected(idx_res.error()));
@@ -223,9 +225,9 @@ namespace blk {
         }
 
         buffer->inflight = true;
-        auto lower_future = BlockRequestLayer::inst().submit_read_async(
-            _devno, blkno, buffer->data, 1);
-        auto lower_res = task::wait::kthread_wait_for(lower_future);
+        auto lower_future =
+            _request_layer->submit_read_async(blkno, buffer->data, 1);
+        auto lower_res   = task::wait::kthread_wait_for(lower_future);
         buffer->inflight = false;
         if (!lower_res.has_value()) {
             return make_handler_future(std::unexpected(lower_res.error()));
@@ -235,6 +237,7 @@ namespace blk {
         }
 
         buffer->valid = true;
-        return make_handler_future(BufferHandler(util::nnullforce(buffer), *this));
+        return make_handler_future(
+            BufferHandler(util::nnullforce(buffer), *this));
     }
 }  // namespace blk

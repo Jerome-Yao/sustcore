@@ -40,8 +40,11 @@ Result<void> RamDiskDevice::process_request(blk::BlockRequest &req) {
         }
         default: break;
     }
-    auto complete_res = blk::BlockRequestLayer::inst().complete_request(
-        util::nnullforce(&req), std::move(result));
+    if (_queue == nullptr) {
+        unexpect_return(ErrCode::NULLPTR);
+    }
+    auto complete_res =
+        _queue->complete(util::nnullforce(&req), std::move(result));
     propagate(complete_res);
     void_return();
 }
@@ -60,10 +63,8 @@ Result<void> RamDiskDevice::run_request_loop() {
             propagate_return(req_res);
         }
 
-        auto *req = req_res.value();
-        auto mark_res =
-            blk::BlockRequestLayer::inst().mark_request_processing(
-                util::nnullforce(req));
+        auto *req     = req_res.value();
+        auto mark_res = _queue->mark_processing(util::nnullforce(req));
         propagate(mark_res);
         auto process_res = process_request(*req);
         propagate(process_res);

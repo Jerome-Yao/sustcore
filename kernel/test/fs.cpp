@@ -90,8 +90,15 @@ namespace test::fs {
             ensure_block_dev();
             auto* dev = _block_dev;
             tassert(dev != nullptr, "应能创建测试块设备");
+            auto *queue = new blk::BlockRequestQueue(1);
+            tassert(queue != nullptr, "应能创建测试请求队列");
+            auto bind_res = dev->bind_request_queue(util::nnullforce(queue));
+            tassert(bind_res.has_value(), "应能将测试设备绑定到请求队列");
 
-            blk::BufferCache cache(1, 64);
+            blk::BufferCache cache(
+                1, 64,
+                util::owner<blk::BlockRequestLayer *>(
+                    new blk::BlockRequestLayer(util::nnullforce(queue))));
             auto first_future = cache.get_buffer_async(0);
             auto first_res = task::wait::kthread_wait_for(first_future);
             tassert(first_res.has_value(), "首次获取块缓存应成功");
@@ -118,12 +125,11 @@ namespace test::fs {
             tassert(second_res.value().get() == first_res.value().get(),
                     "命中缓存时应返回同一块缓存对象");
 
+            auto reload_future = cache.get_buffer_async(0);
+            auto reload_res = task::wait::kthread_wait_for(reload_future);
+            tassert(reload_res.has_value(), "应能再次从缓存路径读取完整块");
             char verify[64] = {};
-            auto verify_future =
-                blk::BlockRequestLayer::inst().submit_read_async(0, 0, verify, 1);
-            auto verify_blocks = task::wait::kthread_wait_for(verify_future);
-            tassert(verify_blocks.has_value() && verify_blocks.value() == 1,
-                    "应能直接从设备读回完整块");
+            reload_res.value().readblk(verify, sizeof(verify));
             tassert(memcmp(verify + 8, payload, strlen(payload)) == 0,
                     "同步后的设备内容应与缓存一致");
         }
@@ -137,7 +143,14 @@ namespace test::fs {
             ensure_block_dev();
             auto* dev = _block_dev;
             tassert(dev != nullptr, "应能创建测试块设备");
-            blk::BufferCache cache(2, 64);
+            auto *queue = new blk::BlockRequestQueue(2);
+            tassert(queue != nullptr, "应能创建测试请求队列");
+            auto bind_res = dev->bind_request_queue(util::nnullforce(queue));
+            tassert(bind_res.has_value(), "应能将测试设备绑定到请求队列");
+            blk::BufferCache cache(
+                2, 64,
+                util::owner<blk::BlockRequestLayer *>(
+                    new blk::BlockRequestLayer(util::nnullforce(queue))));
             {
                 auto buf0_future = cache.get_buffer_async(0);
                 auto buf0 = task::wait::kthread_wait_for(buf0_future);

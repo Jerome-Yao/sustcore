@@ -11,14 +11,15 @@
 
 #pragma once
 
-#include <new>
-#include <cassert>
-#include <unordered_map>
 #include <bio/block.h>
 #include <bio/buffer.h>
 #include <bio/request.h>
 #include <task/scheduler.h>
 #include <task/task.h>
+
+#include <cassert>
+#include <new>
+#include <unordered_map>
 
 namespace blk {
     struct RegisteredBlockDevice {
@@ -103,35 +104,46 @@ namespace blk {
                 unexpect_return(ErrCode::NULLPTR);
             }
             auto key = reinterpret_cast<size_t>(device);
-            auto it = _device_ids.find(key);
+            auto it  = _device_ids.find(key);
             if (it == _device_ids.end()) {
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
             }
             return it->second;
         }
 
-        Result<size_t> register_device(util::owner<IBlockDeviceOps *> &&device) {
+        Result<size_t> register_device(
+            util::owner<IBlockDeviceOps *> &&device) {
             if (device.get() == nullptr) {
                 unexpect_return(ErrCode::NULLPTR);
             }
             IBlockDeviceOps *raw_device = device.get();
-            auto key = reinterpret_cast<size_t>(raw_device);
+            auto key                    = reinterpret_cast<size_t>(raw_device);
             if (_device_ids.contains(key)) {
                 unexpect_return(ErrCode::KEY_DUPLICATED);
             }
-            size_t id = _next_id++;
+            size_t id         = _next_id++;
             auto block_sz_res = raw_device->block_sz();
             propagate(block_sz_res);
             auto *queue = new BlockRequestQueue(id);
             if (queue == nullptr) {
                 unexpect_return(ErrCode::OUT_OF_MEMORY);
             }
-            auto *cache = new BufferCache(id, block_sz_res.value());
-            if (cache == nullptr) {
+            auto *request_layer =
+                new BlockRequestLayer(util::nnullforce(queue));
+            if (request_layer == nullptr) {
                 delete queue;
                 unexpect_return(ErrCode::OUT_OF_MEMORY);
             }
-            auto bind_res = raw_device->bind_request_queue(util::nnullforce(queue));
+            auto *cache = new BufferCache(
+                id, block_sz_res.value(),
+                util::owner<BlockRequestLayer *>(request_layer));
+            if (cache == nullptr) {
+                delete request_layer;
+                delete queue;
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            auto bind_res =
+                raw_device->bind_request_queue(util::nnullforce(queue));
             if (!bind_res.has_value()) {
                 delete cache;
                 delete queue;
@@ -145,9 +157,8 @@ namespace blk {
                     }
                     auto run_res = device->run_request_loop();
                     if (!run_res.has_value()) {
-                        loggers::SUSTCORE::ERROR(
-                            "块设备 worker 退出失败: %s",
-                            to_cstring(run_res.error()));
+                        loggers::SUSTCORE::ERROR("块设备 worker 退出失败: %s",
+                                                 to_cstring(run_res.error()));
                     }
                 },
                 raw_device, schd::ClassType::FCFS);
@@ -158,15 +169,15 @@ namespace blk {
             }
             device = util::owner<IBlockDeviceOps *>(nullptr);
             _device_ids.insert_or_assign(key, id);
-            _devices.emplace(id,
-                             RegisteredBlockDevice{
-                                 .device = util::owner<IBlockDeviceOps *>(raw_device),
-                                 .cache = util::owner(cache),
-                                 .queue = util::owner(queue),
-                                 .worker = worker_res.value().get(),
-                             });
+            _devices.emplace(
+                id, RegisteredBlockDevice{
+                        .device = util::owner<IBlockDeviceOps *>(raw_device),
+                        .cache  = util::owner(cache),
+                        .queue  = util::owner(queue),
+                        .worker = worker_res.value().get(),
+                    });
             if (!schd::Scheduler::inst().wakeup_new(worker_res.value().get())) {
-                auto it = _devices.find(id);
+                auto it  = _devices.find(id);
                 auto rec = std::move(it->second);
                 _devices.erase(it);
                 _device_ids.erase(key);
@@ -182,12 +193,11 @@ namespace blk {
             auto it = _devices.find(id);
             if (it == _devices.end())
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
-            auto *dev = it->second.device.get();
+            auto *dev   = it->second.device.get();
             auto *cache = it->second.cache.get();
             auto *queue = it->second.queue.get();
             if (queue != nullptr) {
-                auto stop_res =
-                    queue->drain_and_stop(ErrCode::FUTURE_CANCLED);
+                auto stop_res = queue->drain_and_stop(ErrCode::FUTURE_CANCLED);
                 propagate(stop_res);
             }
             _device_ids.erase(reinterpret_cast<size_t>(dev));

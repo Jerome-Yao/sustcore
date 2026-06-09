@@ -17,11 +17,10 @@
 #include <new>
 
 namespace blk {
-    BlockRequestLayer BlockRequestLayer::_INSTANCE {};
-    bool BlockRequestLayer::_initialized = false;
-
     BlockRequestQueue::BlockRequestQueue(size_t devno, size_t depth)
-        : _devno(devno), _ring(depth + 1), _wait_reason(task::wait::alloc_reason()) {}
+        : _devno(devno),
+          _ring(depth + 1),
+          _wait_reason(task::wait::alloc_reason()) {}
 
     bool BlockRequestQueue::stopped() const noexcept {
         GuardedLock lock(const_cast<SpinLocker &>(_lock));
@@ -43,7 +42,7 @@ namespace blk {
         if (!push_res.has_value()) {
             unexpect_return(ErrCode::BUSY);
         }
-        req->status = BlockReqStatus::SUBMITTED;
+        req->status   = BlockReqStatus::SUBMITTED;
         auto wake_res = task::wait::wake_all(_wait_reason);
         propagate(wake_res);
         void_return();
@@ -57,7 +56,7 @@ namespace blk {
             }
             unexpect_return(ErrCode::ENTRY_NOT_FOUND);
         }
-        auto *req = _ring.front();
+        auto *req    = _ring.front();
         auto pop_res = _ring.pop();
         if (!pop_res.has_value()) {
             unexpect_return(ErrCode::FAILURE);
@@ -77,10 +76,11 @@ namespace blk {
             if (pop_res.error() != ErrCode::ENTRY_NOT_FOUND) {
                 propagate_return(pop_res);
             }
-            auto wait_res = task::wait::wait_event(_wait_reason, [this]() noexcept {
-                GuardedLock lock(_lock);
-                return _stopped || !_ring.empty();
-            });
+            auto wait_res =
+                task::wait::wait_event(_wait_reason, [this]() noexcept {
+                    GuardedLock lock(_lock);
+                    return _stopped || !_ring.empty();
+                });
             propagate(wait_res);
         }
     }
@@ -104,7 +104,7 @@ namespace blk {
         } else {
             req->status = BlockReqStatus::FAILED;
         }
-        req->result = result;
+        req->result  = result;
         auto set_res = req->promise.set_value(result);
         propagate(set_res);
         if (req->on_complete) {
@@ -122,8 +122,8 @@ namespace blk {
         {
             unexpect_return(ErrCode::BUSY);
         }
-        req->status = BlockReqStatus::CANCELED;
-        req->result = std::unexpected(error);
+        req->status  = BlockReqStatus::CANCELED;
+        req->result  = std::unexpected(error);
         auto set_res = req->promise.set_value(std::unexpected(error));
         propagate(set_res);
         if (req->on_complete) {
@@ -147,7 +147,8 @@ namespace blk {
         while (true) {
             auto req_res = try_dequeue();
             if (req_res.has_value()) {
-                auto cancel_res = cancel(util::nnullforce(req_res.value()), error);
+                auto cancel_res =
+                    cancel(util::nnullforce(req_res.value()), error);
                 propagate(cancel_res);
                 continue;
             }
@@ -169,99 +170,85 @@ namespace blk {
         void_return();
     }
 
-    void BlockRequestLayer::init() {
-        if (_initialized) {
-            return;
-        }
-        _initialized = true;
-        new (&_INSTANCE) BlockRequestLayer();
-    }
-
-    bool BlockRequestLayer::initialized() {
-        return _initialized;
-    }
-
-    BlockRequestLayer &BlockRequestLayer::inst() {
-        assert(_initialized);
-        return _INSTANCE;
+    BlockRequestLayer::BlockRequestLayer(
+        util::nonnull<BlockRequestQueue *> queue)
+        : _devno(queue->devno()), _queue(queue.get()) {
+        assert(_queue != nullptr);
     }
 
     Result<void> BlockRequestLayer::mark_request_processing(
         util::nonnull<BlockRequest *> req) const {
-        auto queue_res = BlkManager::inst().lookup_queue(req->devno);
-        propagate(queue_res);
-        return queue_res.value()->mark_processing(req);
+        if (_queue == nullptr || req->devno != _devno) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return _queue->mark_processing(req);
     }
 
     Result<void> BlockRequestLayer::complete_request(
         util::nonnull<BlockRequest *> req, Result<size_t> result) const {
-        auto queue_res = BlkManager::inst().lookup_queue(req->devno);
-        propagate(queue_res);
-        return queue_res.value()->complete(req, std::move(result));
+        if (_queue == nullptr || req->devno != _devno) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return _queue->complete(req, std::move(result));
     }
 
-    FutureResult<size_t>
-    BlockRequestLayer::make_error_future(ErrCode error) const {
+    FutureResult<size_t> BlockRequestLayer::make_error_future(
+        ErrCode error) const {
         PromiseResult<size_t> promise;
-        auto future = promise.future();
+        auto future  = promise.future();
         auto set_res = promise.set_value(std::unexpected(error));
         assert(set_res.has_value());
         return future;
     }
 
-    FutureResult<size_t> BlockRequestLayer::submit_async(
-        BlockOp op, size_t devno, lba_t lba, void *buffer, size_t cnt) const {
-        auto queue_res = BlkManager::inst().lookup_queue(devno);
-        if (!queue_res.has_value()) {
-            return make_error_future(queue_res.error());
+    FutureResult<size_t> BlockRequestLayer::submit_async(BlockOp op, lba_t lba,
+                                                         void *buffer,
+                                                         size_t cnt) const {
+        if (_queue == nullptr) {
+            return make_error_future(ErrCode::NULLPTR);
         }
 
         auto *req = new BlockRequest{
-            .op = op,
-            .devno = devno,
-            .lba = lba,
+            .op          = op,
+            .devno       = _devno,
+            .lba         = lba,
             .block_count = cnt,
-            .buffer = buffer,
+            .buffer      = buffer,
         };
         if (req == nullptr) {
             return make_error_future(ErrCode::OUT_OF_MEMORY);
         }
 
-        auto future = req->promise.future();
-        req->on_complete = [](BlockRequest &done_req) {
-            delete &done_req;
-        };
+        auto future      = req->promise.future();
+        req->on_complete = [](BlockRequest &done_req) { delete &done_req; };
 
-        auto submit_res = queue_res.value()->submit(util::nnullforce(req));
+        auto submit_res = _queue->submit(util::nnullforce(req));
         if (!submit_res.has_value()) {
-            auto set_res = req->promise.set_value(std::unexpected(submit_res.error()));
+            auto set_res =
+                req->promise.set_value(std::unexpected(submit_res.error()));
             assert(set_res.has_value());
             delete req;
         }
         return future;
     }
 
-    FutureResult<size_t>
-    BlockRequestLayer::submit_read_async(size_t devno, lba_t lba, void *buf,
-                                         size_t cnt) const {
+    FutureResult<size_t> BlockRequestLayer::submit_read_async(
+        lba_t lba, void *buf, size_t cnt) const {
         if (buf == nullptr && cnt != 0) {
             return make_error_future(ErrCode::NULLPTR);
         }
-        return submit_async(BlockOp::READ, devno, lba, buf, cnt);
+        return submit_async(BlockOp::READ, lba, buf, cnt);
     }
 
-    FutureResult<size_t>
-    BlockRequestLayer::submit_write_async(size_t devno, lba_t lba,
-                                          const void *buf, size_t cnt) const {
+    FutureResult<size_t> BlockRequestLayer::submit_write_async(
+        lba_t lba, const void *buf, size_t cnt) const {
         if (buf == nullptr && cnt != 0) {
             return make_error_future(ErrCode::NULLPTR);
         }
-        return submit_async(BlockOp::WRITE, devno, lba,
-                            const_cast<void *>(buf), cnt);
+        return submit_async(BlockOp::WRITE, lba, const_cast<void *>(buf), cnt);
     }
 
-    FutureResult<size_t>
-    BlockRequestLayer::submit_flush_async(size_t devno) const {
-        return submit_async(BlockOp::FLUSH, devno, 0, nullptr, 0);
+    FutureResult<size_t> BlockRequestLayer::submit_flush_async() const {
+        return submit_async(BlockOp::FLUSH, 0, nullptr, 0);
     }
 }  // namespace blk

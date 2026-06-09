@@ -148,8 +148,14 @@ namespace tarfs {
 		(void)options;
 		auto device_res = blk::BlkManager::inst().lookup(devno);
 		propagate(device_res);
+		auto cache_res = blk::BlkManager::inst().lookup_cache(devno);
+		propagate(cache_res);
 		auto *device = device_res.value();
+		auto *cache  = cache_res.value();
 		if (device == nullptr) {
+			unexpect_return(ErrCode::NULLPTR);
+		}
+		if (cache == nullptr) {
 			unexpect_return(ErrCode::NULLPTR);
 		}
 		auto block_sz_res = device->block_sz();
@@ -161,16 +167,15 @@ namespace tarfs {
 		if (!data) {
 			unexpect_return(ErrCode::OUT_OF_MEMORY);
 		}
-		auto read_future = blk::BlockRequestLayer::inst().submit_read_async(
-			devno, 0, data, block_cnt_res.value());
-		auto read_blocks_res = task::wait::kthread_wait_for(read_future);
-		if (!read_blocks_res.has_value()) {
-			delete[] data;
-			propagate_return(read_blocks_res);
-		}
-		if (read_blocks_res.value() != block_cnt_res.value()) {
-			delete[] data;
-			unexpect_return(ErrCode::IO_ERROR);
+		for (size_t blkno = 0; blkno < block_cnt_res.value(); ++blkno) {
+			auto future = cache->get_buffer_async(blkno);
+			auto handler_res = task::wait::kthread_wait_for(future);
+			if (!handler_res.has_value()) {
+				delete[] data;
+				propagate_return(handler_res);
+			}
+			handler_res.value().readblk(
+				data + blkno * block_sz_res.value(), block_sz_res.value());
 		}
 		bool ok = is_valid(size, data);
 		delete[] data;
@@ -185,8 +190,14 @@ namespace tarfs {
 		(void)options;
 		auto device_res = blk::BlkManager::inst().lookup(devno);
 		propagate(device_res);
+		auto cache_res = blk::BlkManager::inst().lookup_cache(devno);
+		propagate(cache_res);
 		auto *device = device_res.value();
+		auto *cache  = cache_res.value();
 		if (device == nullptr) {
+			unexpect_return(ErrCode::NULLPTR);
+		}
+		if (cache == nullptr) {
 			unexpect_return(ErrCode::NULLPTR);
 		}
 		auto block_sz_res = device->block_sz();
@@ -204,16 +215,15 @@ namespace tarfs {
 			if (!data) {
 				unexpect_return(ErrCode::OUT_OF_MEMORY);
 			}
-			auto read_future = blk::BlockRequestLayer::inst().submit_read_async(
-				devno, 0, data, block_cnt_res.value());
-			auto blocks_res = task::wait::kthread_wait_for(read_future);
-			if (!blocks_res.has_value()) {
-				delete[] data;
-				propagate_return(blocks_res);
-			}
-			if (blocks_res.value() != block_cnt_res.value()) {
-				delete[] data;
-				unexpect_return(ErrCode::IO_ERROR);
+			for (size_t blkno = 0; blkno < block_cnt_res.value(); ++blkno) {
+				auto future = cache->get_buffer_async(blkno);
+				auto handler_res = task::wait::kthread_wait_for(future);
+				if (!handler_res.has_value()) {
+					delete[] data;
+					propagate_return(handler_res);
+				}
+				handler_res.value().readblk(
+					data + blkno * block_sz_res.value(), block_sz_res.value());
 			}
 		}
 
