@@ -85,8 +85,20 @@ namespace blk {
         }
     }
 
+    Result<void> BlockRequestQueue::mark_processing(
+        util::nonnull<BlockRequest *> req) {
+        if (req->status != BlockReqStatus::SUBMITTED) {
+            unexpect_return(ErrCode::BUSY);
+        }
+        req->status = BlockReqStatus::PROCESSING;
+        void_return();
+    }
+
     Result<void> BlockRequestQueue::complete(util::nonnull<BlockRequest *> req,
                                              Result<size_t> result) {
+        if (req->status != BlockReqStatus::PROCESSING) {
+            unexpect_return(ErrCode::BUSY);
+        }
         if (result.has_value()) {
             req->status = BlockReqStatus::COMPLETED;
         } else {
@@ -94,6 +106,25 @@ namespace blk {
         }
         req->result = result;
         auto set_res = req->promise.set_value(result);
+        propagate(set_res);
+        if (req->on_complete) {
+            req->on_complete(*req);
+        }
+        void_return();
+    }
+
+    Result<void> BlockRequestQueue::cancel(util::nonnull<BlockRequest *> req,
+                                           ErrCode error) {
+        if (req->status == BlockReqStatus::PROCESSING ||
+            req->status == BlockReqStatus::COMPLETED ||
+            req->status == BlockReqStatus::FAILED ||
+            req->status == BlockReqStatus::CANCELED)
+        {
+            unexpect_return(ErrCode::BUSY);
+        }
+        req->status = BlockReqStatus::CANCELED;
+        req->result = std::unexpected(error);
+        auto set_res = req->promise.set_value(std::unexpected(error));
         propagate(set_res);
         if (req->on_complete) {
             req->on_complete(*req);
@@ -116,10 +147,8 @@ namespace blk {
         while (true) {
             auto req_res = try_dequeue();
             if (req_res.has_value()) {
-                auto complete_res =
-                    complete(util::nnullforce(req_res.value()),
-                             std::unexpected(error));
-                propagate(complete_res);
+                auto cancel_res = cancel(util::nnullforce(req_res.value()), error);
+                propagate(cancel_res);
                 continue;
             }
             if (req_res.error() == ErrCode::ENTRY_NOT_FOUND) {
@@ -155,6 +184,20 @@ namespace blk {
     BlockRequestLayer &BlockRequestLayer::inst() {
         assert(_initialized);
         return _INSTANCE;
+    }
+
+    Result<void> BlockRequestLayer::mark_request_processing(
+        util::nonnull<BlockRequest *> req) const {
+        auto queue_res = BlkManager::inst().lookup_queue(req->devno);
+        propagate(queue_res);
+        return queue_res.value()->mark_processing(req);
+    }
+
+    Result<void> BlockRequestLayer::complete_request(
+        util::nonnull<BlockRequest *> req, Result<size_t> result) const {
+        auto queue_res = BlkManager::inst().lookup_queue(req->devno);
+        propagate(queue_res);
+        return queue_res.value()->complete(req, std::move(result));
     }
 
     FutureResult<size_t>

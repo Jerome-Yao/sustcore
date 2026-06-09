@@ -20,19 +20,30 @@ Result<void> RamDiskDevice::bind_request_queue(
     void_return();
 }
 
-Result<size_t> RamDiskDevice::process_request(blk::BlockRequest &req) {
+Result<void> RamDiskDevice::process_request(blk::BlockRequest &req) {
+    Result<size_t> result = std::unexpected(ErrCode::INVALID_PARAM);
     switch (req.op) {
         case blk::BlockOp::READ:
-            return read_blocks(req.lba, req.buffer, req.block_count);
+            result = read_blocks(req.lba, req.buffer, req.block_count);
+            break;
         case blk::BlockOp::WRITE:
-            return write_blocks(req.lba, req.buffer, req.block_count);
+            result = write_blocks(req.lba, req.buffer, req.block_count);
+            break;
         case blk::BlockOp::FLUSH: {
             auto sync_res = sync();
-            propagate(sync_res);
-            return 0;
+            if (sync_res.has_value()) {
+                result = 0;
+            } else {
+                result = std::unexpected(sync_res.error());
+            }
+            break;
         }
-        default: unexpect_return(ErrCode::INVALID_PARAM);
+        default: break;
     }
+    auto complete_res = blk::BlockRequestLayer::inst().complete_request(
+        util::nnullforce(&req), std::move(result));
+    propagate(complete_res);
+    void_return();
 }
 
 Result<void> RamDiskDevice::run_request_loop() {
@@ -50,10 +61,12 @@ Result<void> RamDiskDevice::run_request_loop() {
         }
 
         auto *req = req_res.value();
+        auto mark_res =
+            blk::BlockRequestLayer::inst().mark_request_processing(
+                util::nnullforce(req));
+        propagate(mark_res);
         auto process_res = process_request(*req);
-        auto complete_res =
-            _queue->complete(util::nnullforce(req), process_res);
-        propagate(complete_res);
+        propagate(process_res);
     }
     void_return();
 }

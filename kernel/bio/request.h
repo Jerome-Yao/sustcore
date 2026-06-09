@@ -32,6 +32,7 @@ namespace blk {
     enum class BlockReqStatus {
         PENDING,
         SUBMITTED,
+        PROCESSING,
         COMPLETED,
         FAILED,
         CANCELED,
@@ -88,8 +89,14 @@ namespace blk {
         Result<BlockRequest *> wait_and_dequeue();
 
         [[nodiscard]]
+        Result<void> mark_processing(util::nonnull<BlockRequest *> req);
+
+        [[nodiscard]]
         Result<void> complete(util::nonnull<BlockRequest *> req,
                               Result<size_t> result);
+
+        [[nodiscard]]
+        Result<void> cancel(util::nonnull<BlockRequest *> req, ErrCode error);
 
         [[nodiscard]]
         Result<void> stop_accepting();
@@ -123,6 +130,14 @@ namespace blk {
         static void init();
         static bool initialized();
         static BlockRequestLayer &inst();
+
+        [[nodiscard]]
+        Result<void> mark_request_processing(
+            util::nonnull<BlockRequest *> req) const;
+
+        [[nodiscard]]
+        Result<void> complete_request(util::nonnull<BlockRequest *> req,
+                                      Result<size_t> result) const;
 
         [[nodiscard]]
         FutureResult<size_t> submit_read_async(size_t devno,

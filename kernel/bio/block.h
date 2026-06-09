@@ -63,7 +63,7 @@ public:
     virtual Result<void> bind_request_queue(
         util::nonnull<blk::BlockRequestQueue *> queue) = 0;
     [[nodiscard]]
-    virtual Result<size_t> process_request(blk::BlockRequest &req) = 0;
+    virtual Result<void> process_request(blk::BlockRequest &req) = 0;
     [[nodiscard]]
     virtual Result<void> run_request_loop() = 0;
 };
@@ -85,7 +85,7 @@ private:
     blk::BlockRequestQueue *_queue = nullptr;
 
 public:
-    constexpr static BlockDeviceType IDENTIFIER = BlockDeviceType::BASIC;
+    constexpr static BlockDeviceType IDENTIFIER = BlockDeviceType::RAMDISK;
     [[nodiscard]]
     BlockDeviceType type_id() const override
     {
@@ -108,7 +108,7 @@ public:
     Result<void> bind_request_queue(
         util::nonnull<blk::BlockRequestQueue *> queue) override;
     [[nodiscard]]
-    Result<size_t> process_request(blk::BlockRequest &req) override;
+    Result<void> process_request(blk::BlockRequest &req) override;
     [[nodiscard]]
     Result<void> run_request_loop() override;
     [[nodiscard]]
