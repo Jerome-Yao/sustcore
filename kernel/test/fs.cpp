@@ -42,14 +42,13 @@ namespace test::fs {
             tassert(data != nullptr, "应能分配块设备后端内存");
             memset(data, 0, 64);
 
-            auto dev = util::owner<IBlockDeviceOps *>(
-                new RamDiskDevice(data, 64, 1));
-            tassert(dev.get() != nullptr, "应能创建测试 RamDisk 设备");
+            auto* dev = new RamDiskDevice(data, 64, 1);
+            tassert(dev != nullptr, "应能创建测试 RamDisk 设备");
 
             auto reg_res =
-                blk::BlkManager::inst().register_device(std::move(dev));
+                blk::BlkManager::inst().register_device(util::nnullforce(
+                    static_cast<IBlockDeviceOps *>(dev)));
             tassert(reg_res.has_value(), "注册块设备应成功");
-            tassert(dev.get() == nullptr, "注册后所有权应被 BlkManager 接管");
 
             size_t devno = reg_res.value();
             auto lookup_res = blk::BlkManager::inst().lookup(devno);
@@ -66,7 +65,7 @@ namespace test::fs {
                     "应能从设备指针反查 devno");
 
             auto dup_res = blk::BlkManager::inst().register_device(
-                util::owner<IBlockDeviceOps *>(lookup_res.value()));
+                util::nnullforce(lookup_res.value()));
             tassert(!dup_res.has_value() &&
                         dup_res.error() == ErrCode::KEY_DUPLICATED,
                     "重复注册同一设备指针应失败");
@@ -78,6 +77,8 @@ namespace test::fs {
             tassert(!missing_lookup.has_value() &&
                         missing_lookup.error() == ErrCode::ENTRY_NOT_FOUND,
                     "注销后设备查找应失败");
+            delete dev;
+            delete[] data;
         }
     };
 
@@ -386,7 +387,7 @@ namespace test::fs {
 
     static Result<size_t> register_device(IBlockDeviceOps *device) {
         return blk::BlkManager::inst().register_device(
-            util::owner<IBlockDeviceOps *>(device));
+            util::nnullforce(device));
     }
 
     static Result<void> unregister_device(size_t devno) {

@@ -101,10 +101,10 @@ namespace blk {
         }
 
         [[nodiscard]]
-        bool stopped() const noexcept;
+        bool stopped() noexcept;
 
         [[nodiscard]]
-        bool accepting() const noexcept;
+        bool accepting() noexcept;
 
         [[nodiscard]]
         Result<void> submit(util::nonnull<BlockRequest *> req);

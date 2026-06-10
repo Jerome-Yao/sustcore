@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <bio/block.h>
 #include <driver/virtio/virtio.h>
 
 namespace virtio {
@@ -104,11 +105,14 @@ namespace virtio {
     /**
      * @brief virtio 块设备调试驱动.
      *
-     * 当前版本仅实现同步轮询式读写原语与调试 hexdump 输出,
-     * 暂不接入 `IBlockDeviceOps`.
+     * 当前版本已经接入块设备模型, 但请求完成路径仍暂时采用同步轮询,
+     * 后续需要迁移到中断驱动的完成模型.
      */
-    class VirtioBlkDriver final : public VirtioDriverBase {
+    class VirtioBlkDriver final : public VirtioDriverBase,
+                                  public IBlockDeviceOps {
     public:
+        constexpr static BlockDeviceType IDENTIFIER = BlockDeviceType::BASIC;
+
         /**
          * @brief 构造一个 virtio-blk 设备对象.
          */
@@ -126,6 +130,15 @@ namespace virtio {
         Result<void> init() noexcept;
 
         /**
+         * @brief 返回该驱动的块设备 RTTI 标识.
+         */
+        [[nodiscard]]
+        BlockDeviceType type_id() const override
+        {
+            return IDENTIFIER;
+        }
+
+        /**
          * @brief 返回逻辑块大小.
          */
         [[nodiscard]]
@@ -136,6 +149,31 @@ namespace virtio {
          */
         [[nodiscard]]
         Result<size_t> block_cnt() const noexcept;
+
+        /**
+         * @brief 返回设备是否处于只读模式.
+         */
+        [[nodiscard]]
+        Result<bool> readonly() const override;
+
+        /**
+         * @brief 绑定块设备模型分配的专属请求队列.
+         */
+        [[nodiscard]]
+        Result<void> bind_request_queue(
+            util::nonnull<blk::BlockRequestQueue *> queue) override;
+
+        /**
+         * @brief 消费一个已进入 PROCESSING 状态的块请求.
+         */
+        [[nodiscard]]
+        Result<void> process_request(blk::BlockRequest &req) override;
+
+        /**
+         * @brief 运行 virtio-blk 的块请求消费主循环.
+         */
+        [[nodiscard]]
+        Result<void> run_request_loop() override;
 
         /**
          * @brief 同步读取若干逻辑块.
@@ -183,6 +221,7 @@ namespace virtio {
 
         BlkConfig _config{};
         VirtQueueLegacy *_request_queue = nullptr;
+        blk::BlockRequestQueue *_queue   = nullptr;
         DmaBuffer _request_header = {};
         DmaBuffer _status_byte    = {};
         size_t _block_size        = DEFAULT_BLOCK_SIZE;

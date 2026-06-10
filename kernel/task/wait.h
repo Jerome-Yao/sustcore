@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <spinlock.h>
 #include <sus/coroutine.h>
 #include <sus/list.h>
 #include <sus/map.h>
@@ -40,7 +41,8 @@ namespace task::wait {
 
     size_t alloc_reason();
     Result<void> future_begin_update() noexcept;
-    Result<void> future_wait_current(size_t reason) noexcept;
+    Result<void> future_wait_current(size_t reason,
+                                     WaitReadyPredicate ready_predicate) noexcept;
     Result<void> check_future_wait_thread(bool require_kernel) noexcept;
 
     enum class FutureState {
@@ -1186,9 +1188,13 @@ namespace task::wait {
      */
     Result<void> wait_event(size_t id,
                             WaitReadyPredicate ready_predicate) noexcept;
+    Result<void> locked_wait_event(size_t id, SpinLocker &lock,
+                                   WaitReadyPredicate ready_predicate) noexcept;
     Result<TCB *> peek_one(size_t id);
     Result<size_t> wake_one(size_t id);
     Result<size_t> wake_all(size_t id);
+    Result<size_t> locked_wakeup(size_t id, SpinLocker &lock);
+    Result<size_t> locked_wake_all(size_t id, SpinLocker &lock);
     bool has_waiting(size_t id);
 
     template <typename T>
@@ -1390,7 +1396,10 @@ namespace task::wait {
     inline typename detail::future_wait_result_t<T> wait_for(Future<T> &future) {
         propagate(check_future_wait_thread(false));
         while (!future.readable()) {
-            auto wait_res = future_wait_current(future.wait_reason());
+            auto wait_res = future_wait_current(
+                future.wait_reason(), [&future]() noexcept {
+                    return future.readable();
+                });
             propagate(wait_res);
         }
         return take_wait_result(future);
@@ -1401,7 +1410,10 @@ namespace task::wait {
         Future<T> &future) {
         propagate(check_future_wait_thread(true));
         while (!future.readable()) {
-            auto wait_res = future_wait_current(future.wait_reason());
+            auto wait_res = future_wait_current(
+                future.wait_reason(), [&future]() noexcept {
+                    return future.readable();
+                });
             propagate(wait_res);
         }
         return take_wait_result(future);

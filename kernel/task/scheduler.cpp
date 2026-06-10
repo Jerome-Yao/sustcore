@@ -10,6 +10,7 @@
  */
 
 #include <arch/riscv64/description.h>
+#include <device/int.h>
 #include <env.h>
 #include <logger.h>
 #include <mem/vma.h>
@@ -69,6 +70,35 @@ namespace schd {
 
     PCB *Scheduler::current_pcb() const {
         return env::hart_ctx->current_pcb();
+    }
+
+    Result<void> Scheduler::preempt_disable() noexcept {
+        auto *current = current_tcb();
+        if (current == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        current->basic_entity
+            .template flags_set<SchedMeta::FLAGS_PREEMPT_DISABLED>();
+        void_return();
+    }
+
+    Result<void> Scheduler::preempt_enable() noexcept {
+        auto *current = current_tcb();
+        if (current == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        current->basic_entity
+            .template flags_reset<SchedMeta::FLAGS_PREEMPT_DISABLED>();
+        void_return();
+    }
+
+    bool Scheduler::preempt_disabled() const noexcept {
+        auto *current = current_tcb();
+        if (current == nullptr) {
+            return false;
+        }
+        return current->basic_entity
+            .template flags_check<SchedMeta::FLAGS_PREEMPT_DISABLED>();
     }
 
     void switch_pgd(TaskMemoryManager *tmm) {
@@ -183,6 +213,11 @@ namespace schd {
             // 没有正在运行的线程, 不需要抢占
             return;
         }
+        if (current->basic_entity
+                .template flags_check<SchedMeta::FLAGS_PREEMPT_DISABLED>())
+        {
+            return;
+        }
 
         bool do_preempt = false;
         if (new_tcb->schd_class <= current->schd_class) {
@@ -209,11 +244,19 @@ namespace schd {
         }
     }
 
-    void Scheduler::schedule() {
+    void Scheduler::schedule(bool ignore_preempt_disabled) {
         // 首先获得当前正在运行的线程
         auto *current = current_tcb();
         if (current == nullptr) {
             // 没有正在运行的线程, 调度器未启动, 直接返回
+            return;
+        }
+
+        if (!ignore_preempt_disabled && current->basic_entity.state !=
+                                            ThreadState::WAITING &&
+            current->basic_entity
+                .template flags_check<SchedMeta::FLAGS_PREEMPT_DISABLED>())
+        {
             return;
         }
 
@@ -280,14 +323,13 @@ namespace schd {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        auto enqueue_res =
-            task::wait::WaitReasonManager::inst().enqueue(reason, current,
-                                                          std::move(predicate));
+        auto enqueue_res = task::wait::WaitReasonManager::inst().enqueue(
+            reason, current, std::move(predicate));
         propagate(enqueue_res);
 
         current->basic_entity
             .template flags_set<SchedMeta::FLAGS_NEED_RESCHED>();
-        schedule();
+        schedule(true);
         void_return();
     }
 
@@ -315,7 +357,7 @@ namespace schd {
             }
         }
 
-        schedule();
+        schedule(true);
     }
 
     // RR > FCFS

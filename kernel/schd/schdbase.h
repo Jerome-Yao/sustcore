@@ -71,6 +71,7 @@ namespace schd {
         std::atomic<b64> flags = 0;
 
         constexpr static b64 FLAGS_NEED_RESCHED = 0x1;
+        constexpr static b64 FLAGS_PREEMPT_DISABLED = 0x2;
 
         template <b64 set_flags>
         constexpr void flags_set() {

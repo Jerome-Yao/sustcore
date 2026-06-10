@@ -9,8 +9,8 @@
  *
  */
 
-#include <driver/int/base.h>
 #include <bio/buffer.h>
+#include <driver/int/base.h>
 #include <logger.h>
 #include <object/endpoint.h>
 #include <syscall/syscall.h>
@@ -144,11 +144,56 @@ namespace task::wait {
         propagate(current_res);
 
         while (!ready_predicate()) {
-            auto wait_res = schd::Scheduler::inst().block_current(id);
+            auto wait_res = schd::Scheduler::inst().block_current(
+                id,
+                [ready_predicate = ready_predicate](TCB *tcb [[maybe_unused]]) {
+                    return ready_predicate();
+                });
             propagate(wait_res);
         }
 
         void_return();
+    }
+
+    Result<void> locked_wait_event(
+        size_t id, SpinLocker &lock,
+        WaitReadyPredicate ready_predicate) noexcept {
+        if (id == 0 || !ready_predicate) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto &scheduler = schd::Scheduler::inst();
+        auto &waitman   = task::wait::WaitReasonManager::inst();
+
+        auto *current = scheduler.current_tcb();
+        if (current == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        if (current->schd_class == schd::ClassType::IDLE) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        while (true) {
+            {
+                GuardedLock guarded(lock);
+                if (ready_predicate()) {
+                    void_return();
+                }
+
+                auto enqueue_res =
+                    waitman.enqueue(id, current,
+                                    [ready_predicate = ready_predicate](
+                                        TCB *tcb [[maybe_unused]]) {
+                                        return ready_predicate();
+                                    });
+                propagate(enqueue_res);
+
+                current->basic_entity
+                    .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+            }
+            scheduler.schedule(true);
+        }
     }
 
     Result<void> future_begin_update() noexcept {
@@ -157,8 +202,15 @@ namespace task::wait {
         void_return();
     }
 
-    Result<void> future_wait_current(size_t reason) noexcept {
-        return schd::Scheduler::inst().block_current(reason);
+    Result<void> future_wait_current(
+        size_t reason, WaitReadyPredicate ready_predicate) noexcept {
+        if (reason == 0 || !ready_predicate) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return schd::Scheduler::inst().block_current(
+            reason,
+            [ready_predicate = std::move(ready_predicate)](
+                TCB *tcb [[maybe_unused]]) { return ready_predicate(); });
     }
 
     Result<void> check_future_wait_thread(bool require_kernel) noexcept {
@@ -285,66 +337,86 @@ namespace task::wait {
     }
 
     Result<size_t> WaitReasonManager::wake_one(size_t id) {
-        auto qres = queue_if_exists(id);
-        propagate(qres);
+        return queue_if_exists(id).and_then(
+            [id](WaitQueue *queue) -> Result<size_t> {
+                if (queue == nullptr || queue->threads.empty()) {
+                    return size_t(0);
+                }
 
-        WaitQueue *queue = qres.value();
-        if (queue == nullptr || queue->threads.empty()) {
-            return size_t(0);
-        }
+                TCB *first_rejected = nullptr;
+                while (!queue->threads.empty()) {
+                    TCB *tcb = &queue->threads.front();
+                    queue->threads.pop_front();
 
-        TCB *first_rejected = nullptr;
-        while (!queue->threads.empty()) {
-            TCB *tcb = &queue->threads.front();
-            queue->threads.pop_front();
+                    if (tcb == first_rejected) {
+                        queue->threads.push_back(*tcb);
+                        return size_t(0);
+                    }
 
-            if (tcb == first_rejected) {
-                queue->threads.push_back(*tcb);
+                    if (run_wait_predicate(tcb)) {
+                        clear_wait_metadata(tcb);
+                        auto resume_res = dispatch_waiter(tcb);
+                        propagate(resume_res);
+                        return size_t(1);
+                    }
+
+                    if (first_rejected == nullptr) {
+                        first_rejected = tcb;
+                    }
+                    queue->threads.push_back(*tcb);
+                }
+
                 return size_t(0);
-            }
-
-            if (run_wait_predicate(tcb)) {
-            clear_wait_metadata(tcb);
-            auto resume_res = dispatch_waiter(tcb);
-            propagate(resume_res);
-            return size_t(1);
-            }
-
-            if (first_rejected == nullptr) {
-                first_rejected = tcb;
-            }
-            queue->threads.push_back(*tcb);
-        }
-
-        return size_t(0);
+            });
     }
 
     Result<size_t> WaitReasonManager::wake_all(size_t id) {
-        size_t count = 0;
-        auto qres    = queue_if_exists(id);
-        propagate(qres);
+        return queue_if_exists(id).and_then(
+            [id](WaitQueue *queue) -> Result<size_t> {
+                size_t count = 0;
+                if (queue == nullptr || queue->threads.empty()) {
+                    return count;
+                }
 
-        WaitQueue *queue = qres.value();
-        if (queue == nullptr || queue->threads.empty()) {
-            return count;
-        }
+                size_t scan_count = queue->threads.size();
+                for (size_t i = 0; i < scan_count; ++i) {
+                    TCB *tcb = &queue->threads.front();
+                    queue->threads.pop_front();
 
-        size_t scan_count = queue->threads.size();
-        for (size_t i = 0; i < scan_count; ++i) {
-            TCB *tcb = &queue->threads.front();
-            queue->threads.pop_front();
+                    if (!run_wait_predicate(tcb)) {
+                        queue->threads.push_back(*tcb);
+                        continue;
+                    }
 
-            if (!run_wait_predicate(tcb)) {
-                queue->threads.push_back(*tcb);
-                continue;
-            }
+                    clear_wait_metadata(tcb);
+                    auto resume_res = dispatch_waiter(tcb);
+                    propagate(resume_res);
+                    ++count;
+                }
+                return count;
+            });
+    }
 
-            clear_wait_metadata(tcb);
-            auto resume_res = dispatch_waiter(tcb);
-            propagate(resume_res);
-            ++count;
-        }
-        return count;
+    Result<size_t> locked_wakeup(size_t id, SpinLocker &lock) {
+        GuardedLock guarded(lock);
+        return WaitReasonManager::inst().wake_one(id);
+    }
+
+    Result<size_t> locked_wake_all(size_t id, SpinLocker &lock) {
+        GuardedLock guarded(lock);
+        return WaitReasonManager::inst().wake_all(id);
+    }
+
+    Result<size_t> wake_one(size_t id) {
+        return WaitReasonManager::inst().wake_one(id);
+    }
+
+    Result<size_t> wake_all(size_t id) {
+        return WaitReasonManager::inst().wake_all(id);
+    }
+
+    bool has_waiting(size_t id) {
+        return WaitReasonManager::inst().has_waiting(id);
     }
 
     bool WaitReasonManager::has_waiting(size_t id) {
@@ -364,25 +436,12 @@ namespace task::wait {
         return schd::Scheduler::inst().block_current(id);
     }
 
-    Result<void> deprecated_wait_current(size_t id,
-                                         WaitPredicate predicate) {
+    Result<void> deprecated_wait_current(size_t id, WaitPredicate predicate) {
         return schd::Scheduler::inst().block_current(id, std::move(predicate));
     }
 
     Result<TCB *> peek_one(size_t id) {
         return WaitReasonManager::inst().peek_one(id);
-    }
-
-    Result<size_t> wake_one(size_t id) {
-        return WaitReasonManager::inst().wake_one(id);
-    }
-
-    Result<size_t> wake_all(size_t id) {
-        return WaitReasonManager::inst().wake_all(id);
-    }
-
-    bool has_waiting(size_t id) {
-        return WaitReasonManager::inst().has_waiting(id);
     }
 
 }  // namespace task::wait

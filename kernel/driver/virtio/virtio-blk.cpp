@@ -10,6 +10,7 @@
  */
 
 #include <device/resource.h>
+#include <bio/blk.h>
 #include <driver/virtio/virtio-blk.h>
 #include <logger.h>
 #include <sus/raii.h>
@@ -152,6 +153,73 @@ namespace virtio {
         return static_cast<size_t>(total_bytes / _block_size);
     }
 
+    Result<bool> VirtioBlkDriver::readonly() const {
+        return (negotiated_features() & feature::MASK_RO) != 0;
+    }
+
+    Result<void> VirtioBlkDriver::bind_request_queue(
+        util::nonnull<blk::BlockRequestQueue *> queue) {
+        if (_queue != nullptr && _queue != queue.get()) {
+            unexpect_return(ErrCode::BUSY);
+        }
+        _queue = queue.get();
+        void_return();
+    }
+
+    Result<void> VirtioBlkDriver::process_request(blk::BlockRequest &req) {
+        if (_queue == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        Result<size_t> result = std::unexpected(ErrCode::INVALID_PARAM);
+        switch (req.op) {
+            case blk::BlockOp::READ:
+                result = read_blocks(req.lba, req.block_count, req.buffer);
+                break;
+            case blk::BlockOp::WRITE:
+                result = write_blocks(req.lba, req.block_count, req.buffer);
+                break;
+            case blk::BlockOp::FLUSH: {
+                auto flush_res = submit_flush();
+                if (flush_res.has_value()) {
+                    result = 0;
+                } else {
+                    result = std::unexpected(flush_res.error());
+                }
+                break;
+            }
+            default: break;
+        }
+
+        auto complete_res =
+            _queue->complete(util::nnullforce(&req), std::move(result));
+        propagate(complete_res);
+        void_return();
+    }
+
+    Result<void> VirtioBlkDriver::run_request_loop() {
+        if (_queue == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        while (true) {
+            auto req_res = _queue->wait_and_dequeue();
+            if (!req_res.has_value()) {
+                if (req_res.error() == ErrCode::FUTURE_CANCLED) {
+                    break;
+                }
+                propagate_return(req_res);
+            }
+
+            auto *req = req_res.value();
+            auto mark_res = _queue->mark_processing(util::nnullforce(req));
+            propagate(mark_res);
+            auto process_res = process_request(*req);
+            propagate(process_res);
+        }
+        void_return();
+    }
+
     Result<size_t> VirtioBlkDriver::submit_rw(u32 req_type, size_t sector,
                                               void *buffer, size_t bytes,
                                               bool device_writes) noexcept {
@@ -192,6 +260,10 @@ namespace virtio {
             .writable = true,
         });
 
+        // TODO: 当前为了先接入块设备模型, 请求完成仍采用同步轮询.
+        // 后续将改为 virtio-blk 中断驱动完成路径, 以避免 busy waiting.
+        // 若先做过渡实现, 可在中断回调中采用“关中断 - 复制数据 - 开中断”的
+        // 临时简化策略, 然后再继续细化临界区粒度.
         auto used_res = queue_submit_and_poll_legacy(*_request_queue, bufs);
         propagate(used_res);
 
@@ -286,6 +358,8 @@ namespace virtio {
             .writable = true,
         });
 
+        // TODO: flush 完成路径当前同样通过同步轮询等待, 后续将统一迁移到
+        // 基于 virtio-blk 完成中断的请求收尾流程.
         auto used_res = queue_submit_and_poll_legacy(*_request_queue, bufs);
         propagate(used_res);
         if (*status != reqstatus::OK) {
@@ -386,6 +460,22 @@ namespace virtio {
             delete driver;
             propagate_return(init_res);
         }
+
+        if (!blk::BlkManager::initialized()) {
+            loggers::DEVICE::ERROR("virtio-blk 创建失败: BlkManager 未初始化");
+            delete driver;
+            unexpect_return(ErrCode::FAILURE);
+        }
+
+        auto devno_res = blk::BlkManager::inst().register_device(
+            util::nnullforce(static_cast<IBlockDeviceOps *>(driver)));
+        if (!devno_res.has_value()) {
+            delete driver;
+            propagate_return(devno_res);
+        }
+        loggers::DEVICE::INFO("virtio-blk 已接入块层: node=%s devno=%u",
+                              node.name(),
+                              static_cast<unsigned>(devno_res.value()));
         return static_cast<driver::DriverBase *>(driver);
     }
 

@@ -32,7 +32,6 @@ namespace schd {
         fcfs::FCFS<TCB> _fcfs_schd;
         idle::IDLE<TCB> _idle_schd;
         init::INIT<TCB> _init_schd;
-
     public:
         static void init(util::nonnull<TCB *> idle_tcb,
                          util::nonnull<TCB *> kinit_tcb);
@@ -79,6 +78,15 @@ namespace schd {
          */
         [[nodiscard]]
         PCB *current_pcb() const;
+
+        [[nodiscard]]
+        Result<void> preempt_disable() noexcept;
+
+        [[nodiscard]]
+        Result<void> preempt_enable() noexcept;
+
+        [[nodiscard]]
+        bool preempt_disabled() const noexcept;
 
         using BaseSchedPtr = util::nonnull<BaseSched<TCB> *>;
 
@@ -153,7 +161,7 @@ namespace schd {
          * 均保持为空, 此时 schedule() 只会直接返回, 不会启动任务调度.
          *
          */
-        void schedule();
+        void schedule(bool ignore_preempt_disabled = false);
 
         // 任务入队/唤醒
         Result<void> enqueue(util::nonnull<TCB *> tcb);

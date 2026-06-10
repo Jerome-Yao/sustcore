@@ -22,28 +22,30 @@ namespace blk {
           _ring(depth + 1),
           _wait_reason(task::wait::alloc_reason()) {}
 
-    bool BlockRequestQueue::stopped() const noexcept {
-        GuardedLock lock(const_cast<SpinLocker &>(_lock));
+    bool BlockRequestQueue::stopped() noexcept {
+        GuardedLock lock(_lock);
         return _stopped;
     }
 
-    bool BlockRequestQueue::accepting() const noexcept {
-        GuardedLock lock(const_cast<SpinLocker &>(_lock));
+    bool BlockRequestQueue::accepting() noexcept {
+        GuardedLock lock(_lock);
         return _accepting;
     }
 
     Result<void> BlockRequestQueue::submit(util::nonnull<BlockRequest *> req) {
-        GuardedLock lock(_lock);
-        if (!_accepting || _stopped) {
-            unexpect_return(ErrCode::BUSY);
+        {
+            GuardedLock lock(_lock);
+            if (!_accepting || _stopped) {
+                unexpect_return(ErrCode::BUSY);
+            }
+            assert(!_ring.full());  // TODO: 队列满时改为正式背压策略
+            auto push_res = _ring.push(req.get());
+            if (!push_res.has_value()) {
+                unexpect_return(ErrCode::BUSY);
+            }
+            req->status = BlockReqStatus::SUBMITTED;
         }
-        assert(!_ring.full());  // TODO: 队列满时改为正式背压策略
-        auto push_res = _ring.push(req.get());
-        if (!push_res.has_value()) {
-            unexpect_return(ErrCode::BUSY);
-        }
-        req->status   = BlockReqStatus::SUBMITTED;
-        auto wake_res = task::wait::wake_all(_wait_reason);
+        auto wake_res = task::wait::locked_wake_all(_wait_reason, _lock);
         propagate(wake_res);
         void_return();
     }
@@ -76,11 +78,9 @@ namespace blk {
             if (pop_res.error() != ErrCode::ENTRY_NOT_FOUND) {
                 propagate_return(pop_res);
             }
-            auto wait_res =
-                task::wait::wait_event(_wait_reason, [this]() noexcept {
-                    GuardedLock lock(_lock);
-                    return _stopped || !_ring.empty();
-                });
+            auto wait_res = task::wait::locked_wait_event(
+                _wait_reason, _lock,
+                [this]() noexcept { return _stopped || !_ring.empty(); });
             propagate(wait_res);
         }
     }
@@ -165,7 +165,7 @@ namespace blk {
             GuardedLock lock(_lock);
             _stopped = true;
         }
-        auto wake_res = task::wait::wake_all(_wait_reason);
+        auto wake_res = task::wait::locked_wake_all(_wait_reason, _lock);
         propagate(wake_res);
         void_return();
     }

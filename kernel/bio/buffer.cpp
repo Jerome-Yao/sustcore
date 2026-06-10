@@ -225,14 +225,14 @@ namespace blk {
         }
 
         buffer->inflight = true;
-        auto lower_future =
+        auto sumbit_future =
             _request_layer->submit_read_async(blkno, buffer->data, 1);
-        auto lower_res   = task::wait::kthread_wait_for(lower_future);
+        auto submit_res   = task::wait::kthread_wait_for(sumbit_future);
         buffer->inflight = false;
-        if (!lower_res.has_value()) {
-            return make_handler_future(std::unexpected(lower_res.error()));
+        if (!submit_res.has_value()) {
+            return make_handler_future(std::unexpected(submit_res.error()));
         }
-        if (lower_res.value() != 1) {
+        if (submit_res.value() != _blksz) {
             return make_handler_future(std::unexpected(ErrCode::IO_ERROR));
         }
 

@@ -23,7 +23,7 @@
 
 namespace blk {
     struct RegisteredBlockDevice {
-        util::owner<IBlockDeviceOps *> device;
+        IBlockDeviceOps *device = nullptr;
         util::owner<BufferCache *> cache;
         util::owner<BlockRequestQueue *> queue;
         task::TCB *worker = nullptr;
@@ -36,7 +36,6 @@ namespace blk {
             for (auto &[id, record] : _devices) {
                 delete record.cache.get();
                 delete record.queue.get();
-                delete record.device.get();
             }
         }
         static BlkManager _INSTANCE;
@@ -73,7 +72,7 @@ namespace blk {
             auto it = _devices.find(id);
             if (it == _devices.end())
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
-            return it->second.device.get();
+            return it->second.device;
         }
 
         [[nodiscard]]
@@ -112,7 +111,7 @@ namespace blk {
         }
 
         Result<size_t> register_device(
-            util::owner<IBlockDeviceOps *> &&device) {
+            util::nonnull<IBlockDeviceOps *> device) {
             if (device.get() == nullptr) {
                 unexpect_return(ErrCode::NULLPTR);
             }
@@ -167,11 +166,10 @@ namespace blk {
                 delete queue;
                 propagate_return(worker_res);
             }
-            device = util::owner<IBlockDeviceOps *>(nullptr);
             _device_ids.insert_or_assign(key, id);
             _devices.emplace(
                 id, RegisteredBlockDevice{
-                        .device = util::owner<IBlockDeviceOps *>(raw_device),
+                        .device = raw_device,
                         .cache  = util::owner(cache),
                         .queue  = util::owner(queue),
                         .worker = worker_res.value().get(),
@@ -183,7 +181,6 @@ namespace blk {
                 _device_ids.erase(key);
                 delete rec.cache.get();
                 delete rec.queue.get();
-                delete rec.device.get();
                 unexpect_return(ErrCode::FAILURE);
             }
             return id;
@@ -193,7 +190,7 @@ namespace blk {
             auto it = _devices.find(id);
             if (it == _devices.end())
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
-            auto *dev   = it->second.device.get();
+            auto *dev   = it->second.device;
             auto *cache = it->second.cache.get();
             auto *queue = it->second.queue.get();
             if (queue != nullptr) {
@@ -204,7 +201,6 @@ namespace blk {
             _devices.erase(it);
             delete cache;
             delete queue;
-            delete dev;
             void_return();
         }
     };

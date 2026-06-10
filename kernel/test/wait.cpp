@@ -48,6 +48,24 @@ namespace test::wait {
             }
         };
 
+        class CaseFutureWaitCurrentRejectsInvalidArgs : public TestCase {
+        public:
+            CaseFutureWaitCurrentRejectsInvalidArgs()
+                : TestCase("future_wait_current 拒绝无效参数") {}
+
+            void _run(void *env [[maybe_unused]]) const noexcept override {
+                auto invalid_reason =
+                    task::wait::future_wait_current(0, []() { return true; });
+                ttest(!invalid_reason.has_value());
+                ttest(invalid_reason.error() == ErrCode::INVALID_PARAM);
+
+                auto invalid_predicate =
+                    task::wait::future_wait_current(1, {});
+                ttest(!invalid_predicate.has_value());
+                ttest(invalid_predicate.error() == ErrCode::INVALID_PARAM);
+            }
+        };
+
         class CaseFutureValueRejectsPending : public TestCase {
         public:
             CaseFutureValueRejectsPending()
@@ -123,6 +141,7 @@ namespace test::wait {
         cases.push_back(new CaseWaitEventRejectsInvalidReason());
         cases.push_back(new CaseWaitEventRejectsEmptyPredicate());
         cases.push_back(new CaseWaitEventReturnsImmediatelyWhenReady());
+        cases.push_back(new CaseFutureWaitCurrentRejectsInvalidArgs());
         cases.push_back(new CaseFutureValueRejectsPending());
         cases.push_back(new CaseFutureCancelTransitionsState());
         cases.push_back(new CaseFutureValueConsumesResult());

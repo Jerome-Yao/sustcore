@@ -39,7 +39,6 @@
 #include <task/task.h>
 #include <task/wait.h>
 #include <test/framework.h>
-#include <test/kthread.h>
 
 #include <cassert>
 #include <cstddef>
@@ -385,15 +384,6 @@ Result<void> init_scheduler() {
 }
 
 Result<void> run_pre_bootstrap_tests() {
-#ifdef __CONF_KERNEL_TESTS
-    auto wait_event_test_res = test::kthread::start_wait_event_test();
-    if (!wait_event_test_res.has_value()) {
-        loggers::SUSTCORE::ERROR("启动 wait_event kthread 测试失败: %s",
-                                 to_cstring(wait_event_test_res.error()));
-        propagate_return(wait_event_test_res);
-    }
-#endif
-
 #ifdef __CONF_KERNEL_TESTS
     loggers::SUSTCORE::INFO("开始运行内核测试");
     TestFramework framework;

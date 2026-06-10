@@ -12,6 +12,7 @@
 #pragma once
 
 #include <arch/riscv64/spinlock.h>
+#include <task/scheduler.h>
 
 class SpinLocker
 {
@@ -40,6 +41,7 @@ class GuardedLock
 private:
     SpinLocker &_lock;
     bool locked = false;
+    bool _preempt_was_disabled = false;
 public:
     GuardedLock(SpinLocker &spinlock)
         : _lock(spinlock)
@@ -56,6 +58,28 @@ public:
     {
         if (! locked)
         {
+            if (! schd::Scheduler::initialized())
+            {
+                _preempt_was_disabled = true;
+            }
+            else
+            {
+                auto &scheduler = schd::Scheduler::inst();
+                auto *current   = scheduler.current_tcb();
+                if (current == nullptr)
+                {
+                    _preempt_was_disabled = true;
+                }
+                else
+                {
+                    _preempt_was_disabled = scheduler.preempt_disabled();
+                    if (! _preempt_was_disabled)
+                    {
+                        auto preempt_res = scheduler.preempt_disable();
+                        assert(preempt_res.has_value());
+                    }
+                }
+            }
             _lock.lock();
             locked = true;
         }
@@ -66,6 +90,11 @@ public:
         if (locked)
         {
             _lock.unlock();
+            if (! _preempt_was_disabled && schd::Scheduler::initialized())
+            {
+                auto preempt_res = schd::Scheduler::inst().preempt_enable();
+                assert(preempt_res.has_value());
+            }
             locked = false;
         }
     }

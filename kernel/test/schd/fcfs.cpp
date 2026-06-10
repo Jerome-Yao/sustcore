@@ -8,9 +8,11 @@
 #include <schd/fcfs.h>
 #include <schd/idle.h>
 #include <schd/init.h>
+#include <schd/rt.h>
 #include <sus/nonnull.h>
 #include <sus/tostring.h>
 #include <sustcore/errcode.h>
+#include <spinlock.h>
 #include <task/scheduler.h>
 #include <test/schd/fcfs.h>
 
@@ -147,6 +149,160 @@ namespace test::schd_test::fcfs {
             reinterpret_cast<schd::Scheduler &>(fake_scheduler).schedule();
             ttest(hart_ctx.current_tcb() == nullptr);
             ttest(hart_ctx.current_pcb() == nullptr);
+
+            env::hart_ctx = previous_hart_ctx;
+        }
+    };
+
+    class CasePreemptDisableApi : public TestCase {
+    public:
+        CasePreemptDisableApi() : TestCase("Scheduler 关抢占接口设置线程标志") {}
+
+        struct FakeScheduler {
+            schd::idle::IDLE<task::TCB> idle_schd;
+            schd::init::INIT<task::TCB> init_schd;
+        };
+
+        void _run(void *env [[maybe_unused]]) const noexcept override {
+            env::HartContext hart_ctx{};
+            auto *previous_hart_ctx = env::hart_ctx;
+            env::hart_ctx           = &hart_ctx;
+
+            task::TCB current{};
+            FakeScheduler fake_scheduler{};
+            current.schd_class = schd::ClassType::FCFS;
+
+            hart_ctx.current_tcb() = &current;
+            hart_ctx.current_pcb() = nullptr;
+
+            auto &scheduler =
+                reinterpret_cast<schd::Scheduler &>(fake_scheduler);
+
+            expect("preempt_disable 应置位 PREEMPT_DISABLED");
+            tassert(scheduler.preempt_disable().has_value(),
+                    "preempt_disable 调用成功");
+            ttest(current.basic_entity.flags_check<
+                  schd::SchedMeta::FLAGS_PREEMPT_DISABLED>());
+            ttest(scheduler.preempt_disabled());
+
+            expect("preempt_enable 应清除 PREEMPT_DISABLED");
+            tassert(scheduler.preempt_enable().has_value(),
+                    "preempt_enable 调用成功");
+            ttest(!current.basic_entity.flags_check<
+                  schd::SchedMeta::FLAGS_PREEMPT_DISABLED>());
+            ttest(!scheduler.preempt_disabled());
+
+            env::hart_ctx = previous_hart_ctx;
+        }
+    };
+
+    class CasePreemptDisabledSchedule : public TestCase {
+    public:
+        CasePreemptDisabledSchedule()
+            : TestCase("关抢占线程被动 schedule 时不切换") {}
+
+        struct FakeScheduler {
+            schd::rt::RT<task::TCB> rt_schd;
+            schd::rr::RR<task::TCB> rr_schd;
+            schd::fcfs::FCFS<task::TCB> fcfs_schd;
+            schd::idle::IDLE<task::TCB> idle_schd;
+            schd::init::INIT<task::TCB> init_schd;
+        };
+
+        void _run(void *env [[maybe_unused]]) const noexcept override {
+            env::HartContext hart_ctx{};
+            auto *previous_hart_ctx = env::hart_ctx;
+            env::hart_ctx           = &hart_ctx;
+
+            task::TCB current{};
+            task::TCB next{};
+            FakeScheduler fake_scheduler{};
+
+            current.schd_class = schd::ClassType::FCFS;
+            current.basic_entity.state = ThreadState::RUNNING;
+            current.basic_entity
+                .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+            current.basic_entity
+                .template flags_set<schd::SchedMeta::FLAGS_PREEMPT_DISABLED>();
+            next.schd_class         = schd::ClassType::FCFS;
+            next.basic_entity.state = ThreadState::READY;
+            auto rq = util::nnullforce(hart_ctx.rq());
+            tassert(fake_scheduler.fcfs_schd.enqueue(rq,
+                                                     util::nnullforce(&next))
+                        .has_value(),
+                    "候选线程入队成功");
+
+            hart_ctx.current_tcb() = &current;
+            hart_ctx.current_pcb() = nullptr;
+
+            auto &scheduler =
+                reinterpret_cast<schd::Scheduler &>(fake_scheduler);
+
+            expect("被动 schedule 不应切走带 PREEMPT_DISABLED 的线程");
+            scheduler.schedule();
+            ttest(hart_ctx.current_tcb() == &current);
+            ttest(current.basic_entity.flags_check<
+                  schd::SchedMeta::FLAGS_NEED_RESCHED>());
+            ttest(next.basic_entity.state == ThreadState::READY);
+
+            env::hart_ctx = previous_hart_ctx;
+        }
+    };
+
+    class CaseGuardedLockPreempt : public TestCase {
+    public:
+        CaseGuardedLockPreempt()
+            : TestCase("GuardedLock 按构造时状态恢复抢占") {}
+
+        struct FakeScheduler {
+            schd::rt::RT<task::TCB> rt_schd;
+            schd::rr::RR<task::TCB> rr_schd;
+            schd::fcfs::FCFS<task::TCB> fcfs_schd;
+            schd::idle::IDLE<task::TCB> idle_schd;
+            schd::init::INIT<task::TCB> init_schd;
+        };
+
+        void _run(void *env [[maybe_unused]]) const noexcept override {
+            env::HartContext hart_ctx{};
+            auto *previous_hart_ctx = env::hart_ctx;
+            env::hart_ctx           = &hart_ctx;
+
+            task::TCB current{};
+            FakeScheduler fake_scheduler{};
+            SpinLocker spinlock_a{};
+            SpinLocker spinlock_b{};
+
+            current.schd_class = schd::ClassType::FCFS;
+            current.basic_entity.state = ThreadState::RUNNING;
+            hart_ctx.current_tcb() = &current;
+            hart_ctx.current_pcb() = nullptr;
+
+            auto &scheduler =
+                reinterpret_cast<schd::Scheduler &>(fake_scheduler);
+
+            expect("未预先关抢占时, GuardedLock 析构后应恢复");
+            {
+                GuardedLock lock(spinlock_a);
+                ttest(scheduler.preempt_disabled());
+            }
+            ttest(!scheduler.preempt_disabled());
+
+            expect("已预先关抢占时, GuardedLock 析构后不应误开抢占");
+            tassert(scheduler.preempt_disable().has_value(),
+                    "手工 preempt_disable 成功");
+            {
+                GuardedLock outer(spinlock_a);
+                ttest(scheduler.preempt_disabled());
+                {
+                    GuardedLock inner(spinlock_b);
+                    ttest(scheduler.preempt_disabled());
+                }
+                ttest(scheduler.preempt_disabled());
+            }
+            ttest(scheduler.preempt_disabled());
+            tassert(scheduler.preempt_enable().has_value(),
+                    "手工 preempt_enable 成功");
+            ttest(!scheduler.preempt_disabled());
 
             env::hart_ctx = previous_hart_ctx;
         }
@@ -302,6 +458,9 @@ namespace test::schd_test::fcfs {
         cases.push_back(new CaseQueueOrder());
         cases.push_back(new CaseYieldFlag());
         cases.push_back(new CaseScheduleReturnsWhenCurrentNull());
+        cases.push_back(new CasePreemptDisableApi());
+        cases.push_back(new CasePreemptDisabledSchedule());
+        cases.push_back(new CaseGuardedLockPreempt());
         cases.push_back(new CaseTestRunning());
         framework.add_category(new TestCategory("schd.fcfs", std::move(cases)));
     }

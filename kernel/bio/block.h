@@ -136,6 +136,11 @@ namespace driver {
  *
  * `base()` 仅供少数上层快路径(如 TarFS 的 RamDisk 挂载优化)使用,
  * 不是通用块抽象的一部分.
+ *
+ * 当前 `RamDiskDevice` 的生命周期由调用方外部保证, `BlkManager`
+ * 只负责块层配套资源, 不负责销毁该设备对象.
+ *
+ * TODO: 后续需要统一内存后端设备与硬件设备的生命周期管理策略.
  */
 class RamDiskDevice : public IBlockDeviceOps {
 private:
@@ -152,6 +157,12 @@ public:
         return IDENTIFIER;
     }
     ~RamDiskDevice() override = default;
+    /**
+     * @brief 构造一个内存后端块设备.
+     *
+     * 调用方必须保证底层内存区域与设备对象本身的生命周期至少覆盖
+     * 其在 `BlkManager` 中注册存活的整个阶段.
+     */
     constexpr RamDiskDevice(void *base, size_t block_size, size_t block_count)
         : D_base(base), D_block_size(block_size), D_block_count(block_count) {}
     [[nodiscard]]

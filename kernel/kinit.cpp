@@ -37,6 +37,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <string>
 
 extern void register_timekeeper_log_test();
 
@@ -45,8 +46,13 @@ namespace {
     constexpr const char *INITMOD_PATH    = "/initrd/init.mod";
     constexpr const char *SETUPMOD_PATH   = "/initrd/setup.mod";
     constexpr const char *DEFAULTMOD_PATH = "/initrd/default.mod";
+    constexpr const char *TEST_IMG_PATH   = "/test_img/";
+    constexpr const char *TEST_IMG_FEATURE_PATH = "/test_img/feature.mk";
+    constexpr size_t FILE_READ_CHUNK_SIZE       = 256;
 
     devfs::DevFSDriver *g_devfs_driver = nullptr;
+    util::owner<RamDiskDevice *> g_initrd_device =
+        util::owner<RamDiskDevice *>(nullptr);
     driver::GoldfishRTC::AlarmHandler ticker;
 
     util::owner<RamDiskDevice *> make_initrd() {
@@ -57,6 +63,65 @@ namespace {
         loggers::SUSTCORE::INFO("initrd大小为 %u KB =  %u MB", sz / 1024,
                                 sz / 1024 / 1024);
         return device;
+    }
+
+    Result<std::string> read_vfs_file_text(const char *path) {
+        auto file_res = VFS::inst().__debug_open(path);
+        if (!file_res.has_value()) {
+            loggers::SUSTCORE::ERROR("打开文件失败: path=%s err=%s", path,
+                                     to_cstring(file_res.error()));
+        }
+        propagate(file_res);
+        auto *file = file_res.value();
+        util::Guard file_guard([file]() { file->destruct(); });
+
+        auto size_res = VFS::inst().size(*file);
+        if (!size_res.has_value()) {
+            loggers::SUSTCORE::ERROR("获取文件大小失败: path=%s err=%s", path,
+                                     to_cstring(size_res.error()));
+        }
+        propagate(size_res);
+        std::string content(size_res.value(), '\0');
+
+        size_t offset = 0;
+        while (offset < content.size()) {
+            const auto chunk =
+                std::min(FILE_READ_CHUNK_SIZE, content.size() - offset);
+            auto read_res =
+                VFS::inst().read(*file, static_cast<off_t>(offset),
+                                 content.data() + offset, chunk);
+            if (!read_res.has_value()) {
+                loggers::SUSTCORE::ERROR(
+                    "读取文件失败: path=%s offset=%u err=%s", path,
+                    static_cast<unsigned>(offset), to_cstring(read_res.error()));
+            }
+            propagate(read_res);
+            if (read_res.value() == 0) {
+                break;
+            }
+            offset += read_res.value();
+        }
+        content.resize(offset);
+        return content;
+    }
+
+    void log_text_lines(const char *prefix, const std::string &content) {
+        size_t line_begin = 0;
+        while (line_begin < content.size()) {
+            const auto line_end = content.find('\n', line_begin);
+            const auto line_len =
+                line_end == std::string::npos ? content.size() - line_begin
+                                              : line_end - line_begin;
+            loggers::SUSTCORE::INFO("%s%.*s", prefix, static_cast<int>(line_len),
+                                    content.data() + line_begin);
+            if (line_end == std::string::npos) {
+                break;
+            }
+            line_begin = line_end + 1;
+        }
+        if (content.empty()) {
+            loggers::SUSTCORE::INFO("%s", prefix);
+        }
     }
 
     Result<void> init_vfs() {
@@ -72,152 +137,19 @@ namespace {
         register_res      = vfs.register_fs(std::move(devfs_driver));
         propagate(register_res);
 
-        auto initrd_device = make_initrd();
-        auto devno_res     = blk::BlkManager::inst().register_device(
-            util::owner<IBlockDeviceOps *>(initrd_device.get()));
+        g_initrd_device = make_initrd();
+        auto devno_res  = blk::BlkManager::inst().register_device(
+            util::nnullforce(static_cast<IBlockDeviceOps *>(
+                g_initrd_device.get())));
         if (!devno_res.has_value()) {
             propagate_return(devno_res);
         }
-        initrd_device = util::owner<RamDiskDevice *>(nullptr);
 
         auto mount_res = vfs.mount("tarfs", devno_res.value(), INITRD_PATH,
                                    MountFlags::NONE, nullptr);
         propagate(mount_res);
         mount_res = vfs.mount("devfs", "/sys/", nullptr);
         propagate(mount_res);
-        void_return();
-    }
-
-    Result<void> init_runtime_drivers() {
-        auto devices1 =
-            device::DeviceModel::inst().find_devices_by_compatible("ns16550a");
-        loggers::SUSTCORE::INFO("兼容 ns16550a 的设备数量: %u",
-                                static_cast<unsigned>(devices1.size()));
-        if (devices1.size() > 0) {
-            auto *serial_device = devices1[0];
-            auto create_res =
-                driver::DriverModel::inst().create_driver(serial_device);
-            if (!create_res.has_value()) {
-                loggers::SUSTCORE::ERROR("为 ns16550a 设备创建驱动失败: %s",
-                                         to_cstring(create_res.error()));
-            } else {
-                loggers::SUSTCORE::INFO("已为 ns16550a 设备创建驱动");
-                auto *driver =
-                    static_cast<driver::SerialDevice *>(create_res.value());
-                driver->write("Hello, Sustcore!\n", strlen("Hello, Sustcore!\n"));
-                if (g_devfs_driver != nullptr) {
-                    auto devfs_res = g_devfs_driver->mounted_superblock();
-                    if (!devfs_res.has_value()) {
-                        loggers::SUSTCORE::ERROR("获取 DevFS 超级块失败: %s",
-                                                 to_cstring(devfs_res.error()));
-                    } else {
-                        auto mount_res =
-                            driver->mount(*devfs_res.value(), nullptr);
-                        if (!mount_res.has_value()) {
-                            loggers::SUSTCORE::ERROR(
-                                "挂载串口设备文件失败: %s",
-                                to_cstring(mount_res.error()));
-                        }
-                    }
-
-                    auto serial_file =
-                        VFS::inst().__debug_open("/sys/serial/serial");
-                    if (!serial_file.has_value()) {
-                        loggers::SUSTCORE::ERROR(
-                            "调试打开串口设备文件失败: %s",
-                            to_cstring(serial_file.error()));
-                    } else {
-                        auto write_res = VFS::inst().write(
-                            *serial_file.value(), 0, "Debug Hello!\n",
-                            strlen("Debug Hello!\n"));
-                        if (!write_res.has_value()) {
-                            loggers::SUSTCORE::ERROR(
-                                "调试写入串口设备文件失败: %s",
-                                to_cstring(write_res.error()));
-                        }
-                    }
-                }
-            }
-        }
-
-        auto devices2 = device::DeviceModel::inst().find_devices_by_compatible(
-            "google,goldfish-rtc");
-        loggers::SUSTCORE::INFO("兼容 google,goldfish-rtc 的设备数量: %u",
-                                static_cast<unsigned>(devices2.size()));
-
-        if (devices2.size() > 0) {
-            auto *rtc_device = devices2[0];
-            auto create_res =
-                driver::DriverModel::inst().create_driver(rtc_device);
-            if (!create_res.has_value()) {
-                loggers::SUSTCORE::ERROR(
-                    "为 google,goldfish-rtc 设备创建驱动失败: %s",
-                    to_cstring(create_res.error()));
-            } else {
-                loggers::SUSTCORE::INFO("已为 google,goldfish-rtc 设备创建驱动");
-                auto *driver =
-                    static_cast<driver::GoldfishRTC *>(create_res.value());
-                auto time = driver->read_time();
-                auto ft   = units::rt_time::from_time(time).to_formatted_time();
-                loggers::SUSTCORE::INFO(
-                    "当前 RTC 时间: %04lld-%02lld-%02lld %02lld:%02lld:%02lld",
-                    static_cast<long long>(ft.year),
-                    static_cast<long long>(ft.month),
-                    static_cast<long long>(ft.day),
-                    static_cast<long long>(ft.hour),
-                    static_cast<long long>(ft.minute),
-                    static_cast<long long>(ft.second));
-                auto alarm_time = time + units::time::from_seconds(2);
-
-                ticker = [driver](units::time now) {
-                    auto alarm_ft =
-                        units::rt_time::from_time(now).to_formatted_time();
-                    loggers::SUSTCORE::INFO(
-                        "Goldfish RTC alarm 触发: %04lld-%02lld-%02lld "
-                        "%02lld:%02lld:%02lld",
-                        static_cast<long long>(alarm_ft.year),
-                        static_cast<long long>(alarm_ft.month),
-                        static_cast<long long>(alarm_ft.day),
-                        static_cast<long long>(alarm_ft.hour),
-                        static_cast<long long>(alarm_ft.minute),
-                        static_cast<long long>(alarm_ft.second));
-                    auto next_alarm_time = now + units::time::from_seconds(2);
-                    driver->set_alarm(next_alarm_time, ticker);
-                };
-
-                driver->set_alarm(alarm_time, ticker);
-            }
-        }
-
-        auto virtio_devices =
-            device::DeviceModel::inst().find_devices_by_compatible(
-                virtio::VIRTIO_MMIO_COMPATIBLE);
-        loggers::SUSTCORE::INFO("兼容 virtio,mmio 的设备数量: %u",
-                                static_cast<unsigned>(virtio_devices.size()));
-        for (auto *virtio_device : virtio_devices) {
-            auto create_res =
-                driver::DriverModel::inst().create_driver(virtio_device);
-            if (!create_res.has_value()) {
-                if (create_res.error() == ErrCode::ENTRY_NOT_FOUND) {
-                    loggers::SUSTCORE::DEBUG(
-                        "virtio 设备暂未绑定具体驱动: name=%s",
-                        virtio_device->name());
-                    continue;
-                }
-                loggers::SUSTCORE::ERROR("为 virtio,mmio 设备创建驱动失败: %s",
-                                         to_cstring(create_res.error()));
-                continue;
-            }
-            loggers::SUSTCORE::INFO("已为 virtio,mmio 设备创建驱动: %s",
-                                    virtio_device->name());
-            auto *blk_driver =
-                static_cast<virtio::VirtioBlkDriver *>(create_res.value());
-            auto dump_res = blk_driver->__debug_print_blocks();
-            if (!dump_res.has_value()) {
-                loggers::SUSTCORE::ERROR("virtio-blk 调试读块失败: %s",
-                                         to_cstring(dump_res.error()));
-            }
-        }
         void_return();
     }
 
@@ -260,13 +192,6 @@ void kinit_runtime_entry() {
         loggers::SUSTCORE::FATAL("kinit 初始化 VFS 失败: %s",
                                  to_cstring(init_res.error()));
         panic("kinit 初始化 VFS 失败");
-    }
-
-    init_res = init_runtime_drivers();
-    if (!init_res.has_value()) {
-        loggers::SUSTCORE::FATAL("kinit 初始化运行时驱动失败: %s",
-                                 to_cstring(init_res.error()));
-        panic("kinit 初始化运行时驱动失败");
     }
 
 #ifdef __CONF_KERNEL_TIMEKEEPER_TEST
