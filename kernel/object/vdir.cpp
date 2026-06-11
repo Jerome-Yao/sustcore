@@ -22,4 +22,26 @@ namespace cap {
         }
         return VFS::inst().sync(*_obj);
     }
+
+    Result<CapIdx> VDirectoryObject::mkfile(const char *relpath,
+                                            flags::oflg_t oflags,
+                                            CHolder &holder) {
+        using namespace perm::vdir;
+        if (!imply(WRITE)) {
+            loggers::CAPABILITY::ERROR("权限不足");
+            return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
+        }
+        return VFS::inst().mkfile(*_cap, relpath, oflags, holder);
+    }
+
+    Result<CapIdx> VDirectoryObject::mkdir(const char *relpath,
+                                           flags::oflg_t oflags,
+                                           CHolder &holder) {
+        using namespace perm::vdir;
+        if (!imply(WRITE)) {
+            loggers::CAPABILITY::ERROR("权限不足");
+            return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
+        }
+        return VFS::inst().mkdir(*_cap, relpath, oflags, holder);
+    }
 }  // namespace cap

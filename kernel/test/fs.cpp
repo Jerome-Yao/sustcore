@@ -12,13 +12,17 @@
 #include <bio/buffer.h>
 #include <bio/blk.h>
 #include <bio/request.h>
+#include <guard.h>
 #include <logger.h>
 #include <mem/alloc.h>
+#include <object/vdir.h>
 #include <object/vfile.h>
 #include <symbols.h>
 #include <task/wait.h>
 #include <test/fs.h>
+#include <vfs/device.h>
 #include <vfs/tarfs.h>
+#include <vfs/tmpfs.h>
 #include <vfs/vfs.h>
 
 #include <cstdint>
@@ -28,9 +32,29 @@ namespace test::fs {
     static RamDiskDevice* make_initrd();
 
     static RamDiskDevice* _block_dev = nullptr;
+    static bool _fs_test_initialized = false;
     static void ensure_block_dev();
     static Result<size_t> register_device(IBlockDeviceOps *device);
     static Result<void> unregister_device(size_t devno);
+
+    static void *setup_fs_env() {
+        if (!_fs_test_initialized) {
+            blk::BlkManager::init();
+            VFS::init();
+            auto &vfs = VFS::inst();
+            auto register_res =
+                vfs.register_fs(util::owner(new tarfs::TarFSDriver()));
+            assert(register_res.has_value());
+            register_res =
+                vfs.register_fs(util::owner(new tmpfs::TmpFSDriver()));
+            assert(register_res.has_value());
+            register_res =
+                vfs.register_fs(util::owner(new devfs::DevFSDriver()));
+            assert(register_res.has_value());
+            _fs_test_initialized = true;
+        }
+        return nullptr;
+    }
 
     class CaseBlkManagerRegisterLookup : public TestCase {
     public:
@@ -366,6 +390,160 @@ namespace test::fs {
         }
     };
 
+    class CaseTmpFSCreateReadWrite : public TestCase {
+    public:
+        CaseTmpFSCreateReadWrite()
+            : TestCase("TmpFS 创建目录文件并读写") {}
+
+        void _run(void *env) const noexcept override {
+            auto &vfs = VFS::inst();
+            auto mount_res = vfs.mount("tmpfs", "/", nullptr);
+            tassert(mount_res.has_value(), "应能将 tmpfs 挂载到根目录 /");
+
+            auto holder_res = cap::CHolderManager::inst().create_holder();
+            tassert(holder_res.has_value(), "应能创建测试 holder");
+            auto *holder = holder_res.value();
+            auto holder_guard = util::Guard([holder]() {
+                auto remove_res =
+                    cap::CHolderManager::inst().remove_holder(holder->id());
+                assert(remove_res.has_value());
+            });
+
+            auto root_cap_res =
+                vfs.open_dir("/", *holder,
+                             perm::vdir::READ | perm::vdir::WRITE |
+                                 perm::vdir::EXEC);
+            tassert(root_cap_res.has_value(), "应能打开 tmpfs 根目录");
+
+            auto root_lookup_res = holder->lookup(root_cap_res.value());
+            tassert(root_lookup_res.has_value(), "应能查找根目录 capability");
+            cap::VDirectoryObject root_obj(util::nnullforce(
+                root_lookup_res.value()));
+
+            auto tmp_dir_res = root_obj.mkdir("tmp", flags::O_READ |
+                                                        flags::O_WRITE |
+                                                        flags::O_EXECUTE,
+                                              *holder);
+            tassert(tmp_dir_res.has_value(), "应能创建 /tmp 目录");
+
+            auto tmp_lookup_res = holder->lookup(tmp_dir_res.value());
+            tassert(tmp_lookup_res.has_value(), "应能查找 /tmp capability");
+            cap::VDirectoryObject tmp_obj(util::nnullforce(
+                tmp_lookup_res.value()));
+
+            auto file_cap_res = tmp_obj.mkfile("note", flags::O_READ |
+                                                         flags::O_WRITE,
+                                               *holder);
+            tassert(file_cap_res.has_value(), "应能创建 /tmp/note 文件");
+
+            auto file_lookup_res = holder->lookup(file_cap_res.value());
+            tassert(file_lookup_res.has_value(), "应能查找文件 capability");
+            cap::VFileObject file_obj(util::nnullforce(
+                file_lookup_res.value()));
+
+            const char *payload0 = "abc";
+            auto write0 = file_obj.write(0, payload0, strlen(payload0));
+            tassert(write0.has_value() && write0.value() == strlen(payload0),
+                    "应能向 tmpfs 文件写入初始内容");
+
+            const char *payload1 = "XYZ";
+            auto write1 = file_obj.write(1, payload1, strlen(payload1));
+            tassert(write1.has_value() && write1.value() == strlen(payload1),
+                    "应能覆盖写入 tmpfs 文件");
+
+            char verify0[8] = {};
+            auto read0 = file_obj.read(0, verify0, 4);
+            tassert(read0.has_value() && read0.value() == 4,
+                    "应能读取覆盖后的 tmpfs 文件");
+            tassert(memcmp(verify0, "aXYZ", 4) == 0,
+                    "覆盖写后的内容应为 aXYZ");
+
+            const char *payload2 = "tail";
+            auto write2 = file_obj.write(8, payload2, strlen(payload2));
+            tassert(write2.has_value() && write2.value() == strlen(payload2),
+                    "应能进行带空洞的写入");
+
+            auto size_res = file_obj.size();
+            tassert(size_res.has_value() && size_res.value() == 12,
+                    "空洞写入后文件大小应扩展到 12 字节");
+
+            char verify1[16] = {};
+            auto read1 = file_obj.read(0, verify1, size_res.value());
+            tassert(read1.has_value() && read1.value() == size_res.value(),
+                    "应能读取完整 tmpfs 文件内容");
+            tassert(memcmp(verify1, "aXYZ", 4) == 0,
+                    "文件前缀内容应保持正确");
+            tassert(verify1[4] == 0 && verify1[5] == 0 && verify1[6] == 0 &&
+                        verify1[7] == 0,
+                    "空洞区域应被零填充");
+            tassert(memcmp(verify1 + 8, "tail", 4) == 0,
+                    "空洞后的追加内容应正确");
+
+            auto dup_file_res =
+                tmp_obj.mkfile("note", flags::O_READ | flags::O_WRITE,
+                               *holder);
+            tassert(!dup_file_res.has_value() &&
+                        dup_file_res.error() == ErrCode::KEY_DUPLICATED,
+                    "重复创建同名文件应失败");
+
+            auto dup_dir_res =
+                root_obj.mkdir("tmp", flags::O_READ | flags::O_WRITE |
+                                          flags::O_EXECUTE,
+                               *holder);
+            tassert(!dup_dir_res.has_value() &&
+                        dup_dir_res.error() == ErrCode::KEY_DUPLICATED,
+                    "重复创建同名目录应失败");
+
+            auto cap_remove_res = holder->remove(file_cap_res.value());
+            tassert(cap_remove_res.has_value(), "应能移除文件 capability");
+            cap_remove_res = holder->remove(tmp_dir_res.value());
+            tassert(cap_remove_res.has_value(), "应能移除目录 capability");
+            cap_remove_res = holder->remove(root_cap_res.value());
+            tassert(cap_remove_res.has_value(), "应能移除根目录 capability");
+
+            auto umount_res = vfs.umount("/");
+            tassert(umount_res.has_value(), "TmpFS 根目录卸载应成功");
+        }
+    };
+
+    class CaseTmpFSBusyAndInitrdMount : public TestCase {
+    public:
+        CaseTmpFSBusyAndInitrdMount()
+            : TestCase("TmpFS 根目录忙状态与 /initrd 共存") {}
+
+        void _run(void *env) const noexcept override {
+            auto &vfs = VFS::inst();
+
+            RamDiskDevice *initrd = make_initrd();
+            tassert(initrd != nullptr, "应能成功创建 initrd RamDisk 设备");
+            auto devno_res = register_device(initrd);
+            tassert(devno_res.has_value(), "应能注册 initrd 块设备");
+
+            auto mount_res = vfs.mount("tmpfs", "/", nullptr);
+            tassert(mount_res.has_value(), "应能挂载 tmpfs 到根目录");
+            mount_res = vfs.mount("tarfs", devno_res.value(), "/initrd/",
+                                  MountFlags::NONE, nullptr);
+            tassert(mount_res.has_value(), "应能保留 /initrd 挂载");
+
+            auto initrd_open = vfs.__debug_open("/initrd/license");
+            tassert(initrd_open.has_value(), "应能从 /initrd 读取旧只读文件");
+
+            auto busy_umount = vfs.umount("/");
+            tassert(!busy_umount.has_value() &&
+                        busy_umount.error() == ErrCode::BUSY,
+                    "仍有打开文件时卸载 tmpfs 根目录应返回 BUSY");
+
+            initrd_open.value()->destruct();
+
+            auto initrd_umount = vfs.umount("/initrd/");
+            tassert(initrd_umount.has_value(), "应能卸载 /initrd 挂载");
+            auto root_umount = vfs.umount("/");
+            tassert(root_umount.has_value(), "应能卸载 tmpfs 根目录");
+            auto unreg_res = unregister_device(devno_res.value());
+            tassert(unreg_res.has_value(), "应能注销 initrd 设备");
+        }
+    };
+
     static RamDiskDevice* make_initrd() {
         size_t sz             = (char*)&e_initrd - (char*)&s_initrd;
         RamDiskDevice* device = new RamDiskDevice(&s_initrd, sz, 1);
@@ -403,6 +581,9 @@ namespace test::fs {
         cases.push_back(new CaseMountBusyUmount());
         cases.push_back(new CaseOpenMissingFile());
         cases.push_back(new CaseMountParamValidation());
-        framework.add_category(new TestCategory("fs", std::move(cases)));
+        cases.push_back(new CaseTmpFSCreateReadWrite());
+        cases.push_back(new CaseTmpFSBusyAndInitrdMount());
+        framework.add_category(
+            new TestCategory("fs", std::move(cases), setup_fs_env));
     }
 }  // namespace test::fs

@@ -30,9 +30,11 @@
 #include <task/scheduler.h>
 #include <task/task.h>
 #include <task/wait.h>
+#include <test/fs.h>
 #include <vfs/device.h>
 #include <vfs/ops.h>
 #include <vfs/tarfs.h>
+#include <vfs/tmpfs.h>
 #include <vfs/vfs.h>
 
 #include <cassert>
@@ -136,6 +138,9 @@ namespace {
         g_devfs_driver    = devfs_driver.get();
         register_res      = vfs.register_fs(std::move(devfs_driver));
         propagate(register_res);
+        auto tmpfs_driver = util::owner(new tmpfs::TmpFSDriver());
+        register_res      = vfs.register_fs(std::move(tmpfs_driver));
+        propagate(register_res);
 
         g_initrd_device = make_initrd();
         auto devno_res  = blk::BlkManager::inst().register_device(
@@ -145,8 +150,10 @@ namespace {
             propagate_return(devno_res);
         }
 
-        auto mount_res = vfs.mount("tarfs", devno_res.value(), INITRD_PATH,
-                                   MountFlags::NONE, nullptr);
+        auto mount_res = vfs.mount("tmpfs", "/", nullptr);
+        propagate(mount_res);
+        mount_res = vfs.mount("tarfs", devno_res.value(), INITRD_PATH,
+                              MountFlags::NONE, nullptr);
         propagate(mount_res);
         mount_res = vfs.mount("devfs", "/sys/", nullptr);
         propagate(mount_res);

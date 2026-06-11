@@ -299,6 +299,38 @@ namespace {
         void_return();
     }
 
+    struct CreateTarget {
+        util::Path parent_path;
+        std::string name;
+    };
+
+    [[nodiscard]]
+    Result<CreateTarget> parse_create_target(const char *relpath) {
+        auto valid_res = validate_relpath(relpath);
+        propagate(valid_res);
+
+        auto norm_path = util::Path::from(relpath).normalize();
+        if (norm_path == "." || norm_path == "..") {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto name_path = norm_path.filename();
+        auto name_view = name_path.view();
+        if (name_view.empty() || name_view == "." || name_view == "..") {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto parent_path = norm_path.parent_path();
+        if (parent_path.view().empty()) {
+            parent_path = ".";
+        }
+
+        return CreateTarget{
+            .parent_path = parent_path.normalize(),
+            .name        = std::string(name_view),
+        };
+    }
+
     [[nodiscard]]
     b64 file_perm_from_oflags(flags::oflg_t oflags) {
         b64 perm = 0;
@@ -526,8 +558,119 @@ Result<CapIdx> VFS::opendir(cap::Capability &parent_dir_cap, const char *relpath
     return insert_res.value();
 }
 
+Result<CapIdx> VFS::mkfile(cap::Capability &parent_dir_cap, const char *relpath,
+                           flags::oflg_t oflags, cap::CHolder &holder) {
+    auto oflag_res = validate_file_oflags(oflags);
+    propagate(oflag_res);
+
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+
+    auto create_target_res = parse_create_target(relpath);
+    propagate(create_target_res);
+    const auto &target = create_target_res.value();
+
+    auto create_parent_res =
+        _resolve_from(util::refc_ptr(parent->vinode().get()), target.parent_path,
+                      parent->vinode()->superblock());
+    propagate(create_parent_res);
+
+    auto target_dir_res = create_parent_res.value()->inode()->as_directory();
+    propagate(target_dir_res);
+
+    auto inode_res = target_dir_res.value()->mkfile(target.name, nullptr);
+    propagate(inode_res);
+
+    auto vnode_res =
+        parent->vinode()->superblock().get_vnode(inode_res.value());
+    propagate(vnode_res);
+    auto file_res = vnode_res.value()->inode()->as_file();
+    propagate(file_res);
+
+    auto *file =
+        new VFile(*vnode_res.value().get(), parent->mount_path(), *this);
+    if (file == nullptr) {
+        unexpect_return(ErrCode::ALLOCATION_FAILED);
+    }
+
+    auto mount_res = _lookup_mount_record(parent->mount_path());
+    if (!mount_res.has_value()) {
+        delete file;
+        unexpect_return(ErrCode::FS_ERROR);
+    }
+    mount_res.value()->active_files++;
+
+    auto insert_res =
+        holder.insert_to_free(file, file_perm_from_oflags(oflags));
+    if (!insert_res.has_value()) {
+        file->destruct();
+        propagate_return(insert_res);
+    }
+    return insert_res.value();
+}
+
+Result<CapIdx> VFS::mkdir(cap::Capability &parent_dir_cap, const char *relpath,
+                          flags::oflg_t oflags, cap::CHolder &holder) {
+    auto oflag_res = validate_dir_oflags(oflags);
+    propagate(oflag_res);
+
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+
+    auto create_target_res = parse_create_target(relpath);
+    propagate(create_target_res);
+    const auto &target = create_target_res.value();
+
+    auto create_parent_res =
+        _resolve_from(util::refc_ptr(parent->vinode().get()), target.parent_path,
+                      parent->vinode()->superblock());
+    propagate(create_parent_res);
+
+    auto target_dir_res = create_parent_res.value()->inode()->as_directory();
+    propagate(target_dir_res);
+
+    auto inode_res = target_dir_res.value()->mkdir(target.name, nullptr);
+    propagate(inode_res);
+
+    auto vnode_res =
+        parent->vinode()->superblock().get_vnode(inode_res.value());
+    propagate(vnode_res);
+    auto dir_res = vnode_res.value()->inode()->as_directory();
+    propagate(dir_res);
+
+    auto *dir =
+        new VDirectory(*vnode_res.value().get(), parent->mount_path(), *this);
+    if (dir == nullptr) {
+        unexpect_return(ErrCode::ALLOCATION_FAILED);
+    }
+
+    auto mount_res = _lookup_mount_record(parent->mount_path());
+    if (!mount_res.has_value()) {
+        delete dir;
+        unexpect_return(ErrCode::FS_ERROR);
+    }
+    mount_res.value()->active_files++;
+
+    auto insert_res =
+        holder.insert_to_free(dir, dir_perm_from_oflags(oflags));
+    if (!insert_res.has_value()) {
+        dir->destruct();
+        propagate_return(insert_res);
+    }
+    return insert_res.value();
+}
+
 Result<CapIdx> VFS::open_initrd(cap::CHolder &holder) {
     return open_dir("/initrd/", holder,
+                    perm::vdir::READ | perm::vdir::WRITE | perm::vdir::EXEC);
+}
+
+Result<CapIdx> VFS::open_root(cap::CHolder &holder) {
+    return open_dir("/", holder,
                     perm::vdir::READ | perm::vdir::WRITE | perm::vdir::EXEC);
 }
 

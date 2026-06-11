@@ -27,6 +27,7 @@ namespace {
     constexpr int MAX_KMOD_FILES = 32;
     FileStructure g_files[MAX_KMOD_FILES]{};
     CapIdx g_initrd_cap = cap::null;
+    CapIdx g_root_cap   = cap::null;
 
     // to find the free slot to insert the file
     [[nodiscard]]
@@ -51,6 +52,15 @@ namespace {
         g_initrd_cap = sys_open_initrd();
         return g_initrd_cap != cap::error && g_initrd_cap != cap::null;
     }
+
+    [[nodiscard]]
+    bool ensure_root_cap() {
+        if (g_root_cap != cap::null) {
+            return true;
+        }
+        g_root_cap = sys_open_root();
+        return g_root_cap != cap::error && g_root_cap != cap::null;
+    }
     
     // to strip the prefix of 'initrd' to get the relative path for vfs open
     [[nodiscard]]
@@ -64,6 +74,32 @@ namespace {
             return nullptr;
         }
         return path + INITRD_PREFIX_LEN;
+    }
+
+    struct OpenBase {
+        CapIdx cap    = cap::null;
+        const char *relpath = nullptr;
+    };
+
+    [[nodiscard]]
+    OpenBase resolve_open_base(const char *path) {
+        if (path == nullptr || path[0] != '/') {
+            return {};
+        }
+
+        if (const char *initrd_rel = strip_initrd_prefix(path);
+            initrd_rel != nullptr)
+        {
+            if (!ensure_initrd_cap()) {
+                return {};
+            }
+            return OpenBase{.cap = g_initrd_cap, .relpath = initrd_rel};
+        }
+
+        if (!ensure_root_cap()) {
+            return {};
+        }
+        return OpenBase{.cap = g_root_cap, .relpath = path + 1};
     }
 
     [[nodiscard]]
@@ -121,9 +157,10 @@ extern "C" {
 int kmod_fopen(const char *path, const char *options) {
     flags::oflg_t oflags = 0;
     bool append          = false;
-    const char *relpath  = strip_initrd_prefix(path);
+    auto base            = resolve_open_base(path);
     if (!parse_open_options(options, oflags, append) ||
-        !ensure_initrd_cap() || relpath == nullptr || *relpath == '\0')
+        base.cap == cap::null || base.relpath == nullptr ||
+        *base.relpath == '\0')
     {
         return -1;
     }
@@ -133,7 +170,7 @@ int kmod_fopen(const char *path, const char *options) {
         return -1;
     }
 
-    CapIdx cap = sys_vfs_open(g_initrd_cap, relpath, oflags);
+    CapIdx cap = sys_vfs_open(base.cap, base.relpath, oflags);
     if (cap == cap::error || cap == cap::null) {
         g_files[fd] = {};
         return -1;
@@ -172,6 +209,51 @@ CapIdx kmod_getcap(int fd) {
         return cap::error;
     }
     return file->cap;
+}
+
+int kmod_mkdir(const char *path) {
+    auto base = resolve_open_base(path);
+    if (base.cap == cap::null || base.relpath == nullptr ||
+        *base.relpath == '\0')
+    {
+        return -1;
+    }
+
+    CapIdx cap = sys_vfs_mkdir(base.cap, base.relpath,
+                               flags::O_READ | flags::O_WRITE |
+                                   flags::O_EXECUTE);
+    if (cap == cap::error || cap == cap::null) {
+        return -1;
+    }
+    sys_cap_remove(cap);
+    return 0;
+}
+
+int kmod_mkfile(const char *path, const char *options) {
+    flags::oflg_t oflags = 0;
+    bool append          = false;
+    auto base            = resolve_open_base(path);
+    if (!parse_open_options(options, oflags, append) ||
+        base.cap == cap::null || base.relpath == nullptr ||
+        *base.relpath == '\0')
+    {
+        return -1;
+    }
+    (void)append;
+
+    CapIdx cap = sys_vfs_mkfile(base.cap, base.relpath, oflags);
+    if (cap == cap::error || cap == cap::null) {
+        return -1;
+    }
+
+    int fd = alloc_fd();
+    if (fd < 0) {
+        sys_cap_remove(cap);
+        return -1;
+    }
+
+    g_files[fd].cap = cap;
+    return fd;
 }
 
 void kmod_fclose(int fd) {

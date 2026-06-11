@@ -24,6 +24,12 @@ namespace syscall {
     [[nodiscard]]
     Result<CapIdx> vfs_opendir(CapIdx parent_dir_cap, const UString &relpath,
                                flags::oflg_t oflags);
+    [[nodiscard]]
+    Result<CapIdx> vfs_mkfile(CapIdx parent_dir_cap, const UString &relpath,
+                              flags::oflg_t oflags);
+    [[nodiscard]]
+    Result<CapIdx> vfs_mkdir(CapIdx parent_dir_cap, const UString &relpath,
+                             flags::oflg_t oflags);
 
     [[nodiscard]]
     Result<size_t> vfs_read(CapIdx file_cap, size_t offset, UBuffer &&buf,
@@ -41,4 +47,6 @@ namespace syscall {
 
     [[nodiscard]]
     Result<CapIdx> open_initrd();
+    [[nodiscard]]
+    Result<CapIdx> open_root();
 }  // namespace syscall

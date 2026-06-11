@@ -58,6 +58,26 @@ namespace syscall {
                                    *holder_res.value());
     }
 
+    Result<CapIdx> vfs_mkfile(CapIdx parent_dir_cap, const UString &relpath,
+                              flags::oflg_t oflags) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        return VFS::inst().mkfile(*parent_res.value(), relpath.kbuf(), oflags,
+                                  *holder_res.value());
+    }
+
+    Result<CapIdx> vfs_mkdir(CapIdx parent_dir_cap, const UString &relpath,
+                             flags::oflg_t oflags) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        return VFS::inst().mkdir(*parent_res.value(), relpath.kbuf(), oflags,
+                                 *holder_res.value());
+    }
+
     Result<size_t> vfs_read(CapIdx file_cap, size_t offset, UBuffer &&buf,
                             size_t len) {
         auto cap_res = lookup_current_cap(file_cap);
@@ -116,5 +136,11 @@ namespace syscall {
         auto holder_res = current_holder_for_vfs();
         propagate(holder_res);
         return VFS::inst().open_initrd(*holder_res.value());
+    }
+
+    Result<CapIdx> open_root() {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        return VFS::inst().open_root(*holder_res.value());
     }
 }  // namespace syscall

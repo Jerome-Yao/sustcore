@@ -177,7 +177,10 @@ namespace syscall {
             case SYS_VFS_WRITE:           return "SYS_VFS_WRITE";
             case SYS_VFS_SIZE:            return "SYS_VFS_SIZE";
             case SYS_VFS_SYNC:            return "SYS_VFS_SYNC";
+            case SYS_VFS_MKFILE:          return "SYS_VFS_MKFILE";
+            case SYS_VFS_MKDIR:           return "SYS_VFS_MKDIR";
             case SYS_OPEN_INITRD:         return "SYS_OPEN_INITRD";
+            case SYS_OPEN_ROOT:           return "SYS_OPEN_ROOT";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -286,6 +289,18 @@ namespace syscall {
                 ret = result_value_ret("open", vfs_open(capidx, path, arg1));
                 break;
             }
+            case SYS_VFS_MKFILE: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret =
+                    result_value_ret("mkfile", vfs_mkfile(capidx, path, arg1));
+                break;
+            }
+            case SYS_VFS_MKDIR: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret =
+                    result_value_ret("mkdir", vfs_mkdir(capidx, path, arg1));
+                break;
+            }
             case SYS_VFS_READ: {
                 UBuffer buf((VirAddr)arg1, arg2);
                 ret = result_value_ret("read", vfs_read(capidx, arg0,
@@ -313,6 +328,10 @@ namespace syscall {
             }
             case SYS_OPEN_INITRD: {
                 ret = result_value_ret("open_initrd", open_initrd());
+                break;
+            }
+            case SYS_OPEN_ROOT: {
+                ret = result_value_ret("open_root", open_root());
                 break;
             }
             case SYS_PCB_KILL: {

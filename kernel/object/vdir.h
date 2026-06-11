@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <sustcore/files.h>
 #include <vfs/vfs.h>
 
 namespace cap {
@@ -25,5 +26,11 @@ namespace cap {
 
         [[nodiscard]]
         Result<void> sync();
+        [[nodiscard]]
+        Result<CapIdx> mkfile(const char *relpath, flags::oflg_t oflags,
+                              CHolder &holder);
+        [[nodiscard]]
+        Result<CapIdx> mkdir(const char *relpath, flags::oflg_t oflags,
+                             CHolder &holder);
     };
 }  // namespace cap

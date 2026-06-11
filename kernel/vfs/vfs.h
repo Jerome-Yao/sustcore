@@ -233,7 +233,15 @@ public:
     Result<CapIdx> opendir(cap::Capability &parent_dir_cap, const char *relpath,
                            flags::oflg_t oflags, cap::CHolder &holder);
     [[nodiscard]]
+    Result<CapIdx> mkfile(cap::Capability &parent_dir_cap, const char *relpath,
+                          flags::oflg_t oflags, cap::CHolder &holder);
+    [[nodiscard]]
+    Result<CapIdx> mkdir(cap::Capability &parent_dir_cap, const char *relpath,
+                         flags::oflg_t oflags, cap::CHolder &holder);
+    [[nodiscard]]
     Result<CapIdx> open_initrd(cap::CHolder &holder);
+    [[nodiscard]]
+    Result<CapIdx> open_root(cap::CHolder &holder);
     [[nodiscard]]
     Result<CapIdx> open_dir(const char *filepath, cap::CHolder &holder,
                             b64 perm);

@@ -34,7 +34,8 @@ arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 
 library-components := sbi basecpp kmod rpc libfdt
 module-components := default init test_endpoint_master test_endpoint_slave test_call_service test_call_user \
-	test_fork test_execve test_thread test_rpc_server test_rpc_client
+	test_fork test_execve test_thread test_rpc_server test_rpc_client \
+	test_file_rw_a test_file_rw_b
 
 library-component-makefile.sbi := $(path-e)/libs/sbi/Makefile
 library-component-makefile.basecpp := $(path-e)/libs/basecpp/Makefile
@@ -53,6 +54,8 @@ module-component-makefile.test_execve := $(path-e)/module/test_execve/Makefile
 module-component-makefile.test_thread := $(path-e)/module/test_thread/Makefile
 module-component-makefile.test_rpc_server := $(path-e)/module/test_rpc_server/Makefile
 module-component-makefile.test_rpc_client := $(path-e)/module/test_rpc_client/Makefile
+module-component-makefile.test_file_rw_a := $(path-e)/module/test_file_rw_a/Makefile
+module-component-makefile.test_file_rw_b := $(path-e)/module/test_file_rw_b/Makefile
 
 build-libs:
 	$(q)$(MAKE) -f $(library-component-makefile.sbi) $(arg-basic) build
@@ -83,6 +86,8 @@ build-mods: build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.test_thread) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_server) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_client) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_file_rw_a) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_file_rw_b) $(arg-basic) build
 	$(q)echo "All modules built successfully."
 
 make-initrd:

@@ -1,1 +1,1 @@
-sources += vfs.cpp tarfs.cpp
+sources += vfs.cpp tarfs.cpp tmpfs.cpp

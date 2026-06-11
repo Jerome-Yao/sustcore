@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <sustcore/errcode.h>
 #include <test/framework.h>
 
 namespace test::fs {

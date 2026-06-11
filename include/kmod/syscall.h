@@ -65,12 +65,17 @@ CapIdx sys_vfs_opendir(CapIdx parent_dir_cap, const char *path,
                        flags::oflg_t oflags);
 CapIdx sys_vfs_open(CapIdx parent_dir_cap, const char *path,
                     flags::oflg_t oflags);
+CapIdx sys_vfs_mkfile(CapIdx parent_dir_cap, const char *path,
+                      flags::oflg_t oflags);
+CapIdx sys_vfs_mkdir(CapIdx parent_dir_cap, const char *path,
+                     flags::oflg_t oflags);
 size_t sys_vfs_read(CapIdx file_cap, size_t offset, void *buf, size_t len);
 size_t sys_vfs_write(CapIdx file_cap, size_t offset, const void *buf,
                      size_t len);
 size_t sys_vfs_size(CapIdx file_cap);
 bool sys_vfs_sync(CapIdx capidx);
 CapIdx sys_open_initrd();
+CapIdx sys_open_root();
 
 CapIdx sys_cap_clone(CapIdx src);
 bool sys_cap_downgrade(CapIdx idx, uint64_t new_perm);
@@ -134,6 +139,8 @@ void exit(int exit_code);
 int kmod_fopen(const char *path, const char *options);
 size_t kmod_fread(int fd, void *buf, size_t len);
 size_t kmod_fwrite(int fd, const void *buf, size_t len);
+int kmod_mkdir(const char *path);
+int kmod_mkfile(const char *path, const char *options);
 CapIdx kmod_getcap(int fd);
 void kmod_fclose(int fd);
 }

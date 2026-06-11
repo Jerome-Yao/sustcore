@@ -269,6 +269,22 @@ sys_vfs_open:
     ecall
     ret
 
+    .global sys_vfs_mkfile
+    .type sys_vfs_mkfile, @function
+sys_vfs_mkfile:
+    /* a0 = parent dir cap, a1 = path, a2 = oflags */
+    li a7, SYS_VFS_MKFILE
+    ecall
+    ret
+
+    .global sys_vfs_mkdir
+    .type sys_vfs_mkdir, @function
+sys_vfs_mkdir:
+    /* a0 = parent dir cap, a1 = path, a2 = oflags */
+    li a7, SYS_VFS_MKDIR
+    ecall
+    ret
+
     .global sys_vfs_read
     .type sys_vfs_read, @function
 sys_vfs_read:
@@ -306,5 +322,13 @@ sys_vfs_sync:
 sys_open_initrd:
     li a0, 0
     li a7, SYS_OPEN_INITRD
+    ecall
+    ret
+
+    .global sys_open_root
+    .type sys_open_root, @function
+sys_open_root:
+    li a0, 0
+    li a7, SYS_OPEN_ROOT
     ecall
     ret

@@ -46,6 +46,12 @@ int kmod_main() {
         kmod_fclose(fd);
     }
 
+    fd = kmod_fopen("/initrd/test_file_rw_a.mod", "x");
+    if (fd >= 0) {
+        sys_create_process(kmod_getcap(fd), nullptr, 0, SCHED_CLASS_RR);
+        kmod_fclose(fd);
+    }
+
     printf("init: 启动完成, 退出\n");
     exit(0);
     return 0;
