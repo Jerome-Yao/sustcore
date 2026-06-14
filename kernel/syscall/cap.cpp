@@ -97,6 +97,10 @@ namespace syscall {
 
         auto cap_res = holder_res.value()->lookup(idx);
         propagate(cap_res);
+
+        loggers::SYSCALL::DEBUG("移除能力 capability idx=%lu, type=%s", idx,
+                                 to_string(cap_res.value()->payload()->type_id()));
+
         auto *memory = cap_res.value()->payload_as<cap::MemoryPayload>();
         auto *tmm    = env::inst().tmm();
         if (memory != nullptr && tmm != nullptr &&

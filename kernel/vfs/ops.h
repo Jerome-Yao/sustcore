@@ -57,6 +57,11 @@ concept IMetadataProvider = requires(T a) {
 
 using inode_t = size_t;
 
+struct DirectoryEntryInfo {
+    bool is_file;
+    std::string name;
+};
+
 /**
  * @brief 元数据接口
  *
@@ -209,6 +214,10 @@ public:
     [[nodiscard]]
     virtual Result<inode_t> mkdir(std::string_view name,
                                   const char *options) = 0;
+    [[nodiscard]]
+    virtual Result<size_t> entry_count() = 0;
+    [[nodiscard]]
+    virtual Result<DirectoryEntryInfo> entry_at(size_t index) = 0;
     /**
      * @brief 同步目录数据到存储设备
      *

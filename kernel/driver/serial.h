@@ -70,9 +70,9 @@ namespace driver {
          */
         void write(const char *str, size_t len) noexcept;
 
+        // 挂载到 devfs 上
         [[nodiscard]]
-        Result<void> mount(devfs::DevFSSuperblock &devfs,
-                           const char *options) noexcept;
+        Result<void> mount(CapIdx devdir) noexcept override;
 
     private:
         /**

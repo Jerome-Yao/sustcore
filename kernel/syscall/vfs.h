@@ -43,6 +43,10 @@ namespace syscall {
     Result<size_t> vfs_size(CapIdx file_cap);
 
     [[nodiscard]]
+    Result<size_t> vfs_getdents(CapIdx dir_cap, UBuffer &&buf, size_t buflen,
+                                size_t offset);
+
+    [[nodiscard]]
     Result<bool> vfs_sync(CapIdx capidx);
 
 }  // namespace syscall

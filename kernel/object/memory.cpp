@@ -186,8 +186,8 @@ namespace cap {
         memset(convert<KpaAddr>(paddr).addr(), 0, PAGESIZE);
         phy_pages.insert_or_assign(offvpn, PhyPage{paddr, 1});
         loggers::PAGING::DEBUG(
-            "MemoryPayload::ensure_page: offvpn=%lu paddr=%p", offvpn,
-            paddr.addr());
+            "MemoryPayload::ensure_page: mem=%p offvpn=%lu paddr=%p", this,
+            offvpn, paddr.addr());
         return paddr;
     }
 

@@ -23,6 +23,7 @@
 // to get a vfile capability, and then pass the capability to create_process or
 // execve.
 #include <cstddef>
+#include <cstdint>
 
 namespace flags {
     // open flags
@@ -42,4 +43,14 @@ namespace flags {
     constexpr ppflg_t PP_READ_OTHERS  = 0b001000000;
     constexpr ppflg_t PP_WRITE_OTHERS = 0b010000000;
     constexpr ppflg_t PP_EXEC_OTHERS  = 0b100000000;
+
+    constexpr ppflg_t PP_RWX_OWNER    = PP_READ_OWNER | PP_WRITE_OWNER | PP_EXEC_OWNER;
+    constexpr ppflg_t PP_RW_OWNER     = PP_READ_OWNER | PP_WRITE_OWNER;
 };  // namespace flags
+
+struct dir_entry_header {
+    size_t next_offset;
+    bool is_file;
+};
+
+constexpr size_t DIR_ENTRY_END = 0xFFFFFFFFFFFFFFFFULL;

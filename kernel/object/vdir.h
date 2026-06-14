@@ -27,6 +27,8 @@ namespace cap {
         [[nodiscard]]
         Result<void> sync();
         [[nodiscard]]
+        Result<std::vector<DirectoryEntryInfo>> getdents();
+        [[nodiscard]]
         Result<CapIdx> mkfile(const char *relpath, flags::oflg_t oflags,
                               CHolder &holder);
         [[nodiscard]]

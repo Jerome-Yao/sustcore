@@ -68,6 +68,32 @@ namespace util {
             if (_ptr)
                 _ptr->keep();
         }
+        constexpr refc_ptr<T> &operator=(const refc_ptr<T> &other) {
+            if (_ptr == other._ptr) {
+                return *this;
+            }
+            if (_ptr) {
+                _ptr->release();
+            }
+            _ptr = other._ptr;
+            if (_ptr) {
+                _ptr->keep();
+            }
+            return *this;
+        }
+        constexpr refc_ptr<T> &operator=(refc_ptr<T> &&other) {
+            if (_ptr == other._ptr) {
+                return *this;
+            }
+            if (_ptr) {
+                _ptr->release();
+            }
+            _ptr = other._ptr;
+            if (_ptr) {
+                _ptr->keep();
+            }
+            return *this;
+        }
         constexpr ~refc_ptr() {
             if (_ptr)
                 _ptr->release();

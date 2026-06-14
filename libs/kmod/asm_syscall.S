@@ -309,6 +309,14 @@ sys_vfs_size:
     ecall
     ret
 
+    .global sys_vfs_getdents
+    .type sys_vfs_getdents, @function
+sys_vfs_getdents:
+    /* a0 = dir cap, a1 = buf, a2 = buflen, a3 = offset */
+    li a7, SYS_VFS_GETDENTS
+    ecall
+    ret
+
     .global sys_vfs_sync
     .type sys_vfs_sync, @function
 sys_vfs_sync:

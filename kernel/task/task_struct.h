@@ -122,7 +122,7 @@ namespace task {
 
         // running information
         constexpr static size_t KSTACK_PAGES =
-            4;  // 16KB(4 pages) for kernel stack
+            8;  // 16KB(4 pages) for kernel stack
         constexpr static size_t KSTACK_SIZE = KSTACK_PAGES * PAGESIZE;
         void *kstack_bottom;
         char *ksp;

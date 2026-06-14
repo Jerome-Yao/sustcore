@@ -269,6 +269,12 @@ namespace loader::elf {
                                      zero_sz);
                 propagate(zero_res);
             }
+            auto first_page_res = vma.memory->lookup_page(mem_offset);
+            if (first_page_res.has_value()) {
+                loggers::SUSTCORE::INFO(
+                    "ELF段首物理页: mem=%p mem_off=%lu paddr=%p", vma.memory,
+                    mem_offset, first_page_res.value().addr());
+            }
         }
 
         void_return();
@@ -357,6 +363,10 @@ namespace loader::elf {
                 while (true);
             }
             add_res->get()->loading = true;  // 标记该VMA正在加载
+            loggers::SUSTCORE::INFO(
+                "创建ELF VMA: type=%s area=[%p,%p) mem=%p memsz=%lu mem_off=%lu",
+                to_string(vma_type), segvaddr.addr(), segvend.addr(),
+                segment_mem, static_cast<unsigned long>(phdr.p_memsz), 0UL);
 
             if (segvend.arith() > max_pload_end) {
                 max_pload_end = segvend.arith();
@@ -378,6 +388,9 @@ namespace loader::elf {
             loggers::SUSTCORE::ERROR("无法初始化堆VMA: %d", heap_res.error());
             propagate_return(heap_res);
         }
+        loggers::SUSTCORE::INFO(
+            "创建HEAP VMA: area=[%p,%p) mem=%p memsz=%lu", heap_start.addr(),
+            heap_start.addr(), heap_mem, 0UL);
         spec.heap_vaddr   = heap_start;
         spec.heap_mem_cap = heap_cap_res.value();
 

@@ -28,6 +28,34 @@
 
 namespace syscall {
     namespace {
+        void log_getdents_probe(const char *stage,
+                                util::nonnull<task::TCB *> tcb) {
+            if (tcb->task == nullptr || tcb->task->tmm == nullptr) {
+                return;
+            }
+
+            constexpr VirAddr kPcbCapAddr(0x0000000080005520ULL);
+            auto vma_res = tcb->task->tmm->locate(kPcbCapAddr);
+            if (!vma_res.has_value() || vma_res.value()->memory == nullptr) {
+                return;
+            }
+
+            auto *vma      = vma_res.value().get();
+            size_t mem_off = vma->mem_offset + (kPcbCapAddr - vma->varea.begin);
+            CapIdx value   = cap::null;
+            auto read_res  = vma->memory->read(mem_off, &value, sizeof(value));
+            if (!read_res.has_value()) {
+                return;
+            }
+
+            loggers::SYSCALL::INFO(
+                "dispatch probe[%s]: pid=%lu vaddr=%p vma=[%p,%p) type=%d "
+                "mem=%p mem_off=%lu value=%p",
+                stage, tcb->task->pid, kPcbCapAddr.addr(),
+                vma->varea.begin.addr(), vma->varea.end.addr(),
+                static_cast<int>(vma->type), vma->memory, mem_off, value);
+        }
+
         /**
          * @brief 生成布尔型 syscall 返回包.
          *
@@ -176,6 +204,7 @@ namespace syscall {
             case SYS_VFS_READ:            return "SYS_VFS_READ";
             case SYS_VFS_WRITE:           return "SYS_VFS_WRITE";
             case SYS_VFS_SIZE:            return "SYS_VFS_SIZE";
+            case SYS_VFS_GETDENTS:        return "SYS_VFS_GETDENTS";
             case SYS_VFS_SYNC:            return "SYS_VFS_SYNC";
             case SYS_VFS_MKFILE:          return "SYS_VFS_MKFILE";
             case SYS_VFS_MKDIR:           return "SYS_VFS_MKDIR";
@@ -193,14 +222,14 @@ namespace syscall {
                 .ret1      = static_cast<b64>(ErrCode::INVALID_PARAM),
             };
         }
-        b64 arg0     = args.args[0];
-        b64 arg1     = args.args[1];
-        b64 arg2     = args.args[2];
-        b64 arg3     = args.args[3];
-        b64 arg4     = args.args[4];
-        b64 arg5     = args.args[5];
-        b64 sysno    = args.syscall_number;
-        b64 capidx   = args.capidx;
+        b64 arg0   = args.args[0];
+        b64 arg1   = args.args[1];
+        b64 arg2   = args.args[2];
+        b64 arg3   = args.args[3];
+        b64 arg4   = args.args[4];
+        b64 arg5   = args.args[5];
+        b64 sysno  = args.syscall_number;
+        b64 capidx = args.capidx;
 
         RetPack ret{
             .processed = true,
@@ -295,14 +324,13 @@ namespace syscall {
             }
             case SYS_VFS_MKDIR: {
                 UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
-                ret =
-                    result_value_ret("mkdir", vfs_mkdir(capidx, path, arg1));
+                ret = result_value_ret("mkdir", vfs_mkdir(capidx, path, arg1));
                 break;
             }
             case SYS_VFS_READ: {
                 UBuffer buf((VirAddr)arg1, arg2);
-                ret = result_value_ret("read", vfs_read(capidx, arg0,
-                                                        std::move(buf), arg2));
+                ret = result_value_ret(
+                    "read", vfs_read(capidx, arg0, std::move(buf), arg2));
                 break;
             }
             case SYS_VFS_WRITE: {
@@ -312,12 +340,20 @@ namespace syscall {
                     ret = result_void_ret("同步write缓冲区", sync_res);
                     break;
                 }
-                ret = result_value_ret("write", vfs_write(capidx, arg0,
-                                                          std::move(buf), arg2));
+                ret = result_value_ret(
+                    "write", vfs_write(capidx, arg0, std::move(buf), arg2));
                 break;
             }
             case SYS_VFS_SIZE: {
                 ret = result_value_ret("size", vfs_size(capidx));
+                break;
+            }
+            case SYS_VFS_GETDENTS: {
+                UBuffer buf((VirAddr)arg0, arg1);
+                ret = result_value_ret(
+                    "getdents",
+                    vfs_getdents(capidx, std::move(buf), arg1, arg2));
+
                 break;
             }
             case SYS_VFS_SYNC: {
@@ -462,8 +498,8 @@ namespace syscall {
                     break;
                 }
                 auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
-                ret = result_void_ret("同步发送endpoint消息",
-                                      endpoint_send_sync(capidx, packet));
+                ret         = result_void_ret("同步发送endpoint消息",
+                                              endpoint_send_sync(capidx, packet));
                 break;
             }
             case SYS_ENDPOINT_RECV: {
@@ -474,9 +510,9 @@ namespace syscall {
                     break;
                 }
                 auto packet = *reinterpret_cast<MsgPacket *>(packet_buf.kbuf());
-                ret = result_void_ret("接收endpoint消息",
-                                      endpoint_recv_sync(capidx, packet,
-                                                         std::move(packet_buf)));
+                ret         = result_void_ret(
+                    "接收endpoint消息",
+                    endpoint_recv_sync(capidx, packet, std::move(packet_buf)));
                 break;
             }
             case SYS_ENDPOINT_CALL: {
@@ -496,10 +532,10 @@ namespace syscall {
                 }
                 auto reply_packet =
                     *reinterpret_cast<MsgPacket *>(reply_buf.kbuf());
-                ret = result_void_ret("endpoint_call",
-                                      endpoint_call(capidx, send_packet,
-                                                    reply_packet,
-                                                    std::move(reply_buf)));
+                ret = result_void_ret(
+                    "endpoint_call",
+                    endpoint_call(capidx, send_packet, reply_packet,
+                                  std::move(reply_buf)));
                 break;
             }
             default: {

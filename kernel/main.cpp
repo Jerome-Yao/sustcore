@@ -42,6 +42,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
 
 env::PaddedHartContext __hart_context[MAX_HARTS] = {};
 
@@ -71,7 +72,6 @@ namespace env {
         [[maybe_unused]] auto &irqman       = device_model.interrupt();
         [[maybe_unused]] auto &cpus         = device_model.cpus();
         [[maybe_unused]] auto *ctx          = hart_ctx;
-
         assert(ctx != nullptr);
 
         // 初始化 CLINT 定时器, 供调度器 tick 使用.

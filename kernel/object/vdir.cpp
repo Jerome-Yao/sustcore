@@ -23,6 +23,15 @@ namespace cap {
         return VFS::inst().sync(*_obj);
     }
 
+    Result<std::vector<DirectoryEntryInfo>> VDirectoryObject::getdents() {
+        using namespace perm::vdir;
+        if (!imply(READ)) {
+            loggers::CAPABILITY::ERROR("权限不足");
+            return {unexpect, ErrCode::INSUFFICIENT_PERMISSIONS};
+        }
+        return VFS::inst().getdents(*_obj);
+    }
+
     Result<CapIdx> VDirectoryObject::mkfile(const char *relpath,
                                             flags::oflg_t oflags,
                                             CHolder &holder) {

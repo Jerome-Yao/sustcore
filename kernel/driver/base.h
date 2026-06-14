@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <cap/cholder.h>
 #include <device/device.h>
 #include <device/resource.h>
 
@@ -127,10 +128,23 @@ namespace driver {
             return _node != nullptr ? _node->name() : "unknown";
         }
 
+        /**
+         * @brief 在 devfs 目录上挂载驱动导出的设备节点.
+         *
+         * @param devdir 驱动私有 holder 中的设备目录能力.
+         * @return Result<void> 挂载结果.
+         */
+        [[nodiscard]]
+        virtual Result<void> mount(CapIdx devdir) noexcept {
+            (void)devdir;
+            void_return();
+        }
+
     protected:
         const device::DeviceNode *_node = nullptr;
         std::vector<util::owner<device::VIrqResource *>> _virqs;
         std::vector<util::owner<device::MMIOResource *>> _mmios;
+        cap::CHolder *_holder = nullptr;
 
         /**
          * @brief 获取当前驱动持有的 virq 资源列表.
@@ -156,6 +170,16 @@ namespace driver {
             return _mmios;
         }
 
+        [[nodiscard]]
+        cap::CHolder &holder() const noexcept {
+            assert(_holder != nullptr);
+            return *_holder;
+        }
+
+        void bind_holder(cap::CHolder &holder) noexcept {
+            _holder = &holder;
+        }
+
         /**
          * @brief 加载整数
          *
@@ -167,6 +191,8 @@ namespace driver {
         static Result<sus_u64> __load_integral(const device::DeviceNode &node,
                                                std::string_view prop_name,
                                                size_t integral_sz) noexcept;
+
+        friend class DriverModel;
     };
 
     /**

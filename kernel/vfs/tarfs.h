@@ -155,6 +155,9 @@ namespace tarfs {
         struct Meta : public IMetadata {
         } meta_;
 
+        [[nodiscard]]
+        std::vector<DirectoryEntryInfo> collect_direct_entries() const;
+
     public:
         TarDirectory(TarSuperblock *sb, const TarBlock *header, inode_t id)
             : sb_(sb), header_(header), inode_id_(id) {}
@@ -170,6 +173,10 @@ namespace tarfs {
 
         // IDirectory
         Result<inode_t> lookup(std::string_view name) override;
+        [[nodiscard]]
+        Result<size_t> entry_count() override;
+        [[nodiscard]]
+        Result<DirectoryEntryInfo> entry_at(size_t index) override;
         [[nodiscard]]
         Result<inode_t> mkfile(std::string_view name,
                                const char *options) override {

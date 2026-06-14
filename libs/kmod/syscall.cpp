@@ -12,6 +12,7 @@
 #include <kmod/syscall.h>
 #include <prm.h>
 
+#include <cstdio>
 #include <cstring>
 
 extern "C" {

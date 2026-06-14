@@ -114,6 +114,54 @@ namespace tarfs {
 		unexpect_return(ErrCode::ENTRY_NOT_FOUND);
 	}
 
+    std::vector<DirectoryEntryInfo> TarDirectory::collect_direct_entries() const {
+        std::vector<DirectoryEntryInfo> entries{};
+        if (sb_ == nullptr || header_ == nullptr) {
+            return entries;
+        }
+
+        util::Path parent_path{header_->header.name};
+        parent_path = parent_path.normalize();
+        const uint8_t *base = sb_->data_;
+        const uint8_t *end  = base + sb_->size_;
+
+        for (const TarBlock *p = header_ + 1;
+             reinterpret_cast<const uint8_t *>(p) + BLOCK_SIZE <= end;) {
+            if (!p->is_header()) {
+                break;
+            }
+
+            util::Path entry_path{p->header.name};
+            entry_path = entry_path.normalize();
+            if (entry_path.starts_with(parent_path)) {
+                util::Path rel = entry_path.relative_to(parent_path);
+                if (rel != "." && rel != "" && rel.filename() == rel) {
+                    entries.push_back(DirectoryEntryInfo{
+                        .is_file = p->header.typeflag[0] != '5',
+                        .name    = std::string(rel.view()),
+                    });
+                }
+            }
+
+            size_t file_size  = parse_octal(p->header.size);
+            size_t file_block = (file_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            p += file_block + 1;
+        }
+        return entries;
+    }
+
+    Result<size_t> TarDirectory::entry_count() {
+        return collect_direct_entries().size();
+    }
+
+    Result<DirectoryEntryInfo> TarDirectory::entry_at(size_t index) {
+        auto entries = collect_direct_entries();
+        if (index >= entries.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        return entries[index];
+    }
+
 	// TarFSDriver
 
 	bool TarFSDriver::is_valid(size_t size_, const uint8_t *data_) {

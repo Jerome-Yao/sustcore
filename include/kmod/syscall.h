@@ -73,6 +73,13 @@ size_t sys_vfs_read(CapIdx file_cap, size_t offset, void *buf, size_t len);
 size_t sys_vfs_write(CapIdx file_cap, size_t offset, const void *buf,
                      size_t len);
 size_t sys_vfs_size(CapIdx file_cap);
+/**
+ * @brief 读取目录项记录到缓冲区, 返回本次实际写入的字节数.
+ *
+ * @param offset 目录项起始索引, 不是字节偏移.
+ */
+size_t sys_vfs_getdents(CapIdx dir_cap, void *buf, size_t buflen,
+                        size_t offset);
 bool sys_vfs_sync(CapIdx capidx);
 
 CapIdx sys_cap_clone(CapIdx src);

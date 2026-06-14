@@ -19,7 +19,6 @@
 #include <test/coroutine.h>
 #include <test/expected.h>
 #include <test/framework.h>
-#include <test/fs.h>
 #include <test/functional.h>
 #include <test/meta.h>
 #include <test/optional.h>

@@ -645,6 +645,8 @@ namespace exception {
         loggers::EXCEPTION::DEBUG(
             "进入非法指令异常处理程序: sepc=0x%016lx, stval=0x%016lx", sepc,
             stval);
+        (void)scause;
+        (void)ctx;
         return false;  // 无法处理该异常
     }
 

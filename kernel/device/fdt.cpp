@@ -1276,24 +1276,7 @@ namespace fdt {
      * @brief 向普通设备工厂注册表登记默认 FDT 设备工厂.
      */
     void FDTProvider::init_device_factories() noexcept {
-        if (!driver::DriverModel::initialized()) {
-            return;
-        }
-
         virtio::init_virtio_blk_factory();
-
-        [[maybe_unused]] auto serial_res =
-            driver::DriverModel::inst().register_factory(
-                util::owner<driver::IDeviceFactory *>(
-                    new driver::SerialDeviceFactory()));
-        [[maybe_unused]] auto rtc_res =
-            driver::DriverModel::inst().register_factory(
-                util::owner<driver::IDeviceFactory *>(
-                    new driver::GoldfishRTCFactory()));
-        [[maybe_unused]] auto virtio_res =
-            driver::DriverModel::inst().register_factory(
-                util::owner<driver::IDeviceFactory *>(
-                    new virtio::VirtioMmioFactory()));
     }
 
     /**
@@ -1864,7 +1847,7 @@ namespace fdt {
                                    fdt_node.raw_node().name.c_str(),
                                    irq_factory->compatible().data());
 
-            auto device_res = driver::DriverModel::inst().create_driver(
+            auto device_res = driver::DriverModel::inst().create_irq_driver(
                 const_cast<FDTDeviceNode *>(&fdt_node));
             propagate(device_res);
             void_return();

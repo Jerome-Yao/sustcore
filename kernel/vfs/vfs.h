@@ -21,6 +21,7 @@
 #include <sus/refcount.h>
 #include <sustcore/errcode.h>
 #include <sustcore/files.h>
+#include <vfs/device.h>
 #include <vfs/ops.h>
 
 #include <string>
@@ -136,10 +137,12 @@ class VDirectory : public cap::_PayloadHelper<PayloadType::VDIR> {
 private:
     util::refc_ptr<VINode> _vind;
     util::Path _mount_path;
+    util::Path _global_path;
     VFS *_vfs;
 
 public:
-    VDirectory(VINode &vind, const util::Path &mount_path, VFS &vfs);
+    VDirectory(VINode &vind, const util::Path &mount_path,
+               const util::Path &global_path, VFS &vfs);
     ~VDirectory() override = default;
     void destruct() override;
 
@@ -152,13 +155,38 @@ public:
     const util::Path &mount_path() const {
         return _mount_path;
     }
+
+    [[nodiscard]]
+    const util::Path &global_path() const {
+        return _global_path;
+    }
 };
 
 enum class MountFlags { NONE = 0 };
 
 class VFS {
+public:
+    struct MountKey {
+        VINode *parent;
+        std::string entry;
+
+        bool operator==(const MountKey &other) const {
+            return parent == other.parent && entry == other.entry;
+        }
+    };
+
 private:
+    struct MountKeyHash {
+        size_t operator()(const MountKey &key) const {
+            return reinterpret_cast<size_t>(key.parent) ^
+                   (std::hash<std::string>()(key.entry) << 1);
+        }
+    };
+
     struct MountRecord {
+        VINode *parent_vinode = nullptr;
+        std::string entry_name;
+        util::Path mount_path;
         util::owner<VSuperblock *> superblock;
         size_t devno = 0;
         bool is_block_mount = false;
@@ -166,7 +194,8 @@ private:
     };
 
     std::unordered_map<std::string, util::owner<VFsDriver *>> fs_table;
-    std::unordered_map<util::Path, MountRecord> mount_table;
+    std::unordered_map<MountKey, MountRecord, MountKeyHash> mount_table;
+    std::unordered_map<std::string, VSuperblock *> pseudo_mounts;
 
     [[nodiscard]]
     Result<util::refc_ptr<VINode>> _resolve_from(
@@ -180,6 +209,7 @@ private:
     [[nodiscard]]
     Result<VDirectory *> _open_dir_at(VINode &parent,
                                       const util::Path &mount_path,
+                                      const util::Path &base_path,
                                       const char *relpath);
 
     [[nodiscard]]
@@ -189,15 +219,32 @@ private:
     Result<VDirectory *> _open_dir(const char *filepath);
 
     [[nodiscard]]
-    Result<std::pair<util::Path, VSuperblock *>> _resolve_mount(
-        const util::Path &path);
-
+    Result<MountRecord *> _lookup_mount_record(const MountKey &key);
     [[nodiscard]]
-    Result<MountRecord *> _lookup_mount_record(const util::Path &mount_path);
+    Result<std::pair<MountKey, util::Path>> _build_mount_key(
+        const util::Path &mount_path);
+    [[nodiscard]]
+    Result<MountKey> _entry_mount_key(VINode *parent, std::string_view entry) const;
 
     [[nodiscard]]
     Result<util::refc_ptr<VINode>> _resolve_inode(const util::Path &path,
                                                   util::Path &mount_path);
+    [[nodiscard]]
+    Result<std::pair<util::Path, util::Path>> _global_target_path(
+        const VDirectory &base, const char *relpath) const;
+    [[nodiscard]]
+    std::vector<DirectoryEntryInfo> _append_mount_entries(
+        const VDirectory &vdir, std::vector<DirectoryEntryInfo> entries)
+        const;
+    [[nodiscard]]
+    Result<util::refc_ptr<VINode>> _ensure_directory_path(
+        util::refc_ptr<VINode> base, const util::Path &mount_path,
+        const util::Path &base_path, const util::Path &dir_path);
+    [[nodiscard]]
+    Result<util::refc_ptr<VINode>> _ensure_parent_directory(
+        const VDirectory &base, const char *relpath);
+    [[nodiscard]]
+    Result<void> _ensure_mountpoint_path(const util::Path &mount_path);
 
     void _on_vfile_destroy(const util::Path &mount_path) noexcept;
 
@@ -215,7 +262,12 @@ public:
     VFS &operator=(VFS &&)      = delete;
 
     // 注册文件系统
-    Result<void> register_fs(util::owner<IFsDriver *> &&driver);
+    Result<const char *> __register_fs(util::owner<IFsDriver *> &&driver);
+    template <typename FsDriverClass>
+    Result<const char *> register_fs()
+    {
+        return __register_fs(util::owner(new FsDriverClass()));
+    }
     Result<void> unregister_fs(const char *fs_name);
     // 挂载文件系统
     Result<void> mount(const char *fs_name, size_t devno,
@@ -241,6 +293,10 @@ public:
     [[nodiscard]]
     Result<CapIdx> open_dir(const char *filepath, cap::CHolder &holder,
                             b64 perm);
+    [[nodiscard]]
+    Result<ISuperblock *> get_pseudo(const char *pseudo_fs_id);
+    [[nodiscard]]
+    Result<devfs::DevFSSuperblock *> devfs();
     // 仅供测试代码使用的调试接口
     Result<VFile *> __debug_open(const char *filepath);
 
@@ -254,6 +310,7 @@ public:
     Result<size_t> size(VFile &vfile) const;
     // 刷新文件内容到存储设备
     Result<void> sync(VFile &vfile) const;
+    Result<std::vector<DirectoryEntryInfo>> getdents(VDirectory &vdir) const;
     Result<void> sync(VDirectory &vdir) const;
 
     friend class VFile;

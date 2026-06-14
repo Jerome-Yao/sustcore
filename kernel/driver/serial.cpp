@@ -14,6 +14,8 @@
 #include <driver/serial.h>
 #include <logger.h>
 #include <sus/units.h>
+#include <sustcore/files.h>
+#include <vfs/vfs.h>
 
 namespace driver {
     namespace {
@@ -77,23 +79,29 @@ namespace driver {
         }
     }
 
-    Result<void> SerialDevice::mount(devfs::DevFSSuperblock &root,
-                                     const char *options) noexcept {
-        (void)options;
-        auto sys_root_res = root.root();
-        propagate(sys_root_res);
+    Result<void> SerialDevice::mount(CapIdx devdir) noexcept {
+        loggers::DEVICE::DEBUG("在设备目录下创建 serial 文件!");
+        auto &vfs = VFS::inst();
+        auto devfs_res = vfs.devfs();
+        propagate(devfs_res);
+        auto &devfs = *devfs_res.value();
 
-        auto serial_dir_res = root.ensure_dir(sys_root_res.value(), "serial");
-        propagate(serial_dir_res);
+        auto lookup_res = holder().lookup(devdir);
+        propagate(lookup_res);
+        auto &dircap = *lookup_res.value();
 
-        auto register_res = root.register_char(
-            serial_dir_res.value(), "serial",
-            devfs::CharFactory{this, create_serial_io_file});
-        if (!register_res.has_value() &&
-            register_res.error() != ErrCode::KEY_DUPLICATED)
-        {
-            propagate_return(register_res);
-        }
+        auto mkres =
+            vfs.mkfile(dircap, "serial", flags::O_READ | flags::O_WRITE,
+                       holder());
+        propagate(mkres);
+
+        lookup_res = holder().lookup(mkres.value());
+        propagate(lookup_res);
+        auto &filecap = *lookup_res.value();
+        auto link_res = devfs.link_char(
+            filecap,
+            devfs::CharFactory{.ctx = this, .create = create_serial_io_file});
+        propagate(link_res);
         void_return();
     }
 

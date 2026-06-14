@@ -12,6 +12,7 @@
 #include <bio/blk.h>
 #include <bio/block.h>
 #include <bio/request.h>
+#include <cap/cholder.h>
 #include <device/int.h>
 #include <device/model.h>
 #include <driver/model.h>
@@ -23,14 +24,16 @@
 #include <exe/task.h>
 #include <kinit.h>
 #include <logger.h>
-#include <symbols.h>
+#include <object/perm.h>
 #include <sus/logger.h>
 #include <sus/owner.h>
 #include <sus/units.h>
+#include <sustcore/capability.h>
+#include <sustcore/files.h>
+#include <symbols.h>
 #include <task/scheduler.h>
 #include <task/task.h>
 #include <task/wait.h>
-#include <test/fs.h>
 #include <vfs/device.h>
 #include <vfs/ops.h>
 #include <vfs/tarfs.h>
@@ -44,18 +47,16 @@
 extern void register_timekeeper_log_test();
 
 namespace {
-    constexpr const char *INITRD_PATH     = "/initrd/";
-    constexpr const char *INITMOD_PATH    = "/initrd/init.mod";
-    constexpr const char *SETUPMOD_PATH   = "/initrd/setup.mod";
-    constexpr const char *DEFAULTMOD_PATH = "/initrd/default.mod";
-    constexpr const char *TEST_IMG_PATH   = "/test_img/";
+    constexpr const char *INITRD_PATH           = "/initrd/";
+    constexpr const char *INITMOD_PATH          = "/initrd/init.mod";
+    constexpr const char *SETUPMOD_PATH         = "/initrd/setup.mod";
+    constexpr const char *DEFAULTMOD_PATH       = "/initrd/default.mod";
+    constexpr const char *TEST_IMG_PATH         = "/test_img/";
     constexpr const char *TEST_IMG_FEATURE_PATH = "/test_img/feature.mk";
     constexpr size_t FILE_READ_CHUNK_SIZE       = 256;
 
-    devfs::DevFSDriver *g_devfs_driver = nullptr;
     util::owner<RamDiskDevice *> g_initrd_device =
         util::owner<RamDiskDevice *>(nullptr);
-    driver::GoldfishRTC::AlarmHandler ticker;
 
     util::owner<RamDiskDevice *> make_initrd() {
         auto e_initrd_ptr = reinterpret_cast<char *>(&e_initrd);
@@ -89,13 +90,13 @@ namespace {
         while (offset < content.size()) {
             const auto chunk =
                 std::min(FILE_READ_CHUNK_SIZE, content.size() - offset);
-            auto read_res =
-                VFS::inst().read(*file, static_cast<off_t>(offset),
-                                 content.data() + offset, chunk);
+            auto read_res = VFS::inst().read(*file, static_cast<off_t>(offset),
+                                             content.data() + offset, chunk);
             if (!read_res.has_value()) {
                 loggers::SUSTCORE::ERROR(
                     "读取文件失败: path=%s offset=%u err=%s", path,
-                    static_cast<unsigned>(offset), to_cstring(read_res.error()));
+                    static_cast<unsigned>(offset),
+                    to_cstring(read_res.error()));
             }
             propagate(read_res);
             if (read_res.value() == 0) {
@@ -111,10 +112,11 @@ namespace {
         size_t line_begin = 0;
         while (line_begin < content.size()) {
             const auto line_end = content.find('\n', line_begin);
-            const auto line_len =
-                line_end == std::string::npos ? content.size() - line_begin
-                                              : line_end - line_begin;
-            loggers::SUSTCORE::INFO("%s%.*s", prefix, static_cast<int>(line_len),
+            const auto line_len = line_end == std::string::npos
+                                      ? content.size() - line_begin
+                                      : line_end - line_begin;
+            loggers::SUSTCORE::INFO("%s%.*s", prefix,
+                                    static_cast<int>(line_len),
                                     content.data() + line_begin);
             if (line_end == std::string::npos) {
                 break;
@@ -131,21 +133,19 @@ namespace {
         VFS::init();
         auto &vfs = VFS::inst();
 
-        auto tarfs        = util::owner(new tarfs::TarFSDriver());
-        auto register_res = vfs.register_fs(tarfs);
+        auto register_res = vfs.register_fs<tarfs::TarFSDriver>();
         propagate(register_res);
-        auto devfs_driver = util::owner(new devfs::DevFSDriver());
-        g_devfs_driver    = devfs_driver.get();
-        register_res      = vfs.register_fs(std::move(devfs_driver));
+
+        register_res = vfs.register_fs<tmpfs::TmpFSDriver>();
         propagate(register_res);
-        auto tmpfs_driver = util::owner(new tmpfs::TmpFSDriver());
-        register_res      = vfs.register_fs(std::move(tmpfs_driver));
+
+        register_res = vfs.register_fs<devfs::DevFSDriver>();
         propagate(register_res);
 
         g_initrd_device = make_initrd();
-        auto devno_res  = blk::BlkManager::inst().register_device(
-            util::nnullforce(static_cast<IBlockDeviceOps *>(
-                g_initrd_device.get())));
+        auto devno_res =
+            blk::BlkManager::inst().register_device(util::nnullforce(
+                static_cast<IBlockDeviceOps *>(g_initrd_device.get())));
         if (!devno_res.has_value()) {
             propagate_return(devno_res);
         }
@@ -155,8 +155,58 @@ namespace {
         mount_res = vfs.mount("tarfs", devno_res.value(), INITRD_PATH,
                               MountFlags::NONE, nullptr);
         propagate(mount_res);
-        mount_res = vfs.mount("devfs", "/sys/", nullptr);
+
+        // TODO: 挂载一个 sysfs, 此处先使用 mkdir 来处理
+        auto cur_pcb = schd::Scheduler::inst().current_pcb();
+        if (cur_pcb == nullptr)
+        {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto &cur_holder = *cur_pcb->cholder;
+
+        auto open_res = 
+            vfs.open_dir("/", cur_holder, perm::vdir::EXEC | perm::vdir::READ | perm::vdir::WRITE);
+        propagate(open_res);
+        auto root_cap_idx = open_res.value();
+        auto lookup_res = cur_holder.lookup(root_cap_idx);
+        propagate(lookup_res);
+        auto root_cap = *lookup_res.value();
+
+        auto mkdir_res = vfs.mkdir(root_cap, "sys/", flags::O_READ | flags::O_WRITE | flags::O_EXECUTE, cur_holder);
+        propagate(mkdir_res);
+
+        auto remove_res = cur_holder.remove(root_cap_idx);
+        propagate(remove_res);
+        remove_res = cur_holder.remove(mkdir_res.value());
+        propagate(remove_res);
+
+        mount_res = vfs.mount("devfs", devfs::DEVFS_MOUNT_PATH, nullptr);
         propagate(mount_res);
+        void_return();
+    }
+
+    Result<void> init_driver_model() {
+        auto &device_model = device::DeviceModel::inst();
+        auto activate_res =
+            driver::DriverModel::inst().activate_runtime(
+                device_model.non_irq_device_nodes());
+        propagate(activate_res);
+
+        // 开始注册各个设备驱动
+        auto register_res = driver::DriverModel::inst().register_factory(
+            util::owner<driver::IDeviceFactory *>(
+                new driver::SerialDeviceFactory()));
+        propagate(register_res);
+
+        register_res = driver::DriverModel::inst().register_factory(
+            util::owner<driver::IDeviceFactory *>(
+                new driver::GoldfishRTCFactory()));
+        propagate(register_res);
+
+        register_res = driver::DriverModel::inst().register_factory(
+            util::owner<driver::IDeviceFactory *>(
+                new virtio::VirtioMmioFactory()));
+        propagate(register_res);
         void_return();
     }
 
@@ -200,6 +250,15 @@ void kinit_runtime_entry() {
                                  to_cstring(init_res.error()));
         panic("kinit 初始化 VFS 失败");
     }
+    loggers::SUSTCORE::INFO("已初始化 VFS");
+
+    init_res = init_driver_model();
+    if (!init_res.has_value()) {
+        loggers::SUSTCORE::FATAL("kinit 初始化 DriverModel 失败: %s",
+                                 to_cstring(init_res.error()));
+        panic("kinit 初始化 DriverModel 失败");
+    }
+    loggers::SUSTCORE::INFO("已初始化 DriverModel");
 
 #ifdef __CONF_KERNEL_TIMEKEEPER_TEST
     register_timekeeper_log_test();

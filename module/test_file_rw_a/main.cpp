@@ -9,6 +9,7 @@
  * 
  */
 
+#include <kmod/bootstrap.h>
 #include <kmod/syscall.h>
 
 #include <cstdio>
@@ -22,6 +23,30 @@ namespace {
     constexpr const char *TEST_TEXT =
         "Hello, TmpFS! This is the test text from test_file_rw_a!\n"
         "你好TmpFS, 这是来自 test_file_rw_a 进程的测试文本!";
+
+    [[nodiscard]]
+    CapIdx bootstrap_root_dir() {
+        CapIdx cap = cap::null;
+        bool found = false;
+        bool ok    = bootstrap_foreach_record(
+            __startup_data, __startup_size,
+            [&](const BootstrapRecordView &view) {
+                if (found || view.header->type != BOOTSTRAP_TYPE_DIRCAPEXPLAIN)
+                {
+                    return;
+                }
+                BootstrapCapPathView cap_path{};
+                if (!bootstrap_parse_cap_path(view, cap_path)) {
+                    return;
+                }
+                if (strcmp(cap_path.path, "/") != 0) {
+                    return;
+                }
+                cap   = cap_path.cap;
+                found = true;
+            });
+        return ok && found ? cap : cap::null;
+    }
 }
 
 int kmod_main() {
@@ -64,8 +89,32 @@ int kmod_main() {
         exit(-1);
     }
 
+    CapIdx root_dir_cap = bootstrap_root_dir();
+    if (root_dir_cap == cap::null || root_dir_cap == cap::error) {
+        printf("test_file_rw_a: bootstrap root dir missing\n");
+        kmod_fclose(exec_fd);
+        exit(-1);
+    }
+
+    CapIdx reserved_caps[] = {root_dir_cap};
+    struct RootDirBootstrap {
+        BootstrapRecordHeader header;
+        CapIdx cap;
+        char path[2];
+    } bootstrap{
+        .header =
+            BootstrapRecordHeader{
+                .next = 0,
+                .type = BOOTSTRAP_TYPE_DIRCAPEXPLAIN,
+            },
+        .cap  = root_dir_cap,
+        .path = "/",
+    };
+
     printf("test_file_rw_a: execve -> %s\n", MODULE_B);
-    if (!execve(kmod_getcap(exec_fd), nullptr, 0, nullptr, 0)) {
+    if (!execve(kmod_getcap(exec_fd), reserved_caps, 1, &bootstrap,
+                sizeof(bootstrap)))
+    {
         printf("test_file_rw_a: execve failed\n");
         kmod_fclose(exec_fd);
         exit(-1);

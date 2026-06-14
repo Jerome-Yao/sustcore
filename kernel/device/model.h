@@ -96,6 +96,18 @@ namespace device {
         }
 
         /**
+         * @brief 获取全部非中断控制器设备节点.
+         *
+         * 这些节点仅以非拥有指针形式暴露, 生命周期仍由 DeviceModel 管理.
+         *
+         * @return const std::vector<DeviceNode *>& 节点列表.
+         */
+        [[nodiscard]]
+        const std::vector<DeviceNode *> &non_irq_device_nodes() const noexcept {
+            return _non_irq_devices;
+        }
+
+        /**
          * @brief 登记一个统一设备节点并转移所有权给 DeviceModel.
          *
          * @param node 待登记节点所有权.
@@ -207,6 +219,7 @@ namespace device {
         DeviceModel() = default;
         std::vector<util::owner<DeviceProvider *>> _providers;
         std::vector<util::owner<DeviceNode *>> _devices;
+        std::vector<DeviceNode *> _non_irq_devices;
         std::vector<MemRegion> _regions;
         CpuGroupInfo _cpus;
         driver::IrqManager _interrupt;

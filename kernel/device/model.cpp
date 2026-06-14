@@ -100,6 +100,15 @@ namespace device {
 
         auto *registered = node.get();
         _devices.push_back(std::move(node));
+        if (!driver::DriverModel::initialized()) {
+            _non_irq_devices.push_back(registered);
+        } else {
+            auto *irq_factory =
+                driver::DriverModel::inst().irq_factories().find(*registered);
+            if (irq_factory == nullptr) {
+                _non_irq_devices.push_back(registered);
+            }
+        }
         loggers::DEVICE::DEBUG("已登记 DeviceNode: platform=%s",
                                registered->platform());
         return registered;
@@ -127,6 +136,7 @@ namespace device {
      * @brief 释放已登记的统一设备节点.
      */
     void DeviceModel::cleanup_device_nodes() noexcept {
+        _non_irq_devices.clear();
         for (auto &node : _devices) {
             delete node.get();
         }

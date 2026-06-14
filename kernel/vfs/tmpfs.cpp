@@ -121,6 +121,28 @@ namespace tmpfs {
         return _sb->create_entry(*_node, name, INodeType::DIRECTORY);
     }
 
+    Result<size_t> TmpFSDirectory::entry_count() {
+        return _node->entries.size();
+    }
+
+    Result<DirectoryEntryInfo> TmpFSDirectory::entry_at(size_t index) {
+        if (index >= _node->entries.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        auto it = _node->entries.begin();
+        for (size_t i = 0; i < index; ++i) {
+            ++it;
+        }
+
+        auto node_res = _sb->lookup_node(it->second);
+        propagate(node_res);
+        return DirectoryEntryInfo{
+            .is_file = node_res.value()->type == INodeType::FILE,
+            .name    = it->first,
+        };
+    }
+
     Result<void> TmpFSDirectory::sync() {
         void_return();
     }

@@ -558,6 +558,11 @@ namespace task {
                               VirArea(USER_STACK_BOTTOM, USER_STACK_TOP),
                               stack_mem, PageMan::RWX::RW);
         propagate(vma_res);
+        loggers::TASK::INFO(
+            "创建STACK VMA: pid=%lu area=[%p,%p) mem=%p memsz=%lu mem_off=%lu",
+            pcb->pid, USER_STACK_BOTTOM.addr(), USER_STACK_TOP.addr(),
+            stack_mem, static_cast<unsigned long>(MAX_INITIAL_STACK_SIZE),
+            0UL);
 
         auto tcb_cap_res = pcb->cholder->create<cap::TCBPayload>(tcb.get());
         propagate(tcb_cap_res);
@@ -570,6 +575,9 @@ namespace task {
             build_user_stack(*stack_mem, USER_STACK_TOP, startup_info,
                              spec.startup_blob.get(), spec.startup_blob_size);
         propagate(stack_top_res);
+        loggers::TASK::DEBUG(
+            "栈内存分配: pid=%lu 栈内存地址=%p 已分配=%lu",
+            pcb->pid, stack_mem, stack_mem->allocated_size());
         reset_thread_runtime(tcb);
         build_user_contexts(tcb, pcb->entrypoint.addr(),
                             stack_top_res.value().addr());
@@ -768,7 +776,9 @@ namespace task {
         }
         auto tmm_guard    = delete_guard(tmm_res.value());
         pcb->tmm          = tmm_res.value();
-        pcb->cholder      = nullptr;
+        auto create_res = cap::CHolderManager::inst().create_holder();
+        propagate(create_res);
+        pcb->cholder      = create_res.value();
         pcb->entrypoint   = VirAddr(nullptr);
         pcb->pcb_cap      = cap::null;
         pcb->main_tcb_cap = cap::null;

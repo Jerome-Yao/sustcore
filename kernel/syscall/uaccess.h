@@ -98,9 +98,16 @@ namespace syscall {
             _memory     = vma->memory;
             _mem_offset = vma->mem_offset + (_uaddr - vma->varea.begin);
             _resolved   = true;
+            auto *current = schd::Scheduler::inst().current_tcb();
             loggers::SYSCALL::DEBUG(
-                "UBuffer: 解析成功 uaddr=%p len=%lu mem=%p mem_off=%lu",
-                _uaddr.addr(), _len, _memory, _mem_offset);
+                "UBuffer: 解析成功 pid=%lu uaddr=%p len=%lu vma=[%p,%p) "
+                "type=%d mem=%p vma_mem_off=%lu mem_off=%lu",
+                current != nullptr && current->task != nullptr
+                    ? current->task->pid
+                    : 0,
+                _uaddr.addr(), _len, vma->varea.begin.addr(),
+                vma->varea.end.addr(), static_cast<int>(vma->type), _memory,
+                vma->mem_offset, _mem_offset);
             void_return();
         }
 
@@ -228,6 +235,19 @@ namespace syscall {
 
             auto resolve_res = resolve_payload();
             propagate(resolve_res);
+            auto first_page_res = _memory->lookup_page(_mem_offset);
+            if (first_page_res.has_value()) {
+                loggers::SYSCALL::DEBUG(
+                    "UBuffer: commit pid=%lu uaddr=%p len=%lu mem=%p mem_off=%lu "
+                    "first_paddr=%p",
+                    schd::Scheduler::inst().current_tcb() != nullptr &&
+                            schd::Scheduler::inst().current_tcb()->task != nullptr
+                        ? schd::Scheduler::inst().current_tcb()->task->pid
+                        : 0,
+                    _uaddr.addr(), _len, _memory, _mem_offset,
+                    first_page_res.value().addr());
+            }
+            
             auto write_res = _memory->write(_mem_offset, _kbuf, _len);
             if (!write_res.has_value()) {
                 loggers::SYSCALL::ERROR(
@@ -235,6 +255,7 @@ namespace syscall {
                     to_cstring(write_res.error()));
                 propagate_return(write_res);
             }
+            
             void_return();
         }
 

@@ -79,6 +79,10 @@ namespace tmpfs {
         Result<inode_t> mkdir(std::string_view name,
                               const char *options) override;
         [[nodiscard]]
+        Result<size_t> entry_count() override;
+        [[nodiscard]]
+        Result<DirectoryEntryInfo> entry_at(size_t index) override;
+        [[nodiscard]]
         Result<void> sync() override;
         [[nodiscard]]
         IMetadata &metadata() override;

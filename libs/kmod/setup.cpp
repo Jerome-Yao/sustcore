@@ -16,6 +16,7 @@
 #include <sustcore/capability.h>
 
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 
 typedef void (*_init_func)(void);
@@ -71,6 +72,7 @@ extern "C" void _cpp_setup(const void *stack_start) {
     __stack_mem_cap = startup->stack_mem_cap;
 
     kmod::init();
+
     kmod_main();
     while (true);
 }
