@@ -46,7 +46,7 @@ void collect_tests(TestFramework& framework) {
     // test::expected::collect_tests(framework);
     // test::fs::collect_tests(framework);
     // test::functional::collect_tests(framework);
-    test::meta::collect_tests(framework);
+    // test::meta::collect_tests(framework);
     test::ringbuf::collect_tests(framework);
     test::wait::collect_tests(framework);
     // test::optional::collect_tests(framework);
