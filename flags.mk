@@ -10,7 +10,7 @@ flags-common-cpp := -std=gnu++26 -nostdlib -fno-builtin -ffreestanding \
 	-Wall -Wno-sign-compare -Wno-literal-suffix -Wno-int-to-pointer-cast \
 	-fno-strict-aliasing -fomit-frame-pointer -fno-pic -fno-asynchronous-unwind-tables \
 	-fno-stack-protector -fno-toplevel-reorder -fno-tree-scev-cprop \
-	-mcmodel=medany -freflection
+	-mcmodel=medany
 
 flags-use-sustcore-features := -DUSE_SUSTCORE_FEATURES
 flags-no-rtti-cpp := -fno-rtti

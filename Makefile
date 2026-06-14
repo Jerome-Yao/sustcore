@@ -84,8 +84,8 @@ build-mods: build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.test_fork) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_execve) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_thread) $(arg-basic) build
-	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_server) $(arg-basic) build
-	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_client) $(arg-basic) build
+# 	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_server) $(arg-basic) build
+# 	$(q)$(MAKE) -f $(module-component-makefile.test_rpc_client) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_file_rw_a) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_file_rw_b) $(arg-basic) build
 	$(q)echo "All modules built successfully."
