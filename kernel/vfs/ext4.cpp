@@ -29,6 +29,8 @@ namespace ext4 {
         constexpr uint16_t EXT4_S_IFLNK = 0xA000;
 
         constexpr uint32_t EXT4_EXTENTS_FL = 0x00080000;
+        constexpr uint16_t EXT4_LINK_MAX   = 65000;
+        constexpr uint16_t EXT4_MAX_EXTENT_DEPTH = 5;
 
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_FILETYPE = 0x0002;
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_EXTENTS  = 0x0040;
@@ -38,8 +40,35 @@ namespace ext4 {
             EXT4_FEATURE_INCOMPAT_FILETYPE | EXT4_FEATURE_INCOMPAT_EXTENTS |
             EXT4_FEATURE_INCOMPAT_64BIT | EXT4_FEATURE_INCOMPAT_FLEX_BG;
 
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER = 0x0001;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_LARGE_FILE   = 0x0002;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_BTREE_DIR    = 0x0004;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_HUGE_FILE    = 0x0008;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_GDT_CSUM     = 0x0010;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_DIR_NLINK    = 0x0020;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE  = 0x0040;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_BIGALLOC     = 0x0200;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_METADATA_CSUM = 0x0400;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_READONLY     = 0x1000;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_PROJECT      = 0x2000;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_VERITY       = 0x8000;
+        constexpr uint32_t EXT4_SUPPORTED_RO_COMPAT =
+            EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER |
+            EXT4_FEATURE_RO_COMPAT_LARGE_FILE |
+            EXT4_FEATURE_RO_COMPAT_BTREE_DIR |
+            EXT4_FEATURE_RO_COMPAT_HUGE_FILE |
+            EXT4_FEATURE_RO_COMPAT_GDT_CSUM |
+            EXT4_FEATURE_RO_COMPAT_DIR_NLINK |
+            EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE |
+            EXT4_FEATURE_RO_COMPAT_METADATA_CSUM |
+            EXT4_FEATURE_RO_COMPAT_READONLY |
+            EXT4_FEATURE_RO_COMPAT_PROJECT |
+            EXT4_FEATURE_RO_COMPAT_VERITY;
+
+        constexpr uint8_t EXT4_FT_UNKNOWN  = 0;
         constexpr uint8_t EXT4_FT_REG_FILE = 1;
         constexpr uint8_t EXT4_FT_DIR      = 2;
+        constexpr uint8_t EXT4_FT_SYMLINK  = 7;
 
         template <typename T>
         [[nodiscard]]
@@ -366,6 +395,14 @@ namespace ext4 {
         if ((_feature_incompat & ~EXT4_SUPPORTED_INCOMPAT) != 0) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
+        if ((_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_BIGALLOC) != 0) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        const uint32_t unsupported_ro =
+            _feature_ro_compat & ~EXT4_SUPPORTED_RO_COMPAT;
+        _read_only =
+            unsupported_ro != 0 ||
+            (_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_READONLY) != 0;
         if (_blocks_per_group == 0 || _inodes_per_group == 0 ||
             _inode_size < 128 || _group_desc_size < 32)
         {
@@ -401,6 +438,12 @@ namespace ext4 {
             static_cast<unsigned>(_feature_incompat),
             static_cast<unsigned>(_feature_ro_compat),
             static_cast<unsigned>(_feature_compat));
+        if (_read_only) {
+            loggers::VFS::WARN(
+                "Ext4 以只读模式挂载: ro_compat=0x%x unsupported_ro=0x%x",
+                static_cast<unsigned>(_feature_ro_compat),
+                static_cast<unsigned>(unsupported_ro));
+        }
         void_return();
     }
 
@@ -442,15 +485,38 @@ namespace ext4 {
         return raw;
     }
 
+    Result<void> Ext4Superblock::validate_inode_raw(
+        const std::vector<byte> &raw) {
+        if (raw.size() < 128) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        const uint16_t mode        = read_le_at<uint16_t>(raw, 0);
+        const uint32_t delete_time = read_le_at<uint32_t>(raw, 20);
+        const uint16_t link_count  = read_le_at<uint16_t>(raw, 26);
+        if (mode == 0 || delete_time != 0 || link_count == 0) {
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+        if (link_count > EXT4_LINK_MAX &&
+            (_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_DIR_NLINK) == 0)
+        {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        void_return();
+    }
+
     Result<uint16_t> Ext4Superblock::inode_mode(inode_t inode_id) {
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
+        auto valid_res = validate_inode_raw(raw_res.value());
+        propagate(valid_res);
         return read_le_at<uint16_t>(raw_res.value(), 0);
     }
 
     Result<uint64_t> Ext4Superblock::inode_size(inode_t inode_id) {
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
+        auto valid_res = validate_inode_raw(raw_res.value());
+        propagate(valid_res);
         const uint16_t mode = read_le_at<uint16_t>(raw_res.value(), 0);
         const uint64_t lo   = read_le_at<uint32_t>(raw_res.value(), 4);
         uint64_t hi         = 0;
@@ -463,9 +529,12 @@ namespace ext4 {
     }
 
     Result<Ext4ExtentMapping> Ext4Superblock::extent_lookup_from_node(
-        const byte *node, uint32_t logical) {
+        const byte *node, size_t node_size, uint32_t logical) {
         if (node == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
+        }
+        if (node_size < sizeof(Ext4ExtentHeader)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
         }
 
         auto *header = reinterpret_cast<const Ext4ExtentHeader *>(node);
@@ -478,11 +547,19 @@ namespace ext4 {
         if (entries > max) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
+        if (depth > EXT4_MAX_EXTENT_DEPTH) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
         if (entries == 0) {
             return Ext4ExtentMapping {};
         }
 
         if (depth == 0) {
+            const size_t entries_bytes =
+                static_cast<size_t>(entries) * sizeof(Ext4Extent);
+            if (sizeof(Ext4ExtentHeader) + entries_bytes > node_size) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
             auto *extents = reinterpret_cast<const Ext4Extent *>(
                 node + sizeof(Ext4ExtentHeader));
             for (uint16_t i = 0; i < entries; ++i) {
@@ -514,6 +591,11 @@ namespace ext4 {
             return Ext4ExtentMapping {};
         }
 
+        const size_t index_bytes =
+            static_cast<size_t>(entries) * sizeof(Ext4ExtentIdx);
+        if (sizeof(Ext4ExtentHeader) + index_bytes > node_size) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
         auto *indexes = reinterpret_cast<const Ext4ExtentIdx *>(
             node + sizeof(Ext4ExtentHeader));
         const Ext4ExtentIdx *chosen = nullptr;
@@ -538,13 +620,15 @@ namespace ext4 {
         std::vector<byte> child(_block_size);
         auto read_res = read_fs_block(leaf, child.data(), child.size());
         propagate(read_res);
-        return extent_lookup_from_node(child.data(), logical);
+        return extent_lookup_from_node(child.data(), child.size(), logical);
     }
 
     Result<Ext4ExtentMapping> Ext4Superblock::extent_lookup(inode_t inode_id,
                                                             uint32_t logical) {
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
+        auto valid_res = validate_inode_raw(raw_res.value());
+        propagate(valid_res);
         if (raw_res.value().size() < 100) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -552,7 +636,30 @@ namespace ext4 {
         if ((flags & EXT4_EXTENTS_FL) == 0) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
-        return extent_lookup_from_node(raw_res.value().data() + 40, logical);
+        return extent_lookup_from_node(raw_res.value().data() + 40, 60,
+                                       logical);
+    }
+
+    Result<bool> Ext4Superblock::dir_entry_is_file(inode_t inode_id,
+                                                   uint8_t file_type) {
+        if ((_feature_incompat & EXT4_FEATURE_INCOMPAT_FILETYPE) != 0) {
+            if (file_type == EXT4_FT_DIR) {
+                return false;
+            }
+            if (file_type == EXT4_FT_REG_FILE ||
+                file_type == EXT4_FT_SYMLINK)
+            {
+                return true;
+            }
+            if (file_type != EXT4_FT_UNKNOWN) {
+                return true;
+            }
+        }
+
+        auto mode_res = inode_mode(inode_id);
+        propagate(mode_res);
+        const uint16_t type = mode_res.value() & EXT4_S_IFMT;
+        return type != EXT4_S_IFDIR;
     }
 
     Result<size_t> Ext4Superblock::read_inode_data(inode_t inode_id,
@@ -615,6 +722,9 @@ namespace ext4 {
         }
         if (buf == nullptr) {
             unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
         }
         auto mode_res = inode_mode(inode_id);
         propagate(mode_res);
@@ -697,9 +807,12 @@ namespace ext4 {
                         block.data() + off + sizeof(Ext4DirEntry2));
                     std::string entry_name(name, name_len);
                     if (entry_name != "." && entry_name != "..") {
+                        auto is_file_res = dir_entry_is_file(
+                            static_cast<inode_t>(ino), file_type);
+                        propagate(is_file_res);
                         entries.push_back(Ext4DirEntry{
                             .inode_id = static_cast<inode_t>(ino),
-                            .is_file  = file_type != EXT4_FT_DIR,
+                            .is_file  = is_file_res.value(),
                             .name     = entry_name,
                         });
                     }

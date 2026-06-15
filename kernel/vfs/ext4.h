@@ -125,6 +125,7 @@ namespace ext4 {
         uint32_t _first_data_block  = 0;
         uint64_t _block_count       = 0;
         uint32_t _group_count       = 0;
+        bool _read_only             = false;
 
         [[nodiscard]]
         Result<void> read_device_bytes(uint64_t offset, void *buf, size_t len);
@@ -143,12 +144,17 @@ namespace ext4 {
         [[nodiscard]]
         Result<uint64_t> inode_size(inode_t inode_id);
         [[nodiscard]]
+        Result<void> validate_inode_raw(const std::vector<byte> &raw);
+        [[nodiscard]]
         Result<uint64_t> inode_table_block(uint32_t group);
+        [[nodiscard]]
+        Result<bool> dir_entry_is_file(inode_t inode_id, uint8_t file_type);
         [[nodiscard]]
         Result<Ext4ExtentMapping> extent_lookup(inode_t inode_id,
                                                 uint32_t logical);
         [[nodiscard]]
         Result<Ext4ExtentMapping> extent_lookup_from_node(const byte *node,
+                                                          size_t node_size,
                                                           uint32_t logical);
         [[nodiscard]]
         Result<size_t> read_inode_data(inode_t inode_id, uint64_t offset,
