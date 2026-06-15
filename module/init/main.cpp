@@ -253,6 +253,16 @@ int kmod_main() {
         kmod_fclose(fd);
     }
 
+    fd = kmod_fopen("/initrd/test_ext4_read.mod", "x");
+    if (fd >= 0) {
+        if (spawn_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap) == cap::error)
+        {
+            printf("init: create test_ext4_read failed\n");
+        }
+        printf("init: ext4 test success\n");
+        kmod_fclose(fd);
+    }
+
     // try write file /sys/dev/serial@10000000/serial
     // fd = kmod_fopen("/sys/dev/serial@10000000/serial", "w");
     // if (fd >= 0) {

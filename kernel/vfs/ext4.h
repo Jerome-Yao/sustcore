@@ -1,0 +1,201 @@
+/**
+ * @file ext4.h
+ * @author Codex
+ * @brief Ext4 block filesystem
+ * @version alpha-1.0.0
+ * @date 2026-06-15
+ *
+ * @copyright Copyright (c) 2026
+ *
+ */
+
+#pragma once
+
+#include <bio/buffer.h>
+#include <sus/types.h>
+#include <vfs/ops.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace ext4 {
+    class Ext4Driver;
+    class Ext4Superblock;
+
+    struct Ext4Metadata final : public IMetadata {};
+
+    struct Ext4DirEntry {
+        inode_t inode_id = 0;
+        bool is_file     = true;
+        std::string name {};
+    };
+
+    class Ext4File final : public IFile {
+    private:
+        Ext4Superblock *_sb;
+        inode_t _inode_id;
+        Ext4Metadata _metadata {};
+
+    public:
+        Ext4File(Ext4Superblock &sb, inode_t inode_id) noexcept;
+        ~Ext4File() final = default;
+
+        [[nodiscard]]
+        Result<size_t> read(off_t offset, void *buf, size_t len) final;
+        [[nodiscard]]
+        Result<size_t> write(off_t offset, const void *buf, size_t len) final;
+        [[nodiscard]]
+        Result<size_t> size() final;
+        [[nodiscard]]
+        Result<void> sync() final;
+        [[nodiscard]]
+        IMetadata &metadata() final;
+        [[nodiscard]]
+        inode_t inode_id() const final;
+        [[nodiscard]]
+        INodeCachePolicy inode_cache() const final;
+        [[nodiscard]]
+        FileCachePolicy file_cache() const final;
+    };
+
+    class Ext4Directory final : public IDirectory {
+    private:
+        Ext4Superblock *_sb;
+        inode_t _inode_id;
+        Ext4Metadata _metadata {};
+
+        [[nodiscard]]
+        Result<std::vector<Ext4DirEntry>> collect_entries();
+
+    public:
+        Ext4Directory(Ext4Superblock &sb, inode_t inode_id) noexcept;
+        ~Ext4Directory() final = default;
+
+        [[nodiscard]]
+        Result<inode_t> lookup(std::string_view name) final;
+        [[nodiscard]]
+        Result<inode_t> mkfile(std::string_view name,
+                               const char *options) final;
+        [[nodiscard]]
+        Result<inode_t> mkdir(std::string_view name,
+                              const char *options) final;
+        [[nodiscard]]
+        Result<size_t> entry_count() final;
+        [[nodiscard]]
+        Result<DirectoryEntryInfo> entry_at(size_t index) final;
+        [[nodiscard]]
+        Result<void> sync() final;
+        [[nodiscard]]
+        IMetadata &metadata() final;
+        [[nodiscard]]
+        inode_t inode_id() const final;
+        [[nodiscard]]
+        INodeCachePolicy inode_cache() const final;
+    };
+
+    class Ext4Superblock final : public ISuperblock {
+    private:
+        Ext4Driver *_fs;
+        blk::BufferCache *_cache;
+        size_t _dev_block_size;
+        size_t _dev_block_count;
+        size_t _sb_id;
+        Ext4Metadata _metadata {};
+
+        std::vector<byte> _superblock;
+        std::vector<byte> _group_desc;
+
+        uint32_t _block_size        = 0;
+        uint32_t _blocks_per_group  = 0;
+        uint32_t _inodes_per_group  = 0;
+        uint16_t _inode_size        = 0;
+        uint16_t _group_desc_size   = 0;
+        uint32_t _feature_compat    = 0;
+        uint32_t _feature_incompat  = 0;
+        uint32_t _feature_ro_compat = 0;
+        uint32_t _first_data_block  = 0;
+        uint64_t _block_count       = 0;
+        uint32_t _group_count       = 0;
+
+        [[nodiscard]]
+        Result<void> read_device_bytes(uint64_t offset, void *buf, size_t len);
+        [[nodiscard]]
+        Result<void> write_device_bytes(uint64_t offset, const void *buf,
+                                        size_t len);
+        [[nodiscard]]
+        Result<void> read_fs_block(uint64_t block, void *buf, size_t len);
+        [[nodiscard]]
+        Result<void> write_fs_block(uint64_t block, const void *buf,
+                                    size_t len);
+        [[nodiscard]]
+        Result<std::vector<byte>> read_inode_raw(inode_t inode_id);
+        [[nodiscard]]
+        Result<uint16_t> inode_mode(inode_t inode_id);
+        [[nodiscard]]
+        Result<uint64_t> inode_size(inode_t inode_id);
+        [[nodiscard]]
+        Result<uint64_t> inode_table_block(uint32_t group);
+        [[nodiscard]]
+        Result<uint64_t> extent_lookup(inode_t inode_id, uint32_t logical);
+        [[nodiscard]]
+        Result<uint64_t> extent_lookup_from_node(const byte *node,
+                                                 uint32_t logical);
+        [[nodiscard]]
+        Result<size_t> read_inode_data(inode_t inode_id, uint64_t offset,
+                                       void *buf, size_t len);
+        [[nodiscard]]
+        Result<size_t> write_inode_data(inode_t inode_id, uint64_t offset,
+                                        const void *buf, size_t len);
+        [[nodiscard]]
+        Result<std::vector<Ext4DirEntry>> read_directory(inode_t inode_id);
+
+    public:
+        Ext4Superblock(Ext4Driver &fs, blk::BufferCache &cache,
+                       size_t dev_block_size, size_t dev_block_count,
+                       size_t sb_id);
+        ~Ext4Superblock() final = default;
+
+        [[nodiscard]]
+        Result<void> load();
+        [[nodiscard]]
+        IFsDriver &fs() final;
+        [[nodiscard]]
+        Result<void> sync() final;
+        [[nodiscard]]
+        Result<inode_t> root() final;
+        [[nodiscard]]
+        Result<util::owner<IINode *>> get_inode(inode_t inode_id) final;
+        [[nodiscard]]
+        Result<inode_t> alloc_inode(INodeType type) final;
+        [[nodiscard]]
+        Result<void> free_inode(inode_t id) final;
+        [[nodiscard]]
+        IMetadata &metadata() final;
+        [[nodiscard]]
+        size_t sb_id() const final;
+
+        friend class Ext4File;
+        friend class Ext4Directory;
+    };
+
+    class Ext4Driver final : public IFsDriver {
+    private:
+        size_t _next_sb_id = 1;
+
+    public:
+        ~Ext4Driver() final = default;
+
+        [[nodiscard]]
+        const char *name() const final;
+        [[nodiscard]]
+        Result<void> probe(size_t devno, const char *options) final;
+        [[nodiscard]]
+        Result<util::owner<ISuperblock *>> mount(size_t devno,
+                                                 const char *options) final;
+        [[nodiscard]]
+        Result<void> unmount(ISuperblock *sb) final;
+    };
+}  // namespace ext4
