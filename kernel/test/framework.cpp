@@ -40,7 +40,8 @@
 
 void collect_tests(TestFramework& framework) {
     // test::array::collect_tests(framework);
-    // test::buddy::collect_tests(framework);
+    test::buddy::collect_tests(framework);
+    test::slub::collect_tests(framework);
     // test::cap::collect_tests(framework);
     test::coroutine::collect_tests(framework);
     // test::expected::collect_tests(framework);
