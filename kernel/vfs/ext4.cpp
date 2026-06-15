@@ -377,6 +377,7 @@ namespace ext4 {
         _first_data_block  = read_le_at<uint32_t>(_superblock, 20);
         _blocks_per_group  = read_le_at<uint32_t>(_superblock, 32);
         _inodes_per_group  = read_le_at<uint32_t>(_superblock, 40);
+        _inode_count       = read_le_at<uint32_t>(_superblock, 0);
         _inode_size        = read_le_at<uint16_t>(_superblock, 88);
         _feature_compat    = read_le_at<uint32_t>(_superblock, 92);
         _feature_incompat  = read_le_at<uint32_t>(_superblock, 96);
@@ -404,6 +405,7 @@ namespace ext4 {
             unsupported_ro != 0 ||
             (_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_READONLY) != 0;
         if (_blocks_per_group == 0 || _inodes_per_group == 0 ||
+            _inode_count == 0 ||
             _inode_size < 128 || _group_desc_size < 32)
         {
             unexpect_return(ErrCode::INVALID_PARAM);
@@ -430,8 +432,10 @@ namespace ext4 {
         propagate(gd_res);
 
         loggers::VFS::INFO(
-            "Ext4 挂载: block_size=%u groups=%u inode_size=%u desc_size=%u features(incompat)=0x%x ro=0x%x compat=0x%x",
+            "Ext4 挂载: block_size=%u blocks=%u inodes=%u groups=%u inode_size=%u desc_size=%u features(incompat)=0x%x ro=0x%x compat=0x%x",
             static_cast<unsigned>(_block_size),
+            static_cast<unsigned>(_block_count),
+            static_cast<unsigned>(_inode_count),
             static_cast<unsigned>(_group_count),
             static_cast<unsigned>(_inode_size),
             static_cast<unsigned>(_group_desc_size),
@@ -467,6 +471,9 @@ namespace ext4 {
         inode_t inode_id) {
         if (!valid_inode_id(inode_id)) {
             unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (inode_id > _inode_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
         const inode_t zero_based = inode_id - 1;
         const uint32_t group =

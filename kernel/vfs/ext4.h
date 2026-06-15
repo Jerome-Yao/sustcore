@@ -117,6 +117,7 @@ namespace ext4 {
         uint32_t _block_size        = 0;
         uint32_t _blocks_per_group  = 0;
         uint32_t _inodes_per_group  = 0;
+        uint32_t _inode_count       = 0;
         uint16_t _inode_size        = 0;
         uint16_t _group_desc_size   = 0;
         uint32_t _feature_compat    = 0;
