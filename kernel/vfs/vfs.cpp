@@ -490,13 +490,12 @@ Result<VDirectory *> VFS::_open_dir_at(VINode &parent,
                                        const util::Path &mount_path,
                                        const util::Path &base_path,
                                        const char *relpath) {
+    (void)mount_path;
     auto valid_res = validate_relpath(relpath);
     propagate(valid_res);
 
-    VDirectory base_dir(parent, mount_path, base_path, *this);
-    auto global_res = _global_target_path(base_dir, relpath);
-    propagate(global_res);
-    auto global_path = global_res.value().second;
+    const util::Path global_path =
+        (base_path / util::Path::from(relpath)).normalize();
 
     util::Path target_mount_path;
     auto target_res = _resolve_inode(global_path, target_mount_path);

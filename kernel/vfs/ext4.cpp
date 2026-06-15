@@ -28,6 +28,8 @@ namespace ext4 {
         constexpr uint16_t EXT4_S_IFDIR = 0x4000;
         constexpr uint16_t EXT4_S_IFLNK = 0xA000;
 
+        constexpr uint32_t EXT4_EXTENTS_FL = 0x00080000;
+
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_FILETYPE = 0x0002;
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_EXTENTS  = 0x0040;
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_64BIT    = 0x0080;
@@ -94,6 +96,19 @@ namespace ext4 {
         [[nodiscard]]
         bool valid_inode_id(inode_t inode_id) {
             return inode_id != 0;
+        }
+
+        [[nodiscard]]
+        uint32_t extent_len(uint16_t len_raw) {
+            if (len_raw > 0x8000U) {
+                return static_cast<uint32_t>(len_raw - 0x8000U);
+            }
+            return len_raw;
+        }
+
+        [[nodiscard]]
+        bool extent_unwritten(uint16_t len_raw) {
+            return len_raw > 0x8000U;
         }
     }  // namespace
 
@@ -447,8 +462,8 @@ namespace ext4 {
         return lo | (hi << 32);
     }
 
-    Result<uint64_t> Ext4Superblock::extent_lookup_from_node(const byte *node,
-                                                             uint32_t logical) {
+    Result<Ext4ExtentMapping> Ext4Superblock::extent_lookup_from_node(
+        const byte *node, uint32_t logical) {
         if (node == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -460,8 +475,11 @@ namespace ext4 {
         const uint16_t entries = read_le<uint16_t>(&header->eh_entries);
         const uint16_t max     = read_le<uint16_t>(&header->eh_max);
         const uint16_t depth   = read_le<uint16_t>(&header->eh_depth);
-        if (entries > max || entries == 0) {
-            return 0;
+        if (entries > max) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (entries == 0) {
+            return Ext4ExtentMapping {};
         }
 
         if (depth == 0) {
@@ -471,7 +489,10 @@ namespace ext4 {
                 const uint32_t first = read_le<uint32_t>(&extents[i].ee_block);
                 const uint16_t len_raw =
                     read_le<uint16_t>(&extents[i].ee_len);
-                const uint32_t len = len_raw & 0x7FFFU;
+                const uint32_t len = extent_len(len_raw);
+                if (len == 0) {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
                 if (logical < first || logical >= first + len) {
                     continue;
                 }
@@ -480,9 +501,17 @@ namespace ext4 {
                          read_le<uint16_t>(&extents[i].ee_start_hi))
                      << 32) |
                     read_le<uint32_t>(&extents[i].ee_start_lo);
-                return start + (logical - first);
+                const uint64_t physical = start + (logical - first);
+                if (physical >= _block_count) {
+                    unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+                }
+                return Ext4ExtentMapping{
+                    .physical_block = physical,
+                    .mapped         = true,
+                    .unwritten      = extent_unwritten(len_raw),
+                };
             }
-            return 0;
+            return Ext4ExtentMapping {};
         }
 
         auto *indexes = reinterpret_cast<const Ext4ExtentIdx *>(
@@ -496,25 +525,32 @@ namespace ext4 {
             chosen = &indexes[i];
         }
         if (chosen == nullptr) {
-            return 0;
+            return Ext4ExtentMapping {};
         }
 
         const uint64_t leaf =
             (static_cast<uint64_t>(read_le<uint16_t>(&chosen->ei_leaf_hi))
              << 32) |
             read_le<uint32_t>(&chosen->ei_leaf_lo);
+        if (leaf >= _block_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
         std::vector<byte> child(_block_size);
         auto read_res = read_fs_block(leaf, child.data(), child.size());
         propagate(read_res);
         return extent_lookup_from_node(child.data(), logical);
     }
 
-    Result<uint64_t> Ext4Superblock::extent_lookup(inode_t inode_id,
-                                                   uint32_t logical) {
+    Result<Ext4ExtentMapping> Ext4Superblock::extent_lookup(inode_t inode_id,
+                                                            uint32_t logical) {
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
         if (raw_res.value().size() < 100) {
             unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        const uint32_t flags = read_le_at<uint32_t>(raw_res.value(), 32);
+        if ((flags & EXT4_EXTENTS_FL) == 0) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
         }
         return extent_lookup_from_node(raw_res.value().data() + 40, logical);
     }
@@ -557,12 +593,12 @@ namespace ext4 {
                                               block_off);
             auto phys_res = extent_lookup(inode_id, logical);
             propagate(phys_res);
-            if (phys_res.value() == 0) {
+            if (!phys_res.value().mapped || phys_res.value().unwritten) {
                 memset(out + done, 0, chunk);
             } else {
                 auto read_res = read_device_bytes(
-                    phys_res.value() * _block_size + block_off, out + done,
-                    chunk);
+                    phys_res.value().physical_block * _block_size + block_off,
+                    out + done, chunk);
                 propagate(read_res);
             }
             done += chunk;
@@ -579,6 +615,11 @@ namespace ext4 {
         }
         if (buf == nullptr) {
             unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto mode_res = inode_mode(inode_id);
+        propagate(mode_res);
+        if ((mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFREG) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
         }
         auto size_res = inode_size(inode_id);
         propagate(size_res);
@@ -599,11 +640,12 @@ namespace ext4 {
                                                block_off);
             auto phys_res = extent_lookup(inode_id, logical);
             propagate(phys_res);
-            if (phys_res.value() == 0) {
+            if (!phys_res.value().mapped || phys_res.value().unwritten) {
                 unexpect_return(ErrCode::NOT_SUPPORTED);
             }
             auto write_res = write_device_bytes(
-                phys_res.value() * _block_size + block_off, in + done, chunk);
+                phys_res.value().physical_block * _block_size + block_off,
+                in + done, chunk);
             propagate(write_res);
             done += chunk;
         }
@@ -628,11 +670,11 @@ namespace ext4 {
             auto phys_res = extent_lookup(inode_id,
                                           static_cast<uint32_t>(logical));
             propagate(phys_res);
-            if (phys_res.value() == 0) {
+            if (!phys_res.value().mapped || phys_res.value().unwritten) {
                 continue;
             }
-            auto read_res = read_fs_block(phys_res.value(), block.data(),
-                                          block.size());
+            auto read_res = read_fs_block(phys_res.value().physical_block,
+                                          block.data(), block.size());
             propagate(read_res);
 
             size_t off = 0;

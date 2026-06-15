@@ -33,6 +33,12 @@ namespace ext4 {
         std::string name {};
     };
 
+    struct Ext4ExtentMapping {
+        uint64_t physical_block = 0;
+        bool mapped             = false;
+        bool unwritten          = false;
+    };
+
     class Ext4File final : public IFile {
     private:
         Ext4Superblock *_sb;
@@ -139,10 +145,11 @@ namespace ext4 {
         [[nodiscard]]
         Result<uint64_t> inode_table_block(uint32_t group);
         [[nodiscard]]
-        Result<uint64_t> extent_lookup(inode_t inode_id, uint32_t logical);
+        Result<Ext4ExtentMapping> extent_lookup(inode_t inode_id,
+                                                uint32_t logical);
         [[nodiscard]]
-        Result<uint64_t> extent_lookup_from_node(const byte *node,
-                                                 uint32_t logical);
+        Result<Ext4ExtentMapping> extent_lookup_from_node(const byte *node,
+                                                          uint32_t logical);
         [[nodiscard]]
         Result<size_t> read_inode_data(inode_t inode_id, uint64_t offset,
                                        void *buf, size_t len);

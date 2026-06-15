@@ -16,6 +16,7 @@
 #include <cstring>
 
 namespace {
+    constexpr const char *EXT4_ROOT      = "/test_img";
     constexpr const char *EXT4_ETC       = "/test_img/etc";
     constexpr const char *PASSWD_PATH    = "/test_img/etc/passwd";
     constexpr const char *BUSYBOX_PATH   = "/test_img/bin/busybox";
@@ -118,6 +119,28 @@ namespace {
     [[nodiscard]]
     bool test_root_directory(CapIdx root_cap) {
         CapIdx ext4_dir =
+            sys_vfs_opendir(root_cap, "test_img", flags::O_READ);
+        if (ext4_dir == cap::null || ext4_dir == cap::error) {
+            printf("test_ext4_read: opendir %s failed\n", EXT4_ROOT);
+            return false;
+        }
+
+        const bool ok = dir_has_entry(ext4_dir, "etc", false) &&
+                        dir_has_entry(ext4_dir, "bin", false) &&
+                        dir_has_entry(ext4_dir, "lib", false) &&
+                        dir_has_entry(ext4_dir, ".dockerenv", true);
+        sys_cap_remove(ext4_dir);
+        if (!ok) {
+            printf("test_ext4_read: root directory entries mismatch\n");
+            return false;
+        }
+        printf("test_ext4_read: root directory ok\n");
+        return true;
+    }
+
+    [[nodiscard]]
+    bool test_etc_directory(CapIdx root_cap) {
+        CapIdx ext4_dir =
             sys_vfs_opendir(root_cap, "test_img/etc", flags::O_READ);
         if (ext4_dir == cap::null || ext4_dir == cap::error) {
             printf("test_ext4_read: opendir %s failed\n", EXT4_ETC);
@@ -130,10 +153,10 @@ namespace {
                         dir_has_entry(ext4_dir, "apk", false);
         sys_cap_remove(ext4_dir);
         if (!ok) {
-            printf("test_ext4_read: root directory entries mismatch\n");
+            printf("test_ext4_read: etc directory entries mismatch\n");
             return false;
         }
-        printf("test_ext4_read: root directory ok\n");
+        printf("test_ext4_read: etc directory ok\n");
         return true;
     }
 
@@ -231,7 +254,8 @@ int kmod_main() {
         exit(-1);
     }
 
-    if (!test_root_directory(root_cap) || !test_passwd() ||
+    if (!test_root_directory(root_cap) || !test_etc_directory(root_cap) ||
+        !test_passwd() ||
         !test_large_extent_file() || !test_fast_symlink())
     {
         printf("test_ext4_read: FAILED\n");
