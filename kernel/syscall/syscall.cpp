@@ -33,34 +33,6 @@
 
 namespace syscall {
     namespace {
-        void log_getdents_probe(const char *stage,
-                                util::nonnull<task::TCB *> tcb) {
-            if (tcb->task == nullptr || tcb->task->tmm == nullptr) {
-                return;
-            }
-
-            constexpr VirAddr kPcbCapAddr(0x0000000080005520ULL);
-            auto vma_res = tcb->task->tmm->locate(kPcbCapAddr);
-            if (!vma_res.has_value() || vma_res.value()->memory == nullptr) {
-                return;
-            }
-
-            auto *vma      = vma_res.value().get();
-            size_t mem_off = vma->mem_offset + (kPcbCapAddr - vma->varea.begin);
-            CapIdx value   = cap::null;
-            auto read_res  = vma->memory->read(mem_off, &value, sizeof(value));
-            if (!read_res.has_value()) {
-                return;
-            }
-
-            loggers::SYSCALL::INFO(
-                "dispatch probe[%s]: pid=%lu vaddr=%p vma=[%p,%p) type=%d "
-                "mem=%p mem_off=%lu value=%p",
-                stage, tcb->task->pid, kPcbCapAddr.addr(),
-                vma->varea.begin.addr(), vma->varea.end.addr(),
-                static_cast<int>(vma->type), vma->memory, mem_off, value);
-        }
-
         /**
          * @brief 生成布尔型 syscall 返回包.
          *

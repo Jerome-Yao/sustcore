@@ -22,6 +22,8 @@ namespace {
     constexpr const char *BUSYBOX_PATH   = "/test_img/bin/busybox";
     constexpr const char *FASTLINK_PATH  = "/test_img/lib/libc.musl-riscv64.so.1";
     constexpr const char *FASTLINK_VALUE = "ld-musl-riscv64.so.1";
+    char g_dirent_buffer[16384];
+    char g_entry_name_buffer[256];
 
     [[nodiscard]]
     CapIdx bootstrap_root_dir() {
@@ -67,11 +69,30 @@ namespace {
     [[nodiscard]]
     bool dir_has_entry(CapIdx dir_cap, const char *entry_name,
                        bool expect_file) {
-        char buffer[2048] {};
+        if (entry_name == nullptr) {
+            return false;
+        }
+        const size_t entry_name_len = strlen(entry_name);
+        if (entry_name_len >= sizeof(g_entry_name_buffer)) {
+            return false;
+        }
+        memcpy(g_entry_name_buffer, entry_name, entry_name_len + 1);
         size_t doff = 0;
         while (doff != DIR_ENTRY_END) {
+            CapInfo cap_info {};
+            if (!sys_cap_lookup(dir_cap, &cap_info) ||
+                cap_info.type != PayloadType::VDIR)
+            {
+                printf("test_ext4_read: getdents cap invalid cap=%u type=%u doff=%u\n",
+                       static_cast<unsigned>(dir_cap),
+                       static_cast<unsigned>(cap_info.type),
+                       static_cast<unsigned>(doff));
+                return false;
+            }
+            memset(g_dirent_buffer, 0, sizeof(g_dirent_buffer));
             const size_t bytes =
-                sys_vfs_getdents(dir_cap, buffer, sizeof(buffer), doff);
+                sys_vfs_getdents(dir_cap, g_dirent_buffer,
+                                 sizeof(g_dirent_buffer), doff);
             if (bytes == 0) {
                 return false;
             }
@@ -82,16 +103,19 @@ namespace {
                     return false;
                 }
                 auto *header =
-                    reinterpret_cast<const dir_entry_header *>(buffer + offset);
+                    reinterpret_cast<const dir_entry_header *>(
+                        g_dirent_buffer + offset);
                 const char *name =
-                    buffer + offset + sizeof(dir_entry_header);
+                    g_dirent_buffer + offset + sizeof(dir_entry_header);
                 const size_t name_room =
                     bytes - offset - sizeof(dir_entry_header);
                 if (memchr(name, '\0', name_room) == nullptr) {
                     return false;
                 }
 
-                if (strcmp(name, entry_name) == 0 &&
+                const size_t name_len = strlen(name);
+                if (name_len == entry_name_len &&
+                    memcmp(name, g_entry_name_buffer, entry_name_len) == 0 &&
                     header->is_file == expect_file)
                 {
                     return true;

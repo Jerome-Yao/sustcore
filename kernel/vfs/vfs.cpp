@@ -29,7 +29,14 @@ namespace {
 }  // namespace
 
 VSuperblock::~VSuperblock() {
-    on_death();
+    for (auto &entry : _inode_cache) {
+        if (entry.second != nullptr) {
+            entry.second->release();
+        }
+    }
+    _inode_cache.clear();
+    delete _sb.get();
+    _sb = util::owner<ISuperblock *>(nullptr);
 }
 
 Result<util::refc_ptr<VINode>> VSuperblock::get_vnode(inode_t inode_id) {
@@ -43,7 +50,12 @@ Result<util::refc_ptr<VINode>> VSuperblock::get_vnode(inode_t inode_id) {
     }
 
     auto inode_res = sb()->get_inode(inode_id);
-    propagate(inode_res);
+    if (!inode_res.has_value()) {
+        loggers::VFS::ERROR("VSuperblock get_vnode get_inode failed: inode=%u err=%s",
+                            static_cast<unsigned>(inode_id),
+                            to_cstring(inode_res.error()));
+        propagate_return(inode_res);
+    }
 
     auto *vnode = new VINode(inode_res.value(), vfsd(), *this);
     if (vnode == nullptr) {
@@ -60,14 +72,7 @@ Result<util::refc_ptr<VINode>> VSuperblock::get_vnode(inode_t inode_id) {
 }
 
 void VSuperblock::on_death() {
-    for (auto &entry : _inode_cache) {
-        if (entry.second != nullptr) {
-            entry.second->release();
-        }
-    }
-    _inode_cache.clear();
-    delete _sb.get();
-    _sb = util::owner<ISuperblock *>(nullptr);
+    // MountRecord owns mounted superblocks; zero vnode refs must not unmount.
 }
 
 VFile::VFile(VINode &vind, const util::Path &mount_path, VFS &vfs)
@@ -285,7 +290,7 @@ Result<void> VFS::umount(const char *mountpoint) {
         propagate(cache_res);
         auto cache_sync_future = cache_res.value()->sync_all();
         auto cache_sync_res =
-            wait::kthread_wait_for(cache_sync_future);
+            wait::blocking_wait_for(cache_sync_future);
         propagate(cache_sync_res);
     }
 
@@ -491,17 +496,35 @@ Result<VDirectory *> VFS::_open_dir_at(VINode &parent,
                                        const util::Path &base_path,
                                        const char *relpath) {
     (void)mount_path;
+    (void)parent;
     auto valid_res = validate_relpath(relpath);
     propagate(valid_res);
 
+    const util::Path normalized_base = base_path.normalize();
+    const util::Path absolute_base =
+        normalized_base.view().empty() || !normalized_base.is_absolute()
+            ? util::Path("/")
+            : normalized_base;
     const util::Path global_path =
-        (base_path / util::Path::from(relpath)).normalize();
+        (absolute_base / util::Path::from(relpath)).normalize();
 
     util::Path target_mount_path;
     auto target_res = _resolve_inode(global_path, target_mount_path);
-    propagate(target_res);
+    if (!target_res.has_value()) {
+        loggers::VFS::ERROR("VFS opendir_at resolve failed: global=%s err=%s",
+                            global_path.c_str(),
+                            to_cstring(target_res.error()));
+        propagate_return(target_res);
+    }
     auto dir_res = target_res.value()->inode()->as_directory();
-    propagate(dir_res);
+    if (!dir_res.has_value()) {
+        loggers::VFS::ERROR(
+            "VFS opendir_at target is not directory: global=%s mount=%s inode=%u err=%s",
+            global_path.c_str(), target_mount_path.c_str(),
+            static_cast<unsigned>(target_res.value()->inode()->inode_id()),
+            to_cstring(dir_res.error()));
+        propagate_return(dir_res);
+    }
 
     auto *dir =
         new VDirectory(*target_res.value().get(), target_mount_path,
@@ -676,32 +699,17 @@ Result<CapIdx> VFS::mkfile(cap::Capability &parent_dir_cap, const char *relpath,
 
     auto inode_res = target_dir_res.value()->mkfile(target.name, nullptr);
     propagate(inode_res);
+    (void)inode_res;
 
-    auto vnode_res =
-        parent->vinode()->superblock().get_vnode(inode_res.value());
-    propagate(vnode_res);
-    auto file_res = vnode_res.value()->inode()->as_file();
+    auto global_res = _global_target_path(*parent, relpath);
+    propagate(global_res);
+    auto file_res = _open_file(global_res.value().second.c_str());
     propagate(file_res);
 
-    auto *file =
-        new VFile(*vnode_res.value().get(), parent->mount_path(), *this);
-    if (file == nullptr) {
-        unexpect_return(ErrCode::ALLOCATION_FAILED);
-    }
-
-    auto key_res = _build_mount_key(parent->mount_path());
-    propagate(key_res);
-    auto mount_res = _lookup_mount_record(key_res.value().first);
-    if (!mount_res.has_value()) {
-        delete file;
-        unexpect_return(ErrCode::FS_ERROR);
-    }
-    mount_res.value()->active_files++;
-
     auto insert_res =
-        holder.insert_to_free(file, file_perm_from_oflags(oflags));
+        holder.insert_to_free(file_res.value(), file_perm_from_oflags(oflags));
     if (!insert_res.has_value()) {
-        file->destruct();
+        file_res.value()->destruct();
         propagate_return(insert_res);
     }
     return insert_res.value();
@@ -729,34 +737,17 @@ Result<CapIdx> VFS::mkdir(cap::Capability &parent_dir_cap, const char *relpath,
 
     auto inode_res = target_dir_res.value()->mkdir(target.name, nullptr);
     propagate(inode_res);
+    (void)inode_res;
 
-    auto vnode_res =
-        parent->vinode()->superblock().get_vnode(inode_res.value());
-    propagate(vnode_res);
-    auto dir_res = vnode_res.value()->inode()->as_directory();
+    auto global_res = _global_target_path(*parent, relpath);
+    propagate(global_res);
+    auto dir_res = _open_dir(global_res.value().second.c_str());
     propagate(dir_res);
 
-    auto *dir =
-        new VDirectory(*vnode_res.value().get(), parent->mount_path(),
-                       (parent->global_path() / util::Path(target.name)).normalize(),
-                       *this);
-    if (dir == nullptr) {
-        unexpect_return(ErrCode::ALLOCATION_FAILED);
-    }
-
-    auto key_res = _build_mount_key(parent->mount_path());
-    propagate(key_res);
-    auto mount_res = _lookup_mount_record(key_res.value().first);
-    if (!mount_res.has_value()) {
-        delete dir;
-        unexpect_return(ErrCode::FS_ERROR);
-    }
-    mount_res.value()->active_files++;
-
     auto insert_res =
-        holder.insert_to_free(dir, dir_perm_from_oflags(oflags));
+        holder.insert_to_free(dir_res.value(), dir_perm_from_oflags(oflags));
     if (!insert_res.has_value()) {
-        dir->destruct();
+        dir_res.value()->destruct();
         propagate_return(insert_res);
     }
     return insert_res.value();
@@ -838,9 +829,14 @@ Result<std::pair<util::Path, util::Path>> VFS::_global_target_path(
     const VDirectory &base, const char *relpath) const {
     auto valid_res = validate_relpath(relpath);
     propagate(valid_res);
+    const util::Path normalized_base = base.global_path().normalize();
+    const util::Path base_path =
+        normalized_base.view().empty() || !normalized_base.is_absolute()
+            ? util::Path("/")
+            : normalized_base;
     auto normalized =
-        (base.global_path() / util::Path::from(relpath)).normalize();
-    return std::make_pair(base.global_path(), normalized);
+        (base_path / util::Path::from(relpath)).normalize();
+    return std::make_pair(base_path, normalized);
 }
 
 Result<util::refc_ptr<VINode>> VFS::_ensure_directory_path(
@@ -957,16 +953,35 @@ Result<util::refc_ptr<VINode>> VFS::_resolve_inode(const util::Path &path,
             mount_path = mount_res.value()->mount_path;
             vsb        = mount_res.value()->superblock.get();
             auto next_root_res = vsb->sb()->root();
-            propagate(next_root_res);
+            if (!next_root_res.has_value()) {
+                loggers::VFS::ERROR(
+                    "VFS resolve_inode mount root failed: mount=%s err=%s",
+                    mount_path.c_str(), to_cstring(next_root_res.error()));
+                propagate_return(next_root_res);
+            }
             auto next_root_vnode = vsb->get_vnode(next_root_res.value());
-            propagate(next_root_vnode);
+            if (!next_root_vnode.has_value()) {
+                loggers::VFS::ERROR(
+                    "VFS resolve_inode mount root vnode failed: mount=%s root_inode=%u err=%s",
+                    mount_path.c_str(),
+                    static_cast<unsigned>(next_root_res.value()),
+                    to_cstring(next_root_vnode.error()));
+                propagate_return(next_root_vnode);
+            }
             current = next_root_vnode.value();
             continue;
         }
 
         auto lookup_res = current->inode()->as_directory().and_then(
             [entry](IDirectory *dir) { return dir->lookup(entry); });
-        propagate(lookup_res);
+        if (!lookup_res.has_value()) {
+            loggers::VFS::ERROR(
+                "VFS resolve_inode lookup failed: entry=%.*s current_inode=%u err=%s",
+                static_cast<int>(entry.size()), entry.data(),
+                static_cast<unsigned>(current->inode()->inode_id()),
+                to_cstring(lookup_res.error()));
+            propagate_return(lookup_res);
+        }
 
         auto next_vind = vsb->get_vnode(lookup_res.value());
         propagate(next_vind);

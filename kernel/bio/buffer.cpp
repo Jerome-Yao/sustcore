@@ -11,6 +11,7 @@
 
 #include <bio/buffer.h>
 #include <bio/request.h>
+#include <logger.h>
 
 #include <cstring>
 
@@ -121,6 +122,7 @@ namespace blk {
             .valid    = false,
             .inflight = false,
             .refcnt   = 0,
+            .wait_wd  = wait::alloc_reason(),
         };
         if (buffer == nullptr || buffer->data == nullptr) {
             delete[] (buffer == nullptr ? nullptr : buffer->data);
@@ -149,19 +151,25 @@ namespace blk {
         buffer.inflight = true;
         auto lower_future =
             _request_layer->submit_write_async(buffer.blkno, buffer.data, 1);
-        auto lower_res  = wait::kthread_wait_for(lower_future);
+        auto lower_res  = wait::blocking_wait_for(lower_future);
         buffer.inflight = false;
         if (!lower_res.has_value()) {
             return make_void_future(std::unexpected(lower_res.error()));
         }
-        if (lower_res.value() != 1) {
+        if (lower_res.value() != _blksz) {
+            loggers::SUSTCORE::ERROR(
+                "BufferCache write size mismatch: devno=%u blkno=%u expect=%u actual=%u",
+                static_cast<unsigned>(_devno),
+                static_cast<unsigned>(buffer.blkno),
+                static_cast<unsigned>(_blksz),
+                static_cast<unsigned>(lower_res.value()));
             return make_void_future(std::unexpected(ErrCode::IO_ERROR));
         }
 
         buffer.dirty = false;
 
         auto flush_future = _request_layer->submit_flush_async();
-        auto flush_res    = wait::kthread_wait_for(flush_future);
+        auto flush_res    = wait::blocking_wait_for(flush_future);
         if (!flush_res.has_value()) {
             return make_void_future(std::unexpected(flush_res.error()));
         }
@@ -177,7 +185,7 @@ namespace blk {
             }
             BufferHandler handler(util::nnullforce(buffer), *this);
             auto sync_future = sync(handler);
-            auto sync_res    = wait::kthread_wait_for(sync_future);
+            auto sync_res    = wait::blocking_wait_for(sync_future);
             if (!sync_res.has_value()) {
                 return make_void_future(std::unexpected(sync_res.error()));
             }
@@ -187,7 +195,7 @@ namespace blk {
 
     FutureResult<void> BufferCache::tidy() {
         auto sync_future = sync_all();
-        auto sync_res    = wait::kthread_wait_for(sync_future);
+        auto sync_res    = wait::blocking_wait_for(sync_future);
         if (!sync_res.has_value()) {
             return make_void_future(std::unexpected(sync_res.error()));
         }
@@ -216,20 +224,38 @@ namespace blk {
             return make_handler_future(std::unexpected(ErrCode::UNKNOWN_ERROR));
         }
 
+        if (buffer->inflight) {
+            auto wait_res = wait::wait_event(
+                buffer->wait_wd, [buffer]() noexcept {
+                    return !buffer->inflight;
+                });
+            if (!wait_res.has_value()) {
+                return make_handler_future(std::unexpected(wait_res.error()));
+            }
+        }
         if (buffer->valid) {
             return make_handler_future(
                 BufferHandler(util::nnullforce(buffer), *this));
-        }
-        if (buffer->inflight) {
-            return make_handler_future(std::unexpected(ErrCode::BUSY));
         }
 
         buffer->inflight = true;
         auto sumbit_future =
             _request_layer->submit_read_async(blkno, buffer->data, 1);
-        auto submit_res   = wait::kthread_wait_for(sumbit_future);
+        auto submit_res   = wait::blocking_wait_for(sumbit_future);
         buffer->inflight = false;
+        auto wake_res = wait::wake_all(buffer->wait_wd);
+        if (!wake_res.has_value()) {
+            loggers::SUSTCORE::ERROR(
+                "BufferCache wake inflight waiters failed: devno=%u blkno=%u err=%s",
+                static_cast<unsigned>(_devno), static_cast<unsigned>(blkno),
+                to_cstring(wake_res.error()));
+        }
         if (!submit_res.has_value()) {
+            loggers::SUSTCORE::ERROR(
+                "BufferCache read submit failed: devno=%u blkno=%u blksz=%u err=%s",
+                static_cast<unsigned>(_devno), static_cast<unsigned>(blkno),
+                static_cast<unsigned>(_blksz),
+                to_cstring(submit_res.error()));
             return make_handler_future(std::unexpected(submit_res.error()));
         }
         if (submit_res.value() != _blksz) {

@@ -126,6 +126,7 @@ namespace ext4 {
         uint32_t _first_data_block  = 0;
         uint64_t _block_count       = 0;
         uint32_t _group_count       = 0;
+        uint64_t _group_desc_offset = 0;
         bool _read_only             = false;
 
         [[nodiscard]]
@@ -141,6 +142,9 @@ namespace ext4 {
         [[nodiscard]]
         Result<std::vector<byte>> read_inode_raw(inode_t inode_id);
         [[nodiscard]]
+        Result<void> write_inode_raw(inode_t inode_id,
+                                     const std::vector<byte> &raw);
+        [[nodiscard]]
         Result<uint16_t> inode_mode(inode_t inode_id);
         [[nodiscard]]
         Result<uint64_t> inode_size(inode_t inode_id);
@@ -148,6 +152,28 @@ namespace ext4 {
         Result<void> validate_inode_raw(const std::vector<byte> &raw);
         [[nodiscard]]
         Result<uint64_t> inode_table_block(uint32_t group);
+        [[nodiscard]]
+        Result<uint64_t> inode_bitmap_block(uint32_t group);
+        [[nodiscard]]
+        Result<uint32_t> group_free_inodes(uint32_t group);
+        [[nodiscard]]
+        Result<void> set_group_free_inodes(uint32_t group, uint32_t count);
+        [[nodiscard]]
+        Result<void> sync_superblock_metadata();
+        [[nodiscard]]
+        Result<void> sync_group_descriptors();
+        [[nodiscard]]
+        Result<inode_t> alloc_file_inode();
+        [[nodiscard]]
+        Result<void> release_file_inode(inode_t inode_id);
+        [[nodiscard]]
+        Result<void> insert_dir_entry(inode_t parent_inode,
+                                      inode_t child_inode,
+                                      std::string_view name,
+                                      uint8_t file_type);
+        [[nodiscard]]
+        Result<inode_t> create_file(inode_t parent_inode,
+                                    std::string_view name);
         [[nodiscard]]
         Result<bool> dir_entry_is_file(inode_t inode_id, uint8_t file_type);
         [[nodiscard]]

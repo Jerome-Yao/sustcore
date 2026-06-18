@@ -29,8 +29,11 @@ namespace ext4 {
         constexpr uint16_t EXT4_S_IFLNK = 0xA000;
 
         constexpr uint32_t EXT4_EXTENTS_FL = 0x00080000;
+        constexpr uint32_t EXT4_INDEX_FL   = 0x00001000;
         constexpr uint16_t EXT4_LINK_MAX   = 65000;
         constexpr uint16_t EXT4_MAX_EXTENT_DEPTH = 5;
+        constexpr uint16_t EXT4_DEFAULT_FILE_MODE =
+            EXT4_S_IFREG | 0644U;
 
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_FILETYPE = 0x0002;
         constexpr uint32_t EXT4_FEATURE_INCOMPAT_EXTENTS  = 0x0040;
@@ -87,10 +90,30 @@ namespace ext4 {
             return read_le<T>(buf.data() + offset);
         }
 
+        template <typename T>
+        void write_le_at(std::vector<byte> &buf, size_t offset, T value) {
+            if (offset + sizeof(T) > buf.size()) {
+                return;
+            }
+            memcpy(buf.data() + offset, &value, sizeof(T));
+        }
+
         [[nodiscard]]
         uint64_t join_u64(uint32_t lo, uint32_t hi) {
             return static_cast<uint64_t>(lo) |
                    (static_cast<uint64_t>(hi) << 32);
+        }
+
+        [[nodiscard]]
+        size_t align4(size_t value) {
+            return (value + 3U) & ~static_cast<size_t>(3U);
+        }
+
+        [[nodiscard]]
+        uint16_t min_dir_rec_len(size_t name_len) {
+            return static_cast<uint16_t>(
+                align4(sizeof(uint32_t) + sizeof(uint16_t) +
+                       sizeof(uint8_t) + sizeof(uint8_t) + name_len));
         }
 
         struct PACKED Ext4ExtentHeader {
@@ -125,6 +148,21 @@ namespace ext4 {
         [[nodiscard]]
         bool valid_inode_id(inode_t inode_id) {
             return inode_id != 0;
+        }
+
+        [[nodiscard]]
+        Result<void> validate_entry_name(std::string_view name) {
+            if (name.empty() || name.size() > 255 || name == "." ||
+                name == "..")
+            {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            for (char ch : name) {
+                if (ch == '/') {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
+            }
+            void_return();
         }
 
         [[nodiscard]]
@@ -211,9 +249,8 @@ namespace ext4 {
 
     Result<inode_t> Ext4Directory::mkfile(std::string_view name,
                                           const char *options) {
-        (void)name;
         (void)options;
-        unexpect_return(ErrCode::NOT_SUPPORTED);
+        return _sb->create_file(_inode_id, name);
     }
 
     Result<inode_t> Ext4Directory::mkdir(std::string_view name,
@@ -273,6 +310,11 @@ namespace ext4 {
             void_return();
         }
         if (buf == nullptr || _cache == nullptr || _dev_block_size == 0) {
+            loggers::VFS::ERROR(
+                "Ext4 read_device_bytes 参数非法: offset=%u len=%u buf=%p cache=%p dev_block_size=%u dev_block_count=%u",
+                static_cast<unsigned>(offset), static_cast<unsigned>(len),
+                buf, _cache, static_cast<unsigned>(_dev_block_size),
+                static_cast<unsigned>(_dev_block_count));
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         const uint64_t total_bytes =
@@ -290,7 +332,7 @@ namespace ext4 {
             const size_t chunk = std::min(len - done, _dev_block_size - off);
 
             auto future      = _cache->get_buffer_async(lba);
-            auto handler_res = wait::kthread_wait_for(future);
+            auto handler_res = wait::blocking_wait_for(future);
             propagate(handler_res);
             const size_t read = handler_res.value().read(off, out + done,
                                                          chunk);
@@ -326,7 +368,7 @@ namespace ext4 {
             const size_t chunk = std::min(len - done, _dev_block_size - off);
 
             auto future      = _cache->get_buffer_async(lba);
-            auto handler_res = wait::kthread_wait_for(future);
+            auto handler_res = wait::blocking_wait_for(future);
             propagate(handler_res);
             const size_t written =
                 handler_res.value().write(off, in + done, chunk);
@@ -423,25 +465,14 @@ namespace ext4 {
 
         const uint64_t desc_table_block =
             _block_size == 1024 ? 2 : _first_data_block + 1;
+        _group_desc_offset = desc_table_block * _block_size;
         const size_t desc_bytes =
             static_cast<size_t>(_group_count) * _group_desc_size;
         _group_desc.resize(desc_bytes);
-        auto gd_res = read_device_bytes(desc_table_block * _block_size,
-                                        _group_desc.data(),
+        auto gd_res = read_device_bytes(_group_desc_offset, _group_desc.data(),
                                         _group_desc.size());
         propagate(gd_res);
 
-        loggers::VFS::INFO(
-            "Ext4 挂载: block_size=%u blocks=%u inodes=%u groups=%u inode_size=%u desc_size=%u features(incompat)=0x%x ro=0x%x compat=0x%x",
-            static_cast<unsigned>(_block_size),
-            static_cast<unsigned>(_block_count),
-            static_cast<unsigned>(_inode_count),
-            static_cast<unsigned>(_group_count),
-            static_cast<unsigned>(_inode_size),
-            static_cast<unsigned>(_group_desc_size),
-            static_cast<unsigned>(_feature_incompat),
-            static_cast<unsigned>(_feature_ro_compat),
-            static_cast<unsigned>(_feature_compat));
         if (_read_only) {
             loggers::VFS::WARN(
                 "Ext4 以只读模式挂载: ro_compat=0x%x unsupported_ro=0x%x",
@@ -453,10 +484,20 @@ namespace ext4 {
 
     Result<uint64_t> Ext4Superblock::inode_table_block(uint32_t group) {
         if (group >= _group_count) {
+            loggers::VFS::ERROR(
+                "Ext4 inode table group 越界: group=%u group_count=%u",
+                static_cast<unsigned>(group),
+                static_cast<unsigned>(_group_count));
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
         const size_t base = static_cast<size_t>(group) * _group_desc_size;
         if (base + 44 > _group_desc.size()) {
+            loggers::VFS::ERROR(
+                "Ext4 inode table desc 越界: group=%u base=%u desc_size=%u total=%u",
+                static_cast<unsigned>(group),
+                static_cast<unsigned>(base),
+                static_cast<unsigned>(_group_desc_size),
+                static_cast<unsigned>(_group_desc.size()));
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
         const uint32_t lo = read_le<uint32_t>(_group_desc.data() + base + 8);
@@ -464,7 +505,80 @@ namespace ext4 {
         if (_group_desc_size >= 64) {
             hi = read_le<uint32_t>(_group_desc.data() + base + 40);
         }
+        const uint64_t block = join_u64(lo, hi);
+        return block;
+    }
+
+    Result<uint64_t> Ext4Superblock::inode_bitmap_block(uint32_t group) {
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const size_t base = static_cast<size_t>(group) * _group_desc_size;
+        if (base + 40 > _group_desc.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const uint32_t lo = read_le<uint32_t>(_group_desc.data() + base + 4);
+        uint32_t hi       = 0;
+        if (_group_desc_size >= 64) {
+            hi = read_le<uint32_t>(_group_desc.data() + base + 36);
+        }
         return join_u64(lo, hi);
+    }
+
+    Result<uint32_t> Ext4Superblock::group_free_inodes(uint32_t group) {
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const size_t base = static_cast<size_t>(group) * _group_desc_size;
+        if (base + 16 > _group_desc.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const uint32_t lo = read_le<uint16_t>(_group_desc.data() + base + 14);
+        uint32_t hi       = 0;
+        if (_group_desc_size >= 64) {
+            if (base + 48 > _group_desc.size()) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            hi = read_le<uint16_t>(_group_desc.data() + base + 46);
+        }
+        return lo | (hi << 16);
+    }
+
+    Result<void> Ext4Superblock::set_group_free_inodes(uint32_t group,
+                                                       uint32_t count) {
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const size_t base = static_cast<size_t>(group) * _group_desc_size;
+        if (base + 16 > _group_desc.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        write_le_at<uint16_t>(_group_desc, base + 14,
+                              static_cast<uint16_t>(count & 0xFFFFU));
+        if (_group_desc_size >= 64) {
+            if (base + 48 > _group_desc.size()) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            write_le_at<uint16_t>(_group_desc, base + 46,
+                                  static_cast<uint16_t>(count >> 16));
+        }
+        void_return();
+    }
+
+    Result<void> Ext4Superblock::sync_superblock_metadata() {
+        if (_superblock.empty()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return write_device_bytes(1024, _superblock.data(),
+                                  _superblock.size());
+    }
+
+    Result<void> Ext4Superblock::sync_group_descriptors() {
+        if (_group_desc.empty() || _group_desc_offset == 0) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return write_device_bytes(_group_desc_offset, _group_desc.data(),
+                                  _group_desc.size());
     }
 
     Result<std::vector<byte>> Ext4Superblock::read_inode_raw(
@@ -481,31 +595,83 @@ namespace ext4 {
         const uint32_t index =
             static_cast<uint32_t>(zero_based % _inodes_per_group);
         auto table_res = inode_table_block(group);
-        propagate(table_res);
+        if (!table_res.has_value()) {
+            loggers::VFS::ERROR(
+                "Ext4 read inode table 失败: inode=%u group=%u index=%u err=%s",
+                static_cast<unsigned>(inode_id),
+                static_cast<unsigned>(group), static_cast<unsigned>(index),
+                to_cstring(table_res.error()));
+            propagate_return(table_res);
+        }
 
         std::vector<byte> raw(_inode_size);
         const uint64_t inode_offset =
             table_res.value() * _block_size +
             static_cast<uint64_t>(index) * _inode_size;
         auto read_res = read_device_bytes(inode_offset, raw.data(), raw.size());
-        propagate(read_res);
+        if (!read_res.has_value()) {
+            loggers::VFS::ERROR(
+                "Ext4 read inode raw 失败: inode=%u group=%u index=%u table=%u offset=%u size=%u err=%s",
+                static_cast<unsigned>(inode_id),
+                static_cast<unsigned>(group), static_cast<unsigned>(index),
+                static_cast<unsigned>(table_res.value()),
+                static_cast<unsigned>(inode_offset),
+                static_cast<unsigned>(raw.size()),
+                to_cstring(read_res.error()));
+            propagate_return(read_res);
+        }
         return raw;
+    }
+
+    Result<void> Ext4Superblock::write_inode_raw(
+        inode_t inode_id, const std::vector<byte> &raw) {
+        if (!valid_inode_id(inode_id) || raw.size() != _inode_size) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (inode_id > _inode_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const inode_t zero_based = inode_id - 1;
+        const uint32_t group =
+            static_cast<uint32_t>(zero_based / _inodes_per_group);
+        const uint32_t index =
+            static_cast<uint32_t>(zero_based % _inodes_per_group);
+        auto table_res = inode_table_block(group);
+        propagate(table_res);
+
+        const uint64_t inode_offset =
+            table_res.value() * _block_size +
+            static_cast<uint64_t>(index) * _inode_size;
+        return write_device_bytes(inode_offset, raw.data(), raw.size());
     }
 
     Result<void> Ext4Superblock::validate_inode_raw(
         const std::vector<byte> &raw) {
         if (raw.size() < 128) {
+            loggers::VFS::ERROR("Ext4 inode raw 太短: size=%u",
+                                static_cast<unsigned>(raw.size()));
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         const uint16_t mode        = read_le_at<uint16_t>(raw, 0);
         const uint32_t delete_time = read_le_at<uint32_t>(raw, 20);
         const uint16_t link_count  = read_le_at<uint16_t>(raw, 26);
         if (mode == 0 || delete_time != 0 || link_count == 0) {
+            loggers::VFS::ERROR(
+                "Ext4 inode 不存在: mode=0x%x delete_time=%u link_count=%u",
+                static_cast<unsigned>(mode),
+                static_cast<unsigned>(delete_time),
+                static_cast<unsigned>(link_count));
             unexpect_return(ErrCode::ENTRY_NOT_FOUND);
         }
         if (link_count > EXT4_LINK_MAX &&
             (_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_DIR_NLINK) == 0)
         {
+            loggers::VFS::ERROR(
+                "Ext4 inode link_count 非法: mode=0x%x delete_time=%u link_count=%u ro_compat=0x%x",
+                static_cast<unsigned>(mode),
+                static_cast<unsigned>(delete_time),
+                static_cast<unsigned>(link_count),
+                static_cast<unsigned>(_feature_ro_compat));
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         void_return();
@@ -533,6 +699,126 @@ namespace ext4 {
             hi = read_le_at<uint32_t>(raw_res.value(), 108);
         }
         return lo | (hi << 32);
+    }
+
+    Result<inode_t> Ext4Superblock::alloc_file_inode() {
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+
+        for (uint32_t group = 0; group < _group_count; ++group) {
+            auto free_res = group_free_inodes(group);
+            propagate(free_res);
+            if (free_res.value() == 0) {
+                continue;
+            }
+
+            auto bitmap_block_res = inode_bitmap_block(group);
+            propagate(bitmap_block_res);
+            std::vector<byte> bitmap(_block_size);
+            auto read_res = read_fs_block(bitmap_block_res.value(),
+                                          bitmap.data(), bitmap.size());
+            propagate(read_res);
+
+            const uint32_t group_inode_base = group * _inodes_per_group;
+            if (group_inode_base >= _inode_count) {
+                break;
+            }
+            const uint32_t inodes_in_group = std::min<uint32_t>(
+                _inodes_per_group, _inode_count - group_inode_base);
+            for (uint32_t idx = 0; idx < inodes_in_group; ++idx) {
+                const size_t byte_index = idx / 8U;
+                if (byte_index >= bitmap.size()) {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
+                const uint8_t mask =
+                    static_cast<uint8_t>(1U << (idx % 8U));
+                if ((bitmap[byte_index] & mask) != 0) {
+                    continue;
+                }
+
+                bitmap[byte_index] |= mask;
+                auto write_bitmap_res = write_fs_block(
+                    bitmap_block_res.value(), bitmap.data(), bitmap.size());
+                propagate(write_bitmap_res);
+
+                auto set_group_res =
+                    set_group_free_inodes(group, free_res.value() - 1);
+                propagate(set_group_res);
+                const uint32_t sb_free =
+                    read_le_at<uint32_t>(_superblock, 16);
+                if (sb_free == 0) {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
+                write_le_at<uint32_t>(_superblock, 16, sb_free - 1);
+
+                auto sync_group_res = sync_group_descriptors();
+                propagate(sync_group_res);
+                auto sync_super_res = sync_superblock_metadata();
+                propagate(sync_super_res);
+
+                const inode_t inode_id =
+                    static_cast<inode_t>(group_inode_base + idx + 1);
+                std::vector<byte> raw(_inode_size, 0);
+                write_le_at<uint16_t>(raw, 0, EXT4_DEFAULT_FILE_MODE);
+                write_le_at<uint16_t>(raw, 26, 1);
+                write_le_at<uint32_t>(raw, 32, EXT4_EXTENTS_FL);
+                write_le_at<uint16_t>(raw, 40, EXT4_EXT_MAGIC);
+                write_le_at<uint16_t>(raw, 42, 0);
+                write_le_at<uint16_t>(raw, 44, 4);
+                write_le_at<uint16_t>(raw, 46, 0);
+                auto write_inode_res = write_inode_raw(inode_id, raw);
+                propagate(write_inode_res);
+                return inode_id;
+            }
+        }
+
+        unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+    }
+
+    Result<void> Ext4Superblock::release_file_inode(inode_t inode_id) {
+        if (!valid_inode_id(inode_id) || inode_id > _inode_count) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        const inode_t zero_based = inode_id - 1;
+        const uint32_t group =
+            static_cast<uint32_t>(zero_based / _inodes_per_group);
+        const uint32_t idx =
+            static_cast<uint32_t>(zero_based % _inodes_per_group);
+        auto bitmap_block_res = inode_bitmap_block(group);
+        propagate(bitmap_block_res);
+        std::vector<byte> bitmap(_block_size);
+        auto read_res = read_fs_block(bitmap_block_res.value(), bitmap.data(),
+                                      bitmap.size());
+        propagate(read_res);
+
+        const size_t byte_index = idx / 8U;
+        if (byte_index >= bitmap.size()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        const uint8_t mask      = static_cast<uint8_t>(1U << (idx % 8U));
+        if ((bitmap[byte_index] & mask) == 0) {
+            void_return();
+        }
+
+        bitmap[byte_index] &= static_cast<uint8_t>(~mask);
+        auto write_bitmap_res = write_fs_block(bitmap_block_res.value(),
+                                               bitmap.data(), bitmap.size());
+        propagate(write_bitmap_res);
+
+        std::vector<byte> raw(_inode_size, 0);
+        auto clear_inode_res = write_inode_raw(inode_id, raw);
+        propagate(clear_inode_res);
+
+        auto free_res = group_free_inodes(group);
+        propagate(free_res);
+        auto set_group_res = set_group_free_inodes(group, free_res.value() + 1);
+        propagate(set_group_res);
+        const uint32_t sb_free = read_le_at<uint32_t>(_superblock, 16);
+        write_le_at<uint32_t>(_superblock, 16, sb_free + 1);
+        auto sync_group_res = sync_group_descriptors();
+        propagate(sync_group_res);
+        return sync_superblock_metadata();
     }
 
     Result<Ext4ExtentMapping> Ext4Superblock::extent_lookup_from_node(
@@ -667,6 +953,135 @@ namespace ext4 {
         propagate(mode_res);
         const uint16_t type = mode_res.value() & EXT4_S_IFMT;
         return type != EXT4_S_IFDIR;
+    }
+
+    Result<void> Ext4Superblock::insert_dir_entry(inode_t parent_inode,
+                                                  inode_t child_inode,
+                                                  std::string_view name,
+                                                  uint8_t file_type) {
+        auto name_res = validate_entry_name(name);
+        propagate(name_res);
+
+        auto raw_res = read_inode_raw(parent_inode);
+        propagate(raw_res);
+        auto valid_res = validate_inode_raw(raw_res.value());
+        propagate(valid_res);
+        const uint16_t mode = read_le_at<uint16_t>(raw_res.value(), 0);
+        if ((mode & EXT4_S_IFMT) != EXT4_S_IFDIR) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        const uint32_t flags = read_le_at<uint32_t>(raw_res.value(), 32);
+        if ((flags & EXT4_INDEX_FL) != 0) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+
+        auto size_res = inode_size(parent_inode);
+        propagate(size_res);
+        const uint64_t block_count =
+            (size_res.value() + _block_size - 1) / _block_size;
+        const uint16_t need_len = min_dir_rec_len(name.size());
+        std::vector<byte> block(_block_size);
+
+        for (uint64_t logical = 0; logical < block_count; ++logical) {
+            auto phys_res = extent_lookup(parent_inode,
+                                          static_cast<uint32_t>(logical));
+            propagate(phys_res);
+            if (!phys_res.value().mapped || phys_res.value().unwritten) {
+                continue;
+            }
+            auto read_res = read_fs_block(phys_res.value().physical_block,
+                                          block.data(), block.size());
+            propagate(read_res);
+
+            size_t off = 0;
+            while (off + sizeof(Ext4DirEntry2) <= block.size()) {
+                auto *dirent =
+                    reinterpret_cast<Ext4DirEntry2 *>(block.data() + off);
+                const uint32_t ino = read_le<uint32_t>(&dirent->inode);
+                const uint16_t rec_len = read_le<uint16_t>(&dirent->rec_len);
+                const uint8_t name_len = dirent->name_len;
+                if (rec_len < sizeof(Ext4DirEntry2) ||
+                    off + rec_len > block.size() ||
+                    name_len > rec_len - sizeof(Ext4DirEntry2))
+                {
+                    break;
+                }
+
+                if (ino == 0) {
+                    if (rec_len >= need_len) {
+                        write_le_at<uint32_t>(block, off, child_inode);
+                        write_le_at<uint16_t>(block, off + 4, rec_len);
+                        block[off + 6] = static_cast<uint8_t>(name.size());
+                        block[off + 7] = file_type;
+                        memcpy(block.data() + off + sizeof(Ext4DirEntry2),
+                               name.data(), name.size());
+                        auto write_res = write_fs_block(
+                            phys_res.value().physical_block, block.data(),
+                            block.size());
+                        propagate(write_res);
+                        void_return();
+                    }
+                    off += rec_len;
+                    continue;
+                }
+
+                const uint16_t actual_len = min_dir_rec_len(name_len);
+                if (rec_len >= actual_len + need_len) {
+                    const size_t new_off = off + actual_len;
+                    const uint16_t new_len = rec_len - actual_len;
+                    write_le_at<uint16_t>(block, off + 4, actual_len);
+                    write_le_at<uint32_t>(block, new_off, child_inode);
+                    write_le_at<uint16_t>(block, new_off + 4, new_len);
+                    block[new_off + 6] = static_cast<uint8_t>(name.size());
+                    block[new_off + 7] = file_type;
+                    memcpy(block.data() + new_off + sizeof(Ext4DirEntry2),
+                           name.data(), name.size());
+                    auto write_res = write_fs_block(
+                        phys_res.value().physical_block, block.data(),
+                        block.size());
+                    propagate(write_res);
+                    void_return();
+                }
+                off += rec_len;
+            }
+        }
+
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<inode_t> Ext4Superblock::create_file(inode_t parent_inode,
+                                                std::string_view name) {
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        auto name_res = validate_entry_name(name);
+        propagate(name_res);
+
+        auto entries_res = read_directory(parent_inode);
+        propagate(entries_res);
+        for (const auto &entry : entries_res.value()) {
+            if (entry.name == name) {
+                unexpect_return(ErrCode::KEY_DUPLICATED);
+            }
+        }
+
+        auto inode_res = alloc_file_inode();
+        propagate(inode_res);
+        const inode_t inode_id = inode_res.value();
+
+        auto insert_res = insert_dir_entry(parent_inode, inode_id, name,
+                                           EXT4_FT_REG_FILE);
+        if (!insert_res.has_value()) {
+            auto release_res = release_file_inode(inode_id);
+            if (!release_res.has_value()) {
+                loggers::VFS::WARN(
+                    "Ext4 创建文件回滚 inode 失败: inode=%u err=%s",
+                    static_cast<unsigned>(inode_id),
+                    to_cstring(release_res.error()));
+            }
+            propagate_return(insert_res);
+        }
+        return inode_id;
     }
 
     Result<size_t> Ext4Superblock::read_inode_data(inode_t inode_id,
@@ -839,7 +1254,7 @@ namespace ext4 {
             unexpect_return(ErrCode::NULLPTR);
         }
         auto future = _cache->sync_all();
-        auto res    = wait::kthread_wait_for(future);
+        auto res    = wait::blocking_wait_for(future);
         propagate(res);
         void_return();
     }
@@ -850,7 +1265,12 @@ namespace ext4 {
 
     Result<util::owner<IINode *>> Ext4Superblock::get_inode(inode_t inode_id) {
         auto mode_res = inode_mode(inode_id);
-        propagate(mode_res);
+        if (!mode_res.has_value()) {
+            loggers::VFS::ERROR("Ext4 get_inode mode 失败: inode=%u err=%s",
+                                static_cast<unsigned>(inode_id),
+                                to_cstring(mode_res.error()));
+            propagate_return(mode_res);
+        }
         const uint16_t type = mode_res.value() & EXT4_S_IFMT;
         if (type == EXT4_S_IFDIR) {
             auto *dir = new Ext4Directory(*this, inode_id);
