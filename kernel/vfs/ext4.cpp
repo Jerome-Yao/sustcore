@@ -229,7 +229,15 @@ namespace ext4 {
         : _sb(&sb), _inode_id(inode_id) {}
 
     Result<std::vector<Ext4DirEntry>> Ext4Directory::collect_entries() {
-        return _sb->read_directory(_inode_id);
+        if (_entries_cached) {
+            return _cached_entries;
+        }
+        auto res = _sb->read_directory(_inode_id);
+        if (res.has_value()) {
+            _cached_entries = res.value();
+            _entries_cached = true;
+        }
+        return res;
     }
 
     Result<inode_t> Ext4Directory::lookup(std::string_view name) {

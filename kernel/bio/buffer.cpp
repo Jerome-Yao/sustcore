@@ -87,6 +87,13 @@ namespace blk {
             if (buffer == nullptr || buffer->refcnt != 0 || buffer->inflight) {
                 continue;
             }
+            if (buffer->dirty) {
+                loggers::SUSTCORE::WARN(
+                    "BufferCache: evicting DIRTY buffer devno=%u blkno=%u idx=%u",
+                    static_cast<unsigned>(_devno),
+                    static_cast<unsigned>(buffer->blkno),
+                    static_cast<unsigned>(i));
+            }
             auto clear_res = clear_slot(i);
             propagate(clear_res);
             return i;

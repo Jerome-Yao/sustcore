@@ -72,6 +72,8 @@ namespace ext4 {
         Ext4Superblock *_sb;
         inode_t _inode_id;
         Ext4Metadata _metadata {};
+        mutable bool _entries_cached = false;
+        mutable std::vector<Ext4DirEntry> _cached_entries {};
 
         [[nodiscard]]
         Result<std::vector<Ext4DirEntry>> collect_entries();
