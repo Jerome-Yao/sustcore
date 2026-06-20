@@ -717,6 +717,10 @@ Result<CapIdx> VFS::mkfile(cap::Capability &parent_dir_cap, const char *relpath,
     propagate(inode_res);
     (void)inode_res;
 
+    // evict parent dir VINode cache so _open_file sees the new entry
+    create_parent_res.value()->superblock().evict_inode(
+        create_parent_res.value()->inode()->inode_id());
+
     auto global_res = _global_target_path(*parent, relpath);
     propagate(global_res);
     auto file_res = _open_file(global_res.value().second.c_str());

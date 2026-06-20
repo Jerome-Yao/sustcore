@@ -187,6 +187,54 @@ int kmod_main() {
     kmod_fclose(fd);
     printf("test_ext4_rw: large write+read PASS\n");
 
+    // --- extent stress test (50 sparse 1KB writes → exercises path-based split) ---
+    printf("test_ext4_rw: extent stress test\n");
+    {
+        fd = kmod_mkfile("/test_img/stress_file", "w+");
+        if (fd < 0) { printf("test_ext4_rw: create stress_file failed\n"); exit(-1); }
+        constexpr size_t kStressChunks = 50;
+        constexpr size_t kChunkSz      = 1024;
+        char sbuf[kChunkSz];
+        for (size_t c = 0; c < kStressChunks; ++c) {
+            for (size_t j = 0; j < kChunkSz; ++j)
+                sbuf[j] = static_cast<char>((c * kChunkSz + j) & 0xFF);
+            written = kmod_fwrite(fd, sbuf, kChunkSz);
+            if (written != kChunkSz) {
+                printf("test_ext4_rw: stress write chunk %u failed\n",
+                       static_cast<unsigned>(c));
+                kmod_fclose(fd); exit(-1);
+            }
+            // interleave with temp file to prevent extent merging
+            int tf = kmod_mkfile("/test_img/__tmp", "w+");
+            if (tf >= 0) { kmod_fwrite(tf, "X", 1); kmod_fclose(tf); }
+            kmod_unlink("/test_img/__tmp");
+        }
+        kmod_fclose(fd);
+
+        fd = kmod_fopen("/test_img/stress_file", "r");
+        if (fd < 0) { printf("test_ext4_rw: reopen stress_file failed\n"); exit(-1); }
+        for (size_t c = 0; c < kStressChunks; ++c) {
+            memset(sbuf, 0, kChunkSz);
+            got = kmod_fread(fd, sbuf, kChunkSz);
+            if (got != kChunkSz) {
+                printf("test_ext4_rw: stress read chunk %u failed\n",
+                       static_cast<unsigned>(c));
+                kmod_fclose(fd); exit(-1);
+            }
+            for (size_t j = 0; j < got; ++j) {
+                if (static_cast<unsigned char>(sbuf[j]) !=
+                    static_cast<unsigned char>((c * kChunkSz + j) & 0xFF)) {
+                    printf("test_ext4_rw: stress data mismatch at c=%u j=%u\n",
+                           static_cast<unsigned>(c), static_cast<unsigned>(j));
+                    kmod_fclose(fd); exit(-1);
+                }
+            }
+        }
+        kmod_fclose(fd);
+        kmod_unlink("/test_img/stress_file");
+    }
+    printf("test_ext4_rw: extent stress PASS\n");
+
     // verify file visible in directory
     CapIdx ext4_dir = sys_vfs_opendir(root_cap, "test_img", flags::O_READ);
     if (ext4_dir == cap::null || ext4_dir == cap::error) {
