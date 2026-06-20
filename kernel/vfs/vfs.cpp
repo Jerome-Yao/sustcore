@@ -802,15 +802,22 @@ Result<void> VFS::rename(cap::Capability &old_parent_cap,
     if (old_parent == nullptr || new_parent == nullptr) {
         unexpect_return(ErrCode::TYPE_NOT_MATCHED);
     }
-    auto target_res = parse_create_target(old_name);
-    propagate(target_res);
+    auto old_target_res = parse_create_target(old_name);
+    propagate(old_target_res);
     auto new_target_res = parse_create_target(new_name);
     propagate(new_target_res);
-    auto old_dir_res = old_parent->vinode()->inode()->as_directory();
+
+    auto old_dir_parent = _ensure_parent_directory(*old_parent, old_name);
+    propagate(old_dir_parent);
+    auto new_dir_parent = _ensure_parent_directory(*new_parent, new_name);
+    propagate(new_dir_parent);
+
+    auto old_dir_res = old_dir_parent.value()->inode()->as_directory();
     propagate(old_dir_res);
-    auto new_dir_res = new_parent->vinode()->inode()->as_directory();
+    auto new_dir_res = new_dir_parent.value()->inode()->as_directory();
     propagate(new_dir_res);
-    return old_dir_res.value()->rename(target_res.value().name,
+
+    return old_dir_res.value()->rename(old_target_res.value().name,
                                         *new_dir_res.value(),
                                         new_target_res.value().name);
 }
