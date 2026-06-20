@@ -268,7 +268,34 @@ namespace syscall {
         auto new_parent_res = lookup_current_cap(new_parent_cap);
         propagate(new_parent_res);
         return VFS::inst().rename(*old_parent_res.value(), old_name.kbuf(),
-                                  *new_parent_res.value(), new_name.kbuf());
+                                   *new_parent_res.value(), new_name.kbuf());
+    }
+
+    Result<CapIdx> vfs_symlink(CapIdx parent_dir_cap, const UString &relpath,
+                               const UString &target) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        return VFS::inst().symlink(*parent_res.value(), relpath.kbuf(),
+                                   target.kbuf(), *holder_res.value());
+    }
+
+    Result<void> vfs_link(CapIdx parent_dir_cap, const UString &relpath,
+                          CapIdx target_file_cap) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        auto target_res = lookup_current_cap(target_file_cap);
+        propagate(target_res);
+        auto *vf = target_res.value()->payload_as<VFile>();
+        if (vf == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        inode_t target_inode = vf->vinode()->inode()->inode_id();
+        return VFS::inst().link(*parent_res.value(), relpath.kbuf(),
+                                target_inode);
     }
 
 }  // namespace syscall

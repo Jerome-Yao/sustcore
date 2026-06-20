@@ -60,6 +60,8 @@
 #define SYS_VFS_RMDIR    (SYSCALL_BASE + 0x29)
 #define SYS_VFS_TRUNCATE (SYSCALL_BASE + 0x2A)
 #define SYS_VFS_RENAME   (SYSCALL_BASE + 0x2B)
+#define SYS_VFS_SYMLINK (SYSCALL_BASE + 0x2C)
+#define SYS_VFS_LINK   (SYSCALL_BASE + 0x2D)
 
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE  (0xFFC00000)

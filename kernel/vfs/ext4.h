@@ -93,6 +93,8 @@ namespace ext4 {
         Result<inode_t> mkdir(std::string_view name,
                               const char *options) final;
         [[nodiscard]]
+        Result<void> link(std::string_view name, inode_t target) final;
+        [[nodiscard]]
         Result<size_t> entry_count() final;
         [[nodiscard]]
         Result<DirectoryEntryInfo> entry_at(size_t index) final;
@@ -140,6 +142,10 @@ namespace ext4 {
         uint32_t _group_count       = 0;
         uint64_t _group_desc_offset = 0;
         bool _read_only             = false;
+        uint32_t _time_counter      = 0;
+
+        [[nodiscard]]
+        uint32_t _next_time() { return ++_time_counter; }
 
         [[nodiscard]]
         Result<void> read_device_bytes(uint64_t offset, void *buf, size_t len);
@@ -199,6 +205,13 @@ namespace ext4 {
         [[nodiscard]]
         Result<inode_t> create_directory(inode_t parent_inode,
                                          std::string_view name);
+        [[nodiscard]]
+        Result<void> create_link(inode_t parent_inode, std::string_view name,
+                                 inode_t target_inode);
+        [[nodiscard]]
+        Result<inode_t> create_symlink(inode_t parent_inode,
+                                       std::string_view name,
+                                       std::string_view target);
         [[nodiscard]]
         Result<bool> dir_entry_is_file(inode_t inode_id, uint8_t file_type);
         [[nodiscard]]

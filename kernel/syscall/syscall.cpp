@@ -189,6 +189,8 @@ namespace syscall {
             case SYS_VFS_RMDIR:           return "SYS_VFS_RMDIR";
             case SYS_VFS_TRUNCATE:        return "SYS_VFS_TRUNCATE";
             case SYS_VFS_RENAME:          return "SYS_VFS_RENAME";
+            case SYS_VFS_SYMLINK:         return "SYS_VFS_SYMLINK";
+            case SYS_VFS_LINK:           return "SYS_VFS_LINK";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -332,6 +334,19 @@ namespace syscall {
                 UString new_name((VirAddr)arg2, MAX_SYSCALL_PATH);
                 ret = result_void_ret("rename",
                     vfs_rename(capidx, old_name, arg1, new_name));
+                break;
+            }
+            case SYS_VFS_SYMLINK: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                UString target((VirAddr)arg1, MAX_SYSCALL_PATH);
+                ret = result_value_ret(
+                    "symlink", vfs_symlink(capidx, path, target));
+                break;
+            }
+            case SYS_VFS_LINK: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret = result_void_ret(
+                    "link", vfs_link(capidx, path, arg1));
                 break;
             }
             case SYS_VFS_READ: {

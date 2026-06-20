@@ -317,6 +317,22 @@ sys_vfs_rename:
     ecall
     ret
 
+    .global sys_vfs_symlink
+    .type sys_vfs_symlink, @function
+sys_vfs_symlink:
+    /* a0 = parent_dir_cap, a1 = name, a2 = target */
+    li a7, SYS_VFS_SYMLINK
+    ecall
+    ret
+
+    .global sys_vfs_link
+    .type sys_vfs_link, @function
+sys_vfs_link:
+    /* a0 = parent_dir_cap, a1 = name, a2 = target_inode */
+    li a7, SYS_VFS_LINK
+    ecall
+    ret
+
     .global sys_vfs_read
     .type sys_vfs_read, @function
 sys_vfs_read:

@@ -71,6 +71,10 @@ Result<util::refc_ptr<VINode>> VSuperblock::get_vnode(inode_t inode_id) {
     return util::refc_ptr(vnode);
 }
 
+void VSuperblock::evict_inode(inode_t inode_id) {
+    _inode_cache.erase(inode_id);
+}
+
 void VSuperblock::on_death() {
     // MountRecord owns mounted superblocks; zero vnode refs must not unmount.
 }
@@ -327,7 +331,7 @@ namespace {
     [[nodiscard]]
     Result<void> validate_file_oflags(flags::oflg_t oflags) {
         using namespace flags;
-        constexpr oflg_t valid_mask = O_READ | O_WRITE | O_EXECUTE;
+        constexpr oflg_t valid_mask = O_READ | O_WRITE | O_EXECUTE | O_CREAT;
         if ((oflags & ~valid_mask) != 0 || oflags == 0) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -586,7 +590,18 @@ Result<VDirectory *> VFS::_open_dir(const char *filepath) {
         _resolve_inode(util::Path::from(filepath).normalize(), mount_path);
     propagate(vind_res);
     auto dir_res = vind_res.value()->inode()->as_directory();
-    propagate(dir_res);
+    if (!dir_res.has_value()) {
+        // stale VINode cache after inode reuse
+        inode_t stale_id = vind_res.value()->inode()->inode_id();
+        loggers::VFS::INFO("_open_dir: evict stale inode=%u and retry",
+                            static_cast<unsigned>(stale_id));
+        vind_res.value()->superblock().evict_inode(stale_id);
+        vind_res =
+            _resolve_inode(util::Path::from(filepath).normalize(), mount_path);
+        propagate(vind_res);
+        dir_res = vind_res.value()->inode()->as_directory();
+        propagate(dir_res);
+    }
 
     auto *dir =
         new VDirectory(*vind_res.value().get(), mount_path,
@@ -637,7 +652,8 @@ Result<CapIdx> VFS::open(cap::Capability &parent_dir_cap, const char *relpath,
     propagate(global_res);
     auto file_res = _open_file(global_res.value().second.c_str());
     if (!file_res.has_value() && file_res.error() == ErrCode::ENTRY_NOT_FOUND &&
-        (oflags & flags::O_EXECUTE) == 0)
+        (oflags & flags::O_EXECUTE) == 0 &&
+        (oflags & flags::O_CREAT) != 0)
     {
         auto create_res = mkfile(parent_dir_cap, relpath, oflags, holder);
         propagate(create_res);
@@ -765,7 +781,15 @@ Result<void> VFS::unlink(cap::Capability &parent_dir_cap,
     propagate(create_parent_res);
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
     propagate(target_dir_res);
-    return target_dir_res.value()->unlink(target_res.value().name);
+
+    // lookup target inode before delete so we can evict its VINode cache
+    auto lookup_res = target_dir_res.value()->lookup(target_res.value().name);
+    propagate(lookup_res);
+    auto unlink_res = target_dir_res.value()->unlink(target_res.value().name);
+    propagate(unlink_res);
+    // evict the freed inode's VINode from cache
+    create_parent_res.value()->superblock().evict_inode(lookup_res.value());
+    void_return();
 }
 
 Result<void> VFS::rmdir(cap::Capability &parent_dir_cap,
@@ -780,7 +804,13 @@ Result<void> VFS::rmdir(cap::Capability &parent_dir_cap,
     propagate(create_parent_res);
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
     propagate(target_dir_res);
-    return target_dir_res.value()->rmdir(target_res.value().name);
+
+    auto lookup_res = target_dir_res.value()->lookup(target_res.value().name);
+    propagate(lookup_res);
+    auto rmdir_res = target_dir_res.value()->rmdir(target_res.value().name);
+    propagate(rmdir_res);
+    create_parent_res.value()->superblock().evict_inode(lookup_res.value());
+    void_return();
 }
 
 Result<void> VFS::truncate(cap::Capability &file_cap, size_t new_size) {
@@ -791,6 +821,21 @@ Result<void> VFS::truncate(cap::Capability &file_cap, size_t new_size) {
     auto file_res = vfile->vinode()->inode()->as_file();
     propagate(file_res);
     return file_res.value()->truncate(new_size);
+}
+
+Result<void> VFS::link(cap::Capability &parent_dir_cap,
+                      const char *relpath, inode_t target) {
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    auto target_res = parse_create_target(relpath);
+    propagate(target_res);
+    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    propagate(create_parent_res);
+    auto target_dir_res = create_parent_res.value()->inode()->as_directory();
+    propagate(target_dir_res);
+    return target_dir_res.value()->link(target_res.value().name, target);
 }
 
 Result<void> VFS::rename(cap::Capability &old_parent_cap,
@@ -820,6 +865,47 @@ Result<void> VFS::rename(cap::Capability &old_parent_cap,
     return old_dir_res.value()->rename(old_target_res.value().name,
                                         *new_dir_res.value(),
                                         new_target_res.value().name);
+}
+
+Result<CapIdx> VFS::symlink(cap::Capability &parent_dir_cap,
+                            const char *relpath, const char *target,
+                            cap::CHolder &holder) {
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    if (target == nullptr || target[0] == '\0') {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    auto create_target_res = parse_create_target(relpath);
+    propagate(create_target_res);
+    const auto &ctgt = create_target_res.value();
+
+    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    propagate(create_parent_res);
+
+    auto target_dir_res =
+        create_parent_res.value()->inode()->as_directory();
+    propagate(target_dir_res);
+
+    auto inode_res =
+        target_dir_res.value()->symlink(ctgt.name, target);
+    propagate(inode_res);
+    (void)inode_res;
+
+    auto global_res = _global_target_path(*parent, relpath);
+    propagate(global_res);
+    auto dir_res = _open_dir(global_res.value().second.c_str());
+    propagate(dir_res);
+
+    auto insert_res = holder.insert_to_free(dir_res.value(),
+                                            flags::O_READ);
+    if (!insert_res.has_value()) {
+        dir_res.value()->destruct();
+        propagate_return(insert_res);
+    }
+    return insert_res.value();
 }
 
 Result<CapIdx> VFS::open_dir(const char *filepath, cap::CHolder &holder,

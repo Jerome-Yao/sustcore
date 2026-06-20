@@ -91,6 +91,7 @@ int kmod_main() {
     // --- write test ---
     printf("test_ext4_rw: creating %s\n", RW_FILE);
     int fd = kmod_mkfile(RW_FILE, "w+");
+    int ret;
     if (fd < 0) {
         fd = kmod_fopen(RW_FILE, "r+");
         if (fd < 0) {
@@ -228,9 +229,37 @@ int kmod_main() {
     sys_cap_remove(sub_dir);
     printf("test_ext4_rw: mkdir PASS\n");
 
+    // cross-directory rename (before rmdir, reuses existing dir)
+    printf("test_ext4_rw: cross-rename test\n");
+    fd = kmod_mkfile("/test_img/xf", "w+");
+    if (fd < 0) { printf("test_ext4_rw: create xf failed\n"); exit(-1); }
+    kmod_fwrite(fd, "cross_data", 10);
+    kmod_fclose(fd);
+    ret = kmod_rename("/test_img/xf", "/test_img/rw_test_dir/xf");
+    if (ret < 0) { printf("test_ext4_rw: cross rename failed\n"); exit(-1); }
+    ext4_dir = sys_vfs_opendir(root_cap, "test_img", flags::O_READ);
+    if (ext4_dir == cap::null || ext4_dir == cap::error) {
+        printf("test_ext4_rw: opendir for cross-rename check failed\n"); exit(-1);
+    }
+    if (dir_has_entry(ext4_dir, "xf", true)) {
+        printf("test_ext4_rw: old name still visible after cross-rename\n");
+        sys_cap_remove(ext4_dir); exit(-1);
+    }
+    sys_cap_remove(ext4_dir);
+    fd = kmod_fopen("/test_img/rw_test_dir/xf", "r");
+    if (fd < 0) { printf("test_ext4_rw: new name not openable after cross-rename\n"); exit(-1); }
+    memset(g_read_buf, 0, sizeof(g_read_buf));
+    got = kmod_fread(fd, g_read_buf, 20);
+    kmod_fclose(fd);
+    if (got != 10 || memcmp(g_read_buf, "cross_data", 10) != 0) {
+        printf("test_ext4_rw: cross-rename content mismatch\n"); exit(-1);
+    }
+    kmod_unlink("/test_img/rw_test_dir/xf");
+    printf("test_ext4_rw: cross-rename PASS\n");
+
     // --- unlink test ---
     printf("test_ext4_rw: unlink %s\n", RW_FILE);
-    int ret = kmod_unlink(RW_FILE);
+    ret = kmod_unlink(RW_FILE);
     if (ret < 0) {
         printf("test_ext4_rw: unlink failed\n");
         exit(-1);
@@ -287,6 +316,31 @@ int kmod_main() {
     kmod_fclose(fd);
     kmod_unlink("/test_img/rename_dst");
     printf("test_ext4_rw: rename PASS\n");
+
+    // hard link test
+    printf("test_ext4_rw: link test\n");
+    fd = kmod_mkfile("/test_img/link_orig", "w+");
+    if (fd < 0) { printf("test_ext4_rw: create link_orig failed\n"); exit(-1); }
+    kmod_fwrite(fd, "link_data", 9);
+    kmod_fclose(fd);
+    ret = kmod_link("/test_img/link_new", "/test_img/link_orig");
+    if (ret < 0) { printf("test_ext4_rw: link failed\n"); exit(-1); }
+    // read via new link
+    fd = kmod_fopen("/test_img/link_new", "r");
+    if (fd < 0) { printf("test_ext4_rw: open link_new failed\n"); exit(-1); }
+    memset(g_read_buf, 0, sizeof(g_read_buf));
+    got = kmod_fread(fd, g_read_buf, 20);
+    kmod_fclose(fd);
+    if (got != 9 || memcmp(g_read_buf, "link_data", 9) != 0) {
+        printf("test_ext4_rw: link content mismatch\n"); exit(-1);
+    }
+    // unlink original — link_new should still work (link_count=2 → 1)
+    kmod_unlink("/test_img/link_orig");
+    fd = kmod_fopen("/test_img/link_new", "r");
+    if (fd < 0) { printf("test_ext4_rw: link_new gone after unlink orig\n"); exit(-1); }
+    kmod_fclose(fd);
+    kmod_unlink("/test_img/link_new");
+    printf("test_ext4_rw: link PASS\n");
 
     // --- truncate test ---
     printf("test_ext4_rw: truncate test\n");
