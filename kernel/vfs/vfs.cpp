@@ -753,6 +753,36 @@ Result<CapIdx> VFS::mkdir(cap::Capability &parent_dir_cap, const char *relpath,
     return insert_res.value();
 }
 
+Result<void> VFS::unlink(cap::Capability &parent_dir_cap,
+                        const char *relpath) {
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    auto target_res = parse_create_target(relpath);
+    propagate(target_res);
+    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    propagate(create_parent_res);
+    auto target_dir_res = create_parent_res.value()->inode()->as_directory();
+    propagate(target_dir_res);
+    return target_dir_res.value()->unlink(target_res.value().name);
+}
+
+Result<void> VFS::rmdir(cap::Capability &parent_dir_cap,
+                       const char *relpath) {
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    auto target_res = parse_create_target(relpath);
+    propagate(target_res);
+    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    propagate(create_parent_res);
+    auto target_dir_res = create_parent_res.value()->inode()->as_directory();
+    propagate(target_dir_res);
+    return target_dir_res.value()->rmdir(target_res.value().name);
+}
+
 Result<CapIdx> VFS::open_dir(const char *filepath, cap::CHolder &holder,
                              b64 perm) {
     auto dir_res = _open_dir(filepath);

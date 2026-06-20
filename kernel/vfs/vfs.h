@@ -291,6 +291,12 @@ public:
     Result<CapIdx> mkdir(cap::Capability &parent_dir_cap, const char *relpath,
                          flags::oflg_t oflags, cap::CHolder &holder);
     [[nodiscard]]
+    Result<void> unlink(cap::Capability &parent_dir_cap,
+                        const char *relpath);
+    [[nodiscard]]
+    Result<void> rmdir(cap::Capability &parent_dir_cap,
+                       const char *relpath);
+    [[nodiscard]]
     Result<CapIdx> open_dir(const char *filepath, cap::CHolder &holder,
                             b64 perm);
     [[nodiscard]]

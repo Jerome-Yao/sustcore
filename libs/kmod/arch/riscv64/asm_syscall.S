@@ -285,6 +285,22 @@ sys_vfs_mkdir:
     ecall
     ret
 
+    .global sys_vfs_unlink
+    .type sys_vfs_unlink, @function
+sys_vfs_unlink:
+    /* a0 = parent dir cap, a1 = name */
+    li a7, SYS_VFS_UNLINK
+    ecall
+    ret
+
+    .global sys_vfs_rmdir
+    .type sys_vfs_rmdir, @function
+sys_vfs_rmdir:
+    /* a0 = parent dir cap, a1 = name */
+    li a7, SYS_VFS_RMDIR
+    ecall
+    ret
+
     .global sys_vfs_read
     .type sys_vfs_read, @function
 sys_vfs_read:

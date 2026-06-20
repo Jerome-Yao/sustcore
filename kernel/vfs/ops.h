@@ -218,6 +218,16 @@ public:
     virtual Result<size_t> entry_count() = 0;
     [[nodiscard]]
     virtual Result<DirectoryEntryInfo> entry_at(size_t index) = 0;
+    [[nodiscard]]
+    virtual Result<void> unlink(std::string_view name) {
+        (void)name;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+    [[nodiscard]]
+    virtual Result<void> rmdir(std::string_view name) {
+        (void)name;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
     /**
      * @brief 同步目录数据到存储设备
      *

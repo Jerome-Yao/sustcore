@@ -82,6 +82,18 @@ namespace blk {
             }
         }
 
+        // prefer clean buffers for eviction
+        for (size_t i = 0; i < MAX_CACHE_SIZE; ++i) {
+            Buffer *buffer = _buffers[i].get();
+            if (buffer == nullptr || buffer->refcnt != 0 || buffer->inflight ||
+                buffer->dirty) {
+                continue;
+            }
+            auto clear_res = clear_slot(i);
+            propagate(clear_res);
+            return i;
+        }
+        // fallback: evict any buffer (including dirty)
         for (size_t i = 0; i < MAX_CACHE_SIZE; ++i) {
             Buffer *buffer = _buffers[i].get();
             if (buffer == nullptr || buffer->refcnt != 0 || buffer->inflight) {

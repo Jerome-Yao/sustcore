@@ -95,6 +95,10 @@ namespace ext4 {
         [[nodiscard]]
         Result<DirectoryEntryInfo> entry_at(size_t index) final;
         [[nodiscard]]
+        Result<void> unlink(std::string_view name) final;
+        [[nodiscard]]
+        Result<void> rmdir(std::string_view name) final;
+        [[nodiscard]]
         Result<void> sync() final;
         [[nodiscard]]
         IMetadata &metadata() final;
@@ -153,6 +157,16 @@ namespace ext4 {
         [[nodiscard]]
         Result<void> validate_inode_raw(const std::vector<byte> &raw);
         [[nodiscard]]
+        Result<uint64_t> block_bitmap_block(uint32_t group);
+        [[nodiscard]]
+        Result<uint32_t> group_free_blocks(uint32_t group);
+        [[nodiscard]]
+        Result<void> set_group_free_blocks(uint32_t group, uint32_t count);
+        [[nodiscard]]
+        Result<uint64_t> alloc_block();
+        [[nodiscard]]
+        Result<void> free_block(uint64_t block_no);
+        [[nodiscard]]
         Result<uint64_t> inode_table_block(uint32_t group);
         [[nodiscard]]
         Result<uint64_t> inode_bitmap_block(uint32_t group);
@@ -177,10 +191,25 @@ namespace ext4 {
         Result<inode_t> create_file(inode_t parent_inode,
                                     std::string_view name);
         [[nodiscard]]
+        Result<inode_t> create_directory(inode_t parent_inode,
+                                         std::string_view name);
+        [[nodiscard]]
         Result<bool> dir_entry_is_file(inode_t inode_id, uint8_t file_type);
         [[nodiscard]]
         Result<Ext4ExtentMapping> extent_lookup(inode_t inode_id,
                                                 uint32_t logical);
+        [[nodiscard]]
+        Result<void> insert_extent(inode_t inode_id, uint32_t logical,
+                                   uint64_t physical, uint32_t len);
+        [[nodiscard]]
+        Result<void> update_inode_size(inode_t inode_id, uint64_t new_size);
+        [[nodiscard]]
+        Result<void> delete_file(inode_t inode_id);
+        [[nodiscard]]
+        Result<void> delete_directory(inode_t inode_id);
+        [[nodiscard]]
+        Result<void> remove_dir_entry(inode_t parent_inode,
+                                       std::string_view name);
         [[nodiscard]]
         Result<Ext4ExtentMapping> extent_lookup_from_node(const byte *node,
                                                           size_t node_size,

@@ -50,7 +50,7 @@ arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 library-components := sbi basecpp kmod rpc libfdt
 module-components := default init test_endpoint_master test_endpoint_slave test_call_service test_call_user \
 	test_fork test_execve test_thread test_rpc_server test_rpc_client \
-	test_file_rw_a test_file_rw_b test_ext4_read test_ext4_create
+	test_file_rw_a test_file_rw_b test_ext4_read test_ext4_create test_ext4_rw
 
 library-component-makefile.sbi := $(path-e)/libs/sbi/Makefile
 library-component-makefile.basecpp := $(path-e)/libs/basecpp/Makefile
@@ -73,6 +73,7 @@ module-component-makefile.test_file_rw_a := $(path-e)/module/test_file_rw_a/Make
 module-component-makefile.test_file_rw_b := $(path-e)/module/test_file_rw_b/Makefile
 module-component-makefile.test_ext4_read := $(path-e)/module/test_ext4_read/Makefile
 module-component-makefile.test_ext4_create := $(path-e)/module/test_ext4_create/Makefile
+module-component-makefile.test_ext4_rw := $(path-e)/module/test_ext4_rw/Makefile
 
 build-libs:
 ifneq ($(architecture),loongarch64)
@@ -110,6 +111,7 @@ build-mods: make-initrd build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.test_file_rw_b) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_ext4_read) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_ext4_create) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test_ext4_rw) $(arg-basic) build
 	$(q)echo "All modules built successfully."
 
 make-initrd:

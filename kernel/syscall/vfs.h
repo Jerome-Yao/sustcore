@@ -47,4 +47,9 @@ namespace syscall {
     [[nodiscard]]
     Result<bool> vfs_sync(CapIdx capidx);
 
+    [[nodiscard]]
+    Result<void> vfs_unlink(CapIdx parent_dir_cap, const UString &relpath);
+    [[nodiscard]]
+    Result<void> vfs_rmdir(CapIdx parent_dir_cap, const UString &relpath);
+
 }  // namespace syscall

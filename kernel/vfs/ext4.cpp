@@ -258,14 +258,15 @@ namespace ext4 {
     Result<inode_t> Ext4Directory::mkfile(std::string_view name,
                                           const char *options) {
         (void)options;
+        _entries_cached = false;
         return _sb->create_file(_inode_id, name);
     }
 
     Result<inode_t> Ext4Directory::mkdir(std::string_view name,
-                                         const char *options) {
-        (void)name;
+                                          const char *options) {
         (void)options;
-        unexpect_return(ErrCode::NOT_SUPPORTED);
+        _entries_cached = false;
+        return _sb->create_directory(_inode_id, name);
     }
 
     Result<size_t> Ext4Directory::entry_count() {
@@ -285,6 +286,42 @@ namespace ext4 {
             .is_file = entry.is_file,
             .name    = entry.name,
         };
+    }
+
+    Result<void> Ext4Directory::unlink(std::string_view name) {
+        auto lookup_res = lookup(name);
+        propagate(lookup_res);
+        const inode_t target = lookup_res.value();
+
+        auto mode_res = _sb->inode_mode(target);
+        propagate(mode_res);
+        const uint16_t type = mode_res.value() & EXT4_S_IFMT;
+
+        if (type == EXT4_S_IFREG || type == EXT4_S_IFLNK) {
+            auto del_res = _sb->delete_file(target);
+            propagate(del_res);
+        } else if (type == EXT4_S_IFDIR) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        } else {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto remove_res = _sb->remove_dir_entry(_inode_id, name);
+        propagate(remove_res);
+        _entries_cached = false;
+        void_return();
+    }
+
+    Result<void> Ext4Directory::rmdir(std::string_view name) {
+        auto lookup_res = lookup(name);
+        propagate(lookup_res);
+        const inode_t target = lookup_res.value();
+        auto del_res = _sb->delete_directory(target);
+        propagate(del_res);
+        auto remove_res = _sb->remove_dir_entry(_inode_id, name);
+        propagate(remove_res);
+        _entries_cached = false;
+        void_return();
     }
 
     Result<void> Ext4Directory::sync() {
@@ -531,6 +568,171 @@ namespace ext4 {
             hi = read_le<uint32_t>(_group_desc.data() + base + 36);
         }
         return join_u64(lo, hi);
+    }
+
+    Result<uint64_t> Ext4Superblock::block_bitmap_block(uint32_t group) {
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const size_t base = static_cast<size_t>(group) * _group_desc_size;
+        if (base + 36 > _group_desc.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const uint32_t lo = read_le<uint32_t>(_group_desc.data() + base);
+        uint32_t hi       = 0;
+        if (_group_desc_size >= 64) {
+            hi = read_le<uint32_t>(_group_desc.data() + base + 32);
+        }
+        return join_u64(lo, hi);
+    }
+
+    Result<uint32_t> Ext4Superblock::group_free_blocks(uint32_t group) {
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const size_t base = static_cast<size_t>(group) * _group_desc_size;
+        if (base + 14 > _group_desc.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const uint32_t lo = read_le<uint16_t>(_group_desc.data() + base + 12);
+        uint32_t hi       = 0;
+        if (_group_desc_size >= 64) {
+            if (base + 46 > _group_desc.size()) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            hi = read_le<uint16_t>(_group_desc.data() + base + 44);
+        }
+        return lo | (hi << 16);
+    }
+
+    Result<void> Ext4Superblock::set_group_free_blocks(uint32_t group,
+                                                       uint32_t count) {
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const size_t base = static_cast<size_t>(group) * _group_desc_size;
+        if (base + 14 > _group_desc.size()) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        write_le_at<uint16_t>(_group_desc, base + 12,
+                              static_cast<uint16_t>(count & 0xFFFFU));
+        if (_group_desc_size >= 64) {
+            if (base + 46 > _group_desc.size()) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+            write_le_at<uint16_t>(_group_desc, base + 44,
+                                  static_cast<uint16_t>(count >> 16));
+        }
+        void_return();
+    }
+
+    Result<uint64_t> Ext4Superblock::alloc_block() {
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        const uint32_t blocks_per_group = _blocks_per_group;
+
+        for (uint32_t group = 0; group < _group_count; ++group) {
+            auto free_res = group_free_blocks(group);
+            propagate(free_res);
+            if (free_res.value() == 0) {
+                continue;
+            }
+
+            auto bitmap_block_res = block_bitmap_block(group);
+            propagate(bitmap_block_res);
+            std::vector<byte> bitmap(_block_size);
+            auto read_res = read_fs_block(bitmap_block_res.value(),
+                                          bitmap.data(), bitmap.size());
+            propagate(read_res);
+
+            const uint32_t blocks_in_group =
+                std::min<uint32_t>(blocks_per_group,
+                                   static_cast<uint32_t>(
+                                       _block_count - static_cast<uint64_t>(group) * blocks_per_group));
+            for (uint32_t idx = 0; idx < blocks_in_group; ++idx) {
+                const size_t byte_index = idx / 8U;
+                if (byte_index >= bitmap.size()) {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
+                const uint8_t mask =
+                    static_cast<uint8_t>(1U << (idx % 8U));
+                if ((bitmap[byte_index] & mask) != 0) {
+                    continue;
+                }
+
+                bitmap[byte_index] |= mask;
+                auto write_bitmap_res = write_fs_block(
+                    bitmap_block_res.value(), bitmap.data(), bitmap.size());
+                propagate(write_bitmap_res);
+
+                auto set_group_res =
+                    set_group_free_blocks(group, free_res.value() - 1);
+                propagate(set_group_res);
+                const uint32_t sb_free =
+                    read_le_at<uint32_t>(_superblock, 12);
+                if (sb_free == 0) {
+                    unexpect_return(ErrCode::INVALID_PARAM);
+                }
+                write_le_at<uint32_t>(_superblock, 12, sb_free - 1);
+
+                auto sync_group_res = sync_group_descriptors();
+                propagate(sync_group_res);
+                auto sync_super_res = sync_superblock_metadata();
+                propagate(sync_super_res);
+
+                return static_cast<uint64_t>(group) * blocks_per_group + idx +
+                       _first_data_block;
+            }
+        }
+        unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+    }
+
+    Result<void> Ext4Superblock::free_block(uint64_t block_no) {
+        if (block_no < _first_data_block || block_no >= _block_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        const uint64_t data_block  = block_no - _first_data_block;
+        const uint32_t group       = static_cast<uint32_t>(
+            data_block / _blocks_per_group);
+        const uint32_t idx         = static_cast<uint32_t>(
+            data_block % _blocks_per_group);
+        if (group >= _group_count) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        auto bitmap_block_res = block_bitmap_block(group);
+        propagate(bitmap_block_res);
+        std::vector<byte> bitmap(_block_size);
+        auto read_res = read_fs_block(bitmap_block_res.value(), bitmap.data(),
+                                      bitmap.size());
+        propagate(read_res);
+
+        const size_t byte_index = idx / 8U;
+        if (byte_index >= bitmap.size()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        const uint8_t mask = static_cast<uint8_t>(1U << (idx % 8U));
+        if ((bitmap[byte_index] & mask) == 0) {
+            void_return();
+        }
+        bitmap[byte_index] &= static_cast<uint8_t>(~mask);
+        auto write_bitmap_res = write_fs_block(
+            bitmap_block_res.value(), bitmap.data(), bitmap.size());
+        propagate(write_bitmap_res);
+
+        auto free_res = group_free_blocks(group);
+        propagate(free_res);
+        auto set_group_res =
+            set_group_free_blocks(group, free_res.value() + 1);
+        propagate(set_group_res);
+        const uint32_t sb_free = read_le_at<uint32_t>(_superblock, 12);
+        write_le_at<uint32_t>(_superblock, 12, sb_free + 1);
+        auto sync_group_res = sync_group_descriptors();
+        propagate(sync_group_res);
+        auto sync_super_res = sync_superblock_metadata();
+        propagate(sync_super_res);
+        void_return();
     }
 
     Result<uint32_t> Ext4Superblock::group_free_inodes(uint32_t group) {
@@ -938,7 +1140,120 @@ namespace ext4 {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
         return extent_lookup_from_node(raw_res.value().data() + 40, 60,
-                                       logical);
+                                        logical);
+    }
+
+    Result<void> Ext4Superblock::insert_extent(inode_t inode_id,
+                                               uint32_t logical,
+                                               uint64_t physical,
+                                               uint32_t len) {
+        auto raw_res = read_inode_raw(inode_id);
+        propagate(raw_res);
+        auto &raw = raw_res.value();
+        if (raw.size() < 100) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        byte *const i_block  = raw.data() + 40;
+        const size_t ib_size = 60;
+        auto *eh = reinterpret_cast<Ext4ExtentHeader *>(i_block);
+
+        const uint16_t magic = read_le<uint16_t>(&eh->eh_magic);
+        if (magic != EXT4_EXT_MAGIC) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        const uint16_t depth    = read_le<uint16_t>(&eh->eh_depth);
+        uint16_t entries        = read_le<uint16_t>(&eh->eh_entries);
+        const uint16_t max_entries = read_le<uint16_t>(&eh->eh_max);
+
+        if (depth != 0) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+
+        auto *extents = reinterpret_cast<Ext4Extent *>(
+            i_block + sizeof(Ext4ExtentHeader));
+
+        for (uint16_t i = 0; i < entries; ++i) {
+            const uint32_t first   = read_le<uint32_t>(&extents[i].ee_block);
+            const uint16_t len_raw = read_le<uint16_t>(&extents[i].ee_len);
+            const uint32_t elen    = extent_len(len_raw);
+
+            if (logical + len == first &&
+                physical + static_cast<uint64_t>(len) * _block_size ==
+                    ((static_cast<uint64_t>(
+                          read_le<uint16_t>(&extents[i].ee_start_hi))
+                      << 32) |
+                     read_le<uint32_t>(&extents[i].ee_start_lo)))
+            {
+                write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
+                                             i * sizeof(Ext4Extent),
+                                      logical);
+                const uint16_t new_len = static_cast<uint16_t>(len + elen);
+                write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
+                                             i * sizeof(Ext4Extent) + 4,
+                                      new_len);
+                return write_inode_raw(inode_id, raw);
+            }
+
+            if (first == logical + len &&
+                ((static_cast<uint64_t>(
+                      read_le<uint16_t>(&extents[i].ee_start_hi))
+                  << 32) |
+                 read_le<uint32_t>(&extents[i].ee_start_lo)) ==
+                    physical + static_cast<uint64_t>(len) * _block_size)
+            {
+                const uint16_t new_len = static_cast<uint16_t>(len + elen);
+                write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
+                                             i * sizeof(Ext4Extent) + 4,
+                                      new_len);
+                return write_inode_raw(inode_id, raw);
+            }
+        }
+
+        if (entries >= max_entries) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+
+        uint16_t insert_pos = entries;
+        for (uint16_t i = 0; i < entries; ++i) {
+            if (logical < read_le<uint32_t>(&extents[i].ee_block)) {
+                insert_pos = i;
+                break;
+            }
+        }
+
+        for (uint16_t i = entries; i > insert_pos; --i) {
+            const size_t dst = 40 + sizeof(Ext4ExtentHeader) +
+                               i * sizeof(Ext4Extent);
+            const size_t src = dst - sizeof(Ext4Extent);
+            memcpy(raw.data() + dst, raw.data() + src, sizeof(Ext4Extent));
+        }
+
+        const size_t entry_off =
+            40 + sizeof(Ext4ExtentHeader) + insert_pos * sizeof(Ext4Extent);
+        write_le_at<uint32_t>(raw, entry_off, logical);
+        write_le_at<uint16_t>(raw, entry_off + 4,
+                              static_cast<uint16_t>(len));
+        write_le_at<uint16_t>(raw, entry_off + 6,
+                              static_cast<uint16_t>(physical >> 32));
+        write_le_at<uint32_t>(raw, entry_off + 8,
+                              static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
+        write_le_at<uint16_t>(raw, 42,
+                              static_cast<uint16_t>(entries + 1));
+
+        return write_inode_raw(inode_id, raw);
+    }
+
+    Result<void> Ext4Superblock::update_inode_size(inode_t inode_id,
+                                                    uint64_t new_size) {
+        auto raw_res = read_inode_raw(inode_id);
+        propagate(raw_res);
+        write_le_at<uint32_t>(raw_res.value(), 4,
+                              static_cast<uint32_t>(new_size & 0xFFFFFFFFULL));
+        write_le_at<uint32_t>(raw_res.value(), 108,
+                              static_cast<uint32_t>(new_size >> 32));
+        return write_inode_raw(inode_id, raw_res.value());
     }
 
     Result<bool> Ext4Superblock::dir_entry_is_file(inode_t inode_id,
@@ -1092,6 +1407,100 @@ namespace ext4 {
         return inode_id;
     }
 
+    Result<inode_t> Ext4Superblock::create_directory(inode_t parent_inode,
+                                                     std::string_view name) {
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        auto name_res = validate_entry_name(name);
+        propagate(name_res);
+
+        auto entries_res = read_directory(parent_inode);
+        propagate(entries_res);
+        for (const auto &entry : entries_res.value()) {
+            if (entry.name == name) {
+                unexpect_return(ErrCode::KEY_DUPLICATED);
+            }
+        }
+
+        auto inode_res = alloc_file_inode();
+        propagate(inode_res);
+        const inode_t inode_id = inode_res.value();
+
+        auto raw_res = read_inode_raw(inode_id);
+        propagate(raw_res);
+        write_le_at<uint16_t>(raw_res.value(), 0, EXT4_S_IFDIR | 0755U);
+        write_le_at<uint16_t>(raw_res.value(), 26, 2);
+        auto write_inode_res = write_inode_raw(inode_id, raw_res.value());
+        if (!write_inode_res.has_value()) {
+            auto release_res = release_file_inode(inode_id);
+            if (!release_res.has_value()) {
+                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                                    static_cast<unsigned>(inode_id),
+                                    to_cstring(release_res.error()));
+            }
+            propagate_return(write_inode_res);
+        }
+
+        auto block_res = alloc_block();
+        if (!block_res.has_value()) {
+            auto release_res = release_file_inode(inode_id);
+            if (!release_res.has_value()) {
+                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                                    static_cast<unsigned>(inode_id),
+                                    to_cstring(release_res.error()));
+            }
+            propagate_return(block_res);
+        }
+        const uint64_t block_no = block_res.value();
+
+        auto insert_ext_res = insert_extent(inode_id, 0, block_no, 1);
+        propagate(insert_ext_res);
+        auto update_res = update_inode_size(inode_id, _block_size);
+        propagate(update_res);
+
+        std::vector<byte> dir_block(_block_size, 0);
+        write_le_at<uint32_t>(dir_block, 0, inode_id);
+        write_le_at<uint16_t>(dir_block, 4, min_dir_rec_len(1));
+        dir_block[6] = 1;
+        dir_block[7] = EXT4_FT_DIR;
+        memcpy(dir_block.data() + sizeof(Ext4DirEntry2), ".", 2);
+
+        const uint16_t remaining =
+            static_cast<uint16_t>(_block_size) - min_dir_rec_len(1);
+        write_le_at<uint32_t>(dir_block, min_dir_rec_len(1), parent_inode);
+        write_le_at<uint16_t>(dir_block, min_dir_rec_len(1) + 4, remaining);
+        dir_block[min_dir_rec_len(1) + 6] = 2;
+        dir_block[min_dir_rec_len(1) + 7] = EXT4_FT_DIR;
+        memcpy(dir_block.data() + min_dir_rec_len(1) + sizeof(Ext4DirEntry2),
+               "..", 3);
+
+        auto write_dir_res =
+            write_fs_block(block_no, dir_block.data(), dir_block.size());
+        if (!write_dir_res.has_value()) {
+            auto release_res = release_file_inode(inode_id);
+            if (!release_res.has_value()) {
+                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                                    static_cast<unsigned>(inode_id),
+                                    to_cstring(release_res.error()));
+            }
+            propagate_return(write_dir_res);
+        }
+
+        auto insert_res = insert_dir_entry(parent_inode, inode_id, name,
+                                           EXT4_FT_DIR);
+        if (!insert_res.has_value()) {
+            auto release_res = release_file_inode(inode_id);
+            if (!release_res.has_value()) {
+                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                                    static_cast<unsigned>(inode_id),
+                                    to_cstring(release_res.error()));
+            }
+            propagate_return(insert_res);
+        }
+        return inode_id;
+    }
+
     Result<size_t> Ext4Superblock::read_inode_data(inode_t inode_id,
                                                    uint64_t offset, void *buf,
                                                    size_t len) {
@@ -1163,21 +1572,42 @@ namespace ext4 {
         }
         auto size_res = inode_size(inode_id);
         propagate(size_res);
-        if (offset >= size_res.value()) {
-            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        uint64_t current_size = size_res.value();
+
+        const uint64_t end_offset = offset + len;
+        if (end_offset > current_size) {
+            const uint64_t grow_start =
+                (current_size + _block_size - 1) / _block_size;
+            const uint64_t grow_end =
+                (end_offset + _block_size - 1) / _block_size;
+            for (uint64_t logical = grow_start; logical < grow_end;
+                 ++logical) {
+                auto phys_res = extent_lookup(inode_id,
+                                              static_cast<uint32_t>(logical));
+                propagate(phys_res);
+                if (phys_res.value().mapped) {
+                    continue;
+                }
+                auto block_res = alloc_block();
+                propagate(block_res);
+                auto insert_res = insert_extent(inode_id,
+                                                static_cast<uint32_t>(logical),
+                                                block_res.value(), 1);
+                propagate(insert_res);
+            }
+            auto update_res = update_inode_size(inode_id, end_offset);
+            propagate(update_res);
         }
 
-        const size_t writable = static_cast<size_t>(
-            std::min<uint64_t>(len, size_res.value() - offset));
         const auto *in = static_cast<const byte *>(buf);
         size_t done    = 0;
-        while (done < writable) {
+        while (done < len) {
             const uint64_t abs      = offset + done;
             const uint32_t logical  = static_cast<uint32_t>(abs / _block_size);
             const size_t block_off  = static_cast<size_t>(abs % _block_size);
             const size_t chunk =
-                std::min(writable - done, static_cast<size_t>(_block_size) -
-                                               block_off);
+                std::min(len - done, static_cast<size_t>(_block_size) -
+                                          block_off);
             auto phys_res = extent_lookup(inode_id, logical);
             propagate(phys_res);
             if (!phys_res.value().mapped || phys_res.value().unwritten) {
@@ -1255,6 +1685,149 @@ namespace ext4 {
 
     IFsDriver &Ext4Superblock::fs() {
         return *_fs;
+    }
+
+    Result<void> Ext4Superblock::delete_file(inode_t inode_id) {
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        auto mode_res = inode_mode(inode_id);
+        propagate(mode_res);
+        const uint16_t type = mode_res.value() & EXT4_S_IFMT;
+        if (type == EXT4_S_IFDIR) {
+            auto entries_res = read_directory(inode_id);
+            propagate(entries_res);
+            for (const auto &entry : entries_res.value()) {
+                if (entry.name != "." && entry.name != "..") {
+                    unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+                }
+            }
+        }
+
+        auto raw_res = read_inode_raw(inode_id);
+        propagate(raw_res);
+        auto &raw = raw_res.value();
+        if (raw.size() < 100) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        const uint16_t depth =
+            read_le<uint16_t>(raw.data() + 46);
+        uint16_t entries =
+            read_le<uint16_t>(raw.data() + 42);
+
+        if (depth == 0 && entries > 0) {
+            const size_t ext_off = 40 + sizeof(Ext4ExtentHeader);
+            if (ext_off + static_cast<size_t>(entries) * sizeof(Ext4Extent) >
+                raw.size()) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            for (uint16_t i = 0; i < entries; ++i) {
+                const size_t off = ext_off + i * sizeof(Ext4Extent);
+                const uint16_t len_raw =
+                    read_le<uint16_t>(raw.data() + off + 4);
+                const uint32_t elen = extent_len(len_raw);
+                const uint64_t start =
+                    (static_cast<uint64_t>(
+                         read_le<uint16_t>(raw.data() + off + 6))
+                     << 32) |
+                    read_le<uint32_t>(raw.data() + off + 8);
+                for (uint32_t j = 0; j < elen; ++j) {
+                    auto free_res = free_block(start + j);
+                    if (!free_res.has_value()) {
+                        loggers::VFS::WARN(
+                            "Ext4 delete_file free block failed: block=%lu",
+                            (unsigned long)(start + j));
+                    }
+                }
+            }
+            memset(raw.data() + 40, 0, 60);
+            write_le_at<uint16_t>(raw, 40, EXT4_EXT_MAGIC);
+            write_le_at<uint16_t>(raw, 44, 4);
+            write_le_at<uint32_t>(raw, 4, 0);
+            write_le_at<uint32_t>(raw, 108, 0);
+            auto write_res = write_inode_raw(inode_id, raw);
+            propagate(write_res);
+        }
+
+        auto release_res = release_file_inode(inode_id);
+        propagate(release_res);
+        void_return();
+    }
+
+    Result<void> Ext4Superblock::remove_dir_entry(inode_t parent_inode,
+                                                  std::string_view name) {
+        if (_read_only) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        auto raw_res = read_inode_raw(parent_inode);
+        propagate(raw_res);
+        auto valid_res = validate_inode_raw(raw_res.value());
+        propagate(valid_res);
+        const uint16_t mode = read_le_at<uint16_t>(raw_res.value(), 0);
+        if ((mode & EXT4_S_IFMT) != EXT4_S_IFDIR) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto size_res = inode_size(parent_inode);
+        propagate(size_res);
+        const uint64_t block_count =
+            (size_res.value() + _block_size - 1) / _block_size;
+        std::vector<byte> block(_block_size);
+
+        for (uint64_t logical = 0; logical < block_count; ++logical) {
+            auto phys_res = extent_lookup(parent_inode,
+                                          static_cast<uint32_t>(logical));
+            propagate(phys_res);
+            if (!phys_res.value().mapped) continue;
+
+            auto read_res = read_fs_block(phys_res.value().physical_block,
+                                          block.data(), block.size());
+            propagate(read_res);
+
+            size_t off = 0;
+            Ext4DirEntry2 *prev_entry = nullptr;
+            while (off + sizeof(Ext4DirEntry2) <= block.size()) {
+                auto *dirent = reinterpret_cast<Ext4DirEntry2 *>(
+                    block.data() + off);
+                const uint32_t ino = read_le<uint32_t>(&dirent->inode);
+                const uint16_t rec_len =
+                    read_le<uint16_t>(&dirent->rec_len);
+                const uint8_t nlen = dirent->name_len;
+                if (rec_len < sizeof(Ext4DirEntry2) ||
+                    off + rec_len > block.size() ||
+                    nlen > rec_len - sizeof(Ext4DirEntry2)) {
+                    break;
+                }
+
+                if (ino != 0 && nlen == name.size() &&
+                    memcmp(block.data() + off + sizeof(Ext4DirEntry2),
+                           name.data(), nlen) == 0) {
+                    write_le_at<uint32_t>(block, off, 0);
+                    if (prev_entry != nullptr) {
+                        const size_t prev_off =
+                            reinterpret_cast<const byte *>(prev_entry) -
+                            block.data();
+                        const uint16_t prev_rec_len =
+                            read_le<uint16_t>(block.data() + prev_off + 4);
+                        write_le_at<uint16_t>(block, prev_off + 4,
+                                              static_cast<uint16_t>(
+                                                  prev_rec_len + rec_len));
+                    }
+                    return write_fs_block(
+                        phys_res.value().physical_block, block.data(),
+                        block.size());
+                }
+
+                prev_entry = dirent;
+                off += rec_len;
+            }
+        }
+        unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+    }
+
+    Result<void> Ext4Superblock::delete_directory(inode_t inode_id) {
+        return delete_file(inode_id);
     }
 
     Result<void> Ext4Superblock::sync() {

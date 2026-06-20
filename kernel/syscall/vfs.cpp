@@ -237,4 +237,20 @@ namespace syscall {
         unexpect_return(ErrCode::TYPE_NOT_MATCHED);
     }
 
+    Result<void> vfs_unlink(CapIdx parent_dir_cap, const UString &relpath) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        return VFS::inst().unlink(*parent_res.value(), relpath.kbuf());
+    }
+
+    Result<void> vfs_rmdir(CapIdx parent_dir_cap, const UString &relpath) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        return VFS::inst().rmdir(*parent_res.value(), relpath.kbuf());
+    }
+
 }  // namespace syscall

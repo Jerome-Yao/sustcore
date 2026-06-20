@@ -185,6 +185,8 @@ namespace syscall {
             case SYS_VFS_SYNC:            return "SYS_VFS_SYNC";
             case SYS_VFS_MKFILE:          return "SYS_VFS_MKFILE";
             case SYS_VFS_MKDIR:           return "SYS_VFS_MKDIR";
+            case SYS_VFS_UNLINK:          return "SYS_VFS_UNLINK";
+            case SYS_VFS_RMDIR:           return "SYS_VFS_RMDIR";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -307,6 +309,16 @@ namespace syscall {
             case SYS_VFS_MKDIR: {
                 UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 ret = result_value_ret("mkdir", vfs_mkdir(capidx, path, arg1));
+                break;
+            }
+            case SYS_VFS_UNLINK: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret = result_void_ret("unlink", vfs_unlink(capidx, path));
+                break;
+            }
+            case SYS_VFS_RMDIR: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                ret = result_void_ret("rmdir", vfs_rmdir(capidx, path));
                 break;
             }
             case SYS_VFS_READ: {

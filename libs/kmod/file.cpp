@@ -274,6 +274,26 @@ int kmod_mkdir(const char *path) {
     return 0;
 }
 
+int kmod_unlink(const char *path) {
+    auto base = resolve_open_base(path);
+    if (base.cap == cap::null || base.relpath == nullptr ||
+        *base.relpath == '\0')
+    {
+        return -1;
+    }
+    return sys_vfs_unlink(base.cap, base.relpath) ? 0 : -1;
+}
+
+int kmod_rmdir(const char *path) {
+    auto base = resolve_open_base(path);
+    if (base.cap == cap::null || base.relpath == nullptr ||
+        *base.relpath == '\0')
+    {
+        return -1;
+    }
+    return sys_vfs_rmdir(base.cap, base.relpath) ? 0 : -1;
+}
+
 int kmod_mkfile(const char *path, const char *options) {
     flags::oflg_t oflags = 0;
     bool append          = false;
