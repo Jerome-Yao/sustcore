@@ -58,6 +58,8 @@ namespace ext4 {
         [[nodiscard]]
         Result<void> sync() final;
         [[nodiscard]]
+        Result<void> truncate(size_t new_size) final;
+        [[nodiscard]]
         IMetadata &metadata() final;
         [[nodiscard]]
         inode_t inode_id() const final;
@@ -98,6 +100,10 @@ namespace ext4 {
         Result<void> unlink(std::string_view name) final;
         [[nodiscard]]
         Result<void> rmdir(std::string_view name) final;
+        [[nodiscard]]
+        Result<void> rename(std::string_view old_name,
+                            IDirectory &new_parent,
+                            std::string_view new_name) final;
         [[nodiscard]]
         Result<void> sync() final;
         [[nodiscard]]
@@ -210,6 +216,11 @@ namespace ext4 {
         [[nodiscard]]
         Result<void> remove_dir_entry(inode_t parent_inode,
                                        std::string_view name);
+        [[nodiscard]]
+        Result<void> truncate(inode_t inode_id, uint64_t new_size);
+        [[nodiscard]]
+        Result<void> rename(inode_t old_parent, std::string_view old_name,
+                            inode_t new_parent, std::string_view new_name);
         [[nodiscard]]
         Result<Ext4ExtentMapping> extent_lookup_from_node(const byte *node,
                                                           size_t node_size,

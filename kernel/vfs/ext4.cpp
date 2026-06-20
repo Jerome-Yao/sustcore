@@ -208,6 +208,11 @@ namespace ext4 {
         return _sb->sync();
     }
 
+    Result<void> Ext4File::truncate(size_t new_size) {
+        return _sb->truncate(_inode_id, static_cast<uint64_t>(new_size));
+    }
+
+
     IMetadata &Ext4File::metadata() {
         return _metadata;
     }
@@ -322,6 +327,17 @@ namespace ext4 {
         propagate(remove_res);
         _entries_cached = false;
         void_return();
+    }
+
+    Result<void> Ext4Directory::rename(std::string_view old_name,
+                                       IDirectory &new_parent,
+                                       std::string_view new_name) {
+        auto &ext4_new = static_cast<Ext4Directory &>(new_parent);
+        auto res = _sb->rename(_inode_id, old_name,
+                               ext4_new._inode_id, new_name);
+        _entries_cached = false;
+        ext4_new._entries_cached = false;
+        return res;
     }
 
     Result<void> Ext4Directory::sync() {
@@ -1329,7 +1345,163 @@ namespace ext4 {
             return write_inode_raw(inode_id, raw);
         }
 
-        unexpect_return(ErrCode::NOT_SUPPORTED);
+        const uint16_t idx_entries = read_le<uint16_t>(i_block + 2);
+        auto *idxs = reinterpret_cast<Ext4ExtentIdx *>(
+            i_block + sizeof(Ext4ExtentHeader));
+
+        const Ext4ExtentIdx *target_idx = nullptr;
+        for (uint16_t i = 0; i < idx_entries; ++i) {
+            if (read_le<uint32_t>(&idxs[i].ei_block) > logical) break;
+            target_idx = &idxs[i];
+        }
+        if (target_idx == nullptr) {
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+
+        const uint64_t leaf_blk =
+            (static_cast<uint64_t>(read_le<uint16_t>(&target_idx->ei_leaf_hi))
+             << 32) |
+            read_le<uint32_t>(&target_idx->ei_leaf_lo);
+        std::vector<byte> leaf(_block_size);
+        auto read_lf = read_fs_block(leaf_blk, leaf.data(), leaf.size());
+        propagate(read_lf);
+
+        auto *lf_eh =
+            reinterpret_cast<Ext4ExtentHeader *>(leaf.data());
+        const uint16_t lf_entries =
+            read_le<uint16_t>(&lf_eh->eh_entries);
+        const uint16_t lf_max = read_le<uint16_t>(&lf_eh->eh_max);
+        auto *lf_exts = reinterpret_cast<Ext4Extent *>(
+            leaf.data() + sizeof(Ext4ExtentHeader));
+
+        for (uint16_t i = 0; i < lf_entries; ++i) {
+            const uint32_t first = read_le<uint32_t>(&lf_exts[i].ee_block);
+            const uint16_t lr = read_le<uint16_t>(&lf_exts[i].ee_len);
+            const uint32_t elen = extent_len(lr);
+            const uint64_t start =
+                (static_cast<uint64_t>(read_le<uint16_t>(&lf_exts[i].ee_start_hi)) << 32) |
+                read_le<uint32_t>(&lf_exts[i].ee_start_lo);
+
+            if (logical + len == first &&
+                physical + static_cast<uint64_t>(len) * _block_size == start) {
+                write_le_at<uint32_t>(leaf, sizeof(Ext4ExtentHeader) +
+                                              i * sizeof(Ext4Extent), logical);
+                write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) +
+                                              i * sizeof(Ext4Extent) + 4,
+                                      static_cast<uint16_t>(len + elen));
+                return write_fs_block(leaf_blk, leaf.data(), leaf.size());
+            }
+            if (first == logical + len &&
+                start == physical + static_cast<uint64_t>(len) * _block_size) {
+                write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) +
+                                              i * sizeof(Ext4Extent) + 4,
+                                      static_cast<uint16_t>(len + elen));
+                return write_fs_block(leaf_blk, leaf.data(), leaf.size());
+            }
+        }
+
+        if (lf_entries < lf_max) {
+            uint16_t ipos = lf_entries;
+            for (uint16_t i = 0; i < lf_entries; ++i) {
+                if (logical < read_le<uint32_t>(&lf_exts[i].ee_block)) {
+                    ipos = i;
+                    break;
+                }
+            }
+            for (uint16_t i = lf_entries; i > ipos; --i) {
+                const size_t d = sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent);
+                memcpy(leaf.data() + d, leaf.data() + d - sizeof(Ext4Extent),
+                       sizeof(Ext4Extent));
+            }
+            const size_t off =
+                sizeof(Ext4ExtentHeader) + ipos * sizeof(Ext4Extent);
+            write_le_at<uint32_t>(leaf, off, logical);
+            write_le_at<uint16_t>(leaf, off + 4, static_cast<uint16_t>(len));
+            write_le_at<uint16_t>(leaf, off + 6, static_cast<uint16_t>(physical >> 32));
+            write_le_at<uint32_t>(leaf, off + 8, static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
+            write_le_at<uint16_t>(leaf, 2, static_cast<uint16_t>(lf_entries + 1));
+            return write_fs_block(leaf_blk, leaf.data(), leaf.size());
+        }
+
+        if (idx_entries >= max_entries) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+
+        const uint16_t total_lf = static_cast<uint16_t>(lf_entries + 1);
+        const uint16_t half     = total_lf / 2;
+        struct LfEntry { uint32_t block; uint32_t len; uint64_t phys; };
+        std::vector<LfEntry> sorted;
+        bool done = false;
+        for (uint16_t i = 0; i < lf_entries; ++i) {
+            const uint32_t eb = read_le<uint32_t>(&lf_exts[i].ee_block);
+            if (!done && logical < eb) {
+                sorted.push_back({logical, len, physical});
+                done = true;
+            }
+            sorted.push_back({eb, extent_len(read_le<uint16_t>(&lf_exts[i].ee_len)),
+                              (static_cast<uint64_t>(read_le<uint16_t>(&lf_exts[i].ee_start_hi)) << 32) |
+                                  read_le<uint32_t>(&lf_exts[i].ee_start_lo)});
+        }
+        if (!done) sorted.push_back({logical, len, physical});
+
+        auto new_block = alloc_block();
+        propagate(new_block);
+        std::vector<byte> new_leaf(_block_size, 0);
+        write_le_at<uint16_t>(new_leaf, 0, EXT4_EXT_MAGIC);
+        write_le_at<uint16_t>(new_leaf, 4, lf_max);
+        for (uint16_t i = 0; i < half; ++i) {
+            write_le_at<uint32_t>(leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
+                                  sorted[i].block);
+            write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
+                                  static_cast<uint16_t>(sorted[i].len));
+            write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 6,
+                                  static_cast<uint16_t>(sorted[i].phys >> 32));
+            write_le_at<uint32_t>(leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 8,
+                                  static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
+        }
+        write_le_at<uint16_t>(leaf, 2, half);
+        for (uint16_t i = half; i < total_lf; ++i) {
+            const uint16_t j = i - half;
+            write_le_at<uint32_t>(new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent),
+                                  sorted[i].block);
+            write_le_at<uint16_t>(new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 4,
+                                  static_cast<uint16_t>(sorted[i].len));
+            write_le_at<uint16_t>(new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 6,
+                                  static_cast<uint16_t>(sorted[i].phys >> 32));
+            write_le_at<uint32_t>(new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 8,
+                                  static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
+        }
+        write_le_at<uint16_t>(new_leaf, 2, static_cast<uint16_t>(total_lf - half));
+
+        auto w_old = write_fs_block(leaf_blk, leaf.data(), leaf.size());
+        propagate(w_old);
+        auto w_new = write_fs_block(new_block.value(), new_leaf.data(), new_leaf.size());
+        if (!w_new.has_value()) {
+            free_block(new_block.value());
+            propagate_return(w_new);
+        }
+
+        uint16_t ins_pos = idx_entries;
+        for (uint16_t i = 0; i < idx_entries; ++i) {
+            if (sorted[half].block < read_le<uint32_t>(&idxs[i].ei_block)) {
+                ins_pos = i;
+                break;
+            }
+        }
+        for (uint16_t i = idx_entries; i > ins_pos; --i) {
+            const size_t d = 40 + sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
+            memcpy(raw.data() + d, raw.data() + d - sizeof(Ext4ExtentIdx),
+                   sizeof(Ext4ExtentIdx));
+        }
+        const size_t idx_off =
+            40 + sizeof(Ext4ExtentHeader) + ins_pos * sizeof(Ext4ExtentIdx);
+        write_le_at<uint32_t>(raw, idx_off, sorted[half].block);
+        write_le_at<uint32_t>(raw, idx_off + 4,
+                              static_cast<uint32_t>(new_block.value() & 0xFFFFFFFFULL));
+        write_le_at<uint16_t>(raw, idx_off + 8,
+                              static_cast<uint16_t>(new_block.value() >> 32));
+        write_le_at<uint16_t>(raw, 42, static_cast<uint16_t>(idx_entries + 1));
+        return write_inode_raw(inode_id, raw);
     }
 
     Result<void> Ext4Superblock::update_inode_size(inode_t inode_id,
@@ -1461,10 +1633,16 @@ namespace ext4 {
         auto insert_ext = insert_extent(parent_inode,
                                         static_cast<uint32_t>(block_count),
                                         new_block.value(), 1);
-        propagate(insert_ext);
+        if (!insert_ext.has_value()) {
+            free_block(new_block.value());
+            propagate_return(insert_ext);
+        }
         auto update_sz = update_inode_size(
             parent_inode, size_res.value() + _block_size);
-        propagate(update_sz);
+        if (!update_sz.has_value()) {
+            free_block(new_block.value());
+            propagate_return(update_sz);
+        }
 
         std::vector<byte> new_dir_block(_block_size, 0);
         write_le_at<uint32_t>(new_dir_block, 0, child_inode);
@@ -1474,8 +1652,13 @@ namespace ext4 {
         new_dir_block[7] = file_type;
         memcpy(new_dir_block.data() + sizeof(Ext4DirEntry2), name.data(),
                name.size());
-        return write_fs_block(new_block.value(), new_dir_block.data(),
+        auto write_res = write_fs_block(new_block.value(), new_dir_block.data(),
                               new_dir_block.size());
+        if (!write_res.has_value()) {
+            free_block(new_block.value());
+            propagate_return(write_res);
+        }
+        void_return();
     }
 
     Result<inode_t> Ext4Superblock::create_file(inode_t parent_inode,
@@ -1931,6 +2114,95 @@ namespace ext4 {
 
     Result<void> Ext4Superblock::delete_directory(inode_t inode_id) {
         return delete_file(inode_id);
+    }
+
+    Result<void> Ext4Superblock::truncate(inode_t inode_id, uint64_t new_size) {
+        auto mode_res = inode_mode(inode_id);
+        propagate(mode_res);
+        if ((mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFREG) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        auto size_res = inode_size(inode_id);
+        propagate(size_res);
+        const uint64_t old_size   = size_res.value();
+        const uint64_t old_blocks = (old_size + _block_size - 1) / _block_size;
+        const uint64_t new_blocks = (new_size + _block_size - 1) / _block_size;
+
+        if (new_blocks < old_blocks) {
+            for (uint64_t logical = new_blocks; logical < old_blocks;
+                 ++logical) {
+                auto phys_res =
+                    extent_lookup(inode_id, static_cast<uint32_t>(logical));
+                if (phys_res.has_value() && phys_res.value().mapped) {
+                    free_block(phys_res.value().physical_block);
+                }
+            }
+        } else if (new_blocks > old_blocks) {
+            for (uint64_t logical = old_blocks; logical < new_blocks;
+                 ++logical) {
+                auto phys_res =
+                    extent_lookup(inode_id, static_cast<uint32_t>(logical));
+                if (phys_res.has_value() && phys_res.value().mapped) {
+                    continue;
+                }
+                auto block_res = alloc_block();
+                propagate(block_res);
+                std::vector<byte> zero(_block_size, 0);
+                auto write_res = write_fs_block(block_res.value(), zero.data(),
+                                                zero.size());
+                if (!write_res.has_value()) {
+                    free_block(block_res.value());
+                    propagate_return(write_res);
+                }
+                auto insert_res = insert_extent(
+                    inode_id, static_cast<uint32_t>(logical),
+                    block_res.value(), 1);
+                if (!insert_res.has_value()) {
+                    free_block(block_res.value());
+                    propagate_return(insert_res);
+                }
+            }
+        }
+        return update_inode_size(inode_id, new_size);
+    }
+
+    Result<void> Ext4Superblock::rename(inode_t old_parent,
+                                        std::string_view old_name,
+                                        inode_t new_parent,
+                                        std::string_view new_name) {
+        auto entries_res = read_directory(old_parent);
+        propagate(entries_res);
+        inode_t target = 0;
+        bool found     = false;
+        for (const auto &entry : entries_res.value()) {
+            if (entry.name == old_name) {
+                target = entry.inode_id;
+                found  = true;
+                break;
+            }
+        }
+        if (!found) {
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+
+        if (old_parent == new_parent && old_name == new_name) {
+            void_return();
+        }
+
+        auto mode_res = inode_mode(target);
+        propagate(mode_res);
+        const bool is_file =
+            (mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFDIR;
+        auto insert_res =
+            insert_dir_entry(new_parent, target, new_name,
+                             is_file ? EXT4_FT_REG_FILE : EXT4_FT_DIR);
+        if (!insert_res.has_value()) {
+            propagate_return(insert_res);
+        }
+
+        auto remove_res = remove_dir_entry(old_parent, old_name);
+        propagate(remove_res);
+        void_return();
     }
 
     Result<void> Ext4Superblock::sync() {

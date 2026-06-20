@@ -783,6 +783,38 @@ Result<void> VFS::rmdir(cap::Capability &parent_dir_cap,
     return target_dir_res.value()->rmdir(target_res.value().name);
 }
 
+Result<void> VFS::truncate(cap::Capability &file_cap, size_t new_size) {
+    auto *vfile = file_cap.payload_as<VFile>();
+    if (vfile == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    auto file_res = vfile->vinode()->inode()->as_file();
+    propagate(file_res);
+    return file_res.value()->truncate(new_size);
+}
+
+Result<void> VFS::rename(cap::Capability &old_parent_cap,
+                          const char *old_name,
+                          cap::Capability &new_parent_cap,
+                          const char *new_name) {
+    auto *old_parent = old_parent_cap.payload_as<VDirectory>();
+    auto *new_parent = new_parent_cap.payload_as<VDirectory>();
+    if (old_parent == nullptr || new_parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    auto target_res = parse_create_target(old_name);
+    propagate(target_res);
+    auto new_target_res = parse_create_target(new_name);
+    propagate(new_target_res);
+    auto old_dir_res = old_parent->vinode()->inode()->as_directory();
+    propagate(old_dir_res);
+    auto new_dir_res = new_parent->vinode()->inode()->as_directory();
+    propagate(new_dir_res);
+    return old_dir_res.value()->rename(target_res.value().name,
+                                        *new_dir_res.value(),
+                                        new_target_res.value().name);
+}
+
 Result<CapIdx> VFS::open_dir(const char *filepath, cap::CHolder &holder,
                              b64 perm) {
     auto dir_res = _open_dir(filepath);

@@ -297,6 +297,13 @@ public:
     Result<void> rmdir(cap::Capability &parent_dir_cap,
                        const char *relpath);
     [[nodiscard]]
+    Result<void> truncate(cap::Capability &file_cap, size_t new_size);
+    [[nodiscard]]
+    Result<void> rename(cap::Capability &old_parent_cap,
+                        const char *old_name,
+                        cap::Capability &new_parent_cap,
+                        const char *new_name);
+    [[nodiscard]]
     Result<CapIdx> open_dir(const char *filepath, cap::CHolder &holder,
                             b64 perm);
     [[nodiscard]]

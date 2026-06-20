@@ -253,4 +253,22 @@ namespace syscall {
         return VFS::inst().rmdir(*parent_res.value(), relpath.kbuf());
     }
 
+    Result<void> vfs_truncate(CapIdx file_cap, size_t new_size) {
+        auto cap_res = lookup_current_cap(file_cap);
+        propagate(cap_res);
+        return VFS::inst().truncate(*cap_res.value(), new_size);
+    }
+
+    Result<void> vfs_rename(CapIdx old_parent_cap, const UString &old_name,
+                            CapIdx new_parent_cap, const UString &new_name) {
+        auto holder_res = current_holder_for_vfs();
+        propagate(holder_res);
+        auto old_parent_res = lookup_current_cap(old_parent_cap);
+        propagate(old_parent_res);
+        auto new_parent_res = lookup_current_cap(new_parent_cap);
+        propagate(new_parent_res);
+        return VFS::inst().rename(*old_parent_res.value(), old_name.kbuf(),
+                                  *new_parent_res.value(), new_name.kbuf());
+    }
+
 }  // namespace syscall

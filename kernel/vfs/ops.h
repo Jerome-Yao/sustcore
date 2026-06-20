@@ -176,6 +176,11 @@ public:
      */
     [[nodiscard]]
     virtual Result<void> sync() = 0;
+    [[nodiscard]]
+    virtual Result<void> truncate(size_t new_size) {
+        (void)new_size;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
     /**
      * @brief 获取文件内容缓存策略
      *
@@ -226,6 +231,13 @@ public:
     [[nodiscard]]
     virtual Result<void> rmdir(std::string_view name) {
         (void)name;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+    [[nodiscard]]
+    virtual Result<void> rename(std::string_view old_name,
+                                IDirectory &new_parent,
+                                std::string_view new_name) {
+        (void)old_name; (void)new_parent; (void)new_name;
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }
     /**

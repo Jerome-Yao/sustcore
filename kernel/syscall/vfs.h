@@ -51,5 +51,10 @@ namespace syscall {
     Result<void> vfs_unlink(CapIdx parent_dir_cap, const UString &relpath);
     [[nodiscard]]
     Result<void> vfs_rmdir(CapIdx parent_dir_cap, const UString &relpath);
+    [[nodiscard]]
+    Result<void> vfs_truncate(CapIdx file_cap, size_t new_size);
+    [[nodiscard]]
+    Result<void> vfs_rename(CapIdx old_parent_cap, const UString &old_name,
+                            CapIdx new_parent_cap, const UString &new_name);
 
 }  // namespace syscall

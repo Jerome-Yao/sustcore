@@ -294,6 +294,34 @@ int kmod_rmdir(const char *path) {
     return sys_vfs_rmdir(base.cap, base.relpath) ? 0 : -1;
 }
 
+int kmod_truncate(const char *path, size_t new_size) {
+    auto base = resolve_open_base(path);
+    if (base.cap == cap::null || base.relpath == nullptr ||
+        *base.relpath == '\0')
+    {
+        return -1;
+    }
+    CapIdx cap = sys_vfs_open(base.cap, base.relpath, flags::O_WRITE);
+    if (cap == cap::error || cap == cap::null) return -1;
+    bool ok = sys_vfs_truncate(cap, new_size);
+    sys_cap_remove(cap);
+    return ok ? 0 : -1;
+}
+
+int kmod_rename(const char *old_path, const char *new_path) {
+    auto old_base = resolve_open_base(old_path);
+    auto new_base = resolve_open_base(new_path);
+    if (old_base.cap == cap::null || old_base.relpath == nullptr ||
+        *old_base.relpath == '\0' ||
+        new_base.cap == cap::null || new_base.relpath == nullptr ||
+        *new_base.relpath == '\0')
+    {
+        return -1;
+    }
+    return sys_vfs_rename(old_base.cap, old_base.relpath,
+                          new_base.cap, new_base.relpath) ? 0 : -1;
+}
+
 int kmod_mkfile(const char *path, const char *options) {
     flags::oflg_t oflags = 0;
     bool append          = false;

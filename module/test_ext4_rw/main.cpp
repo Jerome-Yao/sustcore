@@ -270,6 +270,61 @@ int kmod_main() {
     sys_cap_remove(ext4_dir);
     printf("test_ext4_rw: rmdir PASS\n");
 
+    // --- rename test ---
+    printf("test_ext4_rw: rename test\n");
+    fd = kmod_mkfile("/test_img/rename_src", "w+");
+    if (fd < 0) { printf("test_ext4_rw: create rename_src failed\n"); exit(-1); }
+    kmod_fwrite(fd, "rename_data", 11);
+    kmod_fclose(fd);
+
+    ret = kmod_rename("/test_img/rename_src", "/test_img/rename_dst");
+    if (ret < 0) { printf("test_ext4_rw: rename failed\n"); exit(-1); }
+
+    ext4_dir = sys_vfs_opendir(root_cap, "test_img", flags::O_READ);
+    if (ext4_dir == cap::null || ext4_dir == cap::error) {
+        printf("test_ext4_rw: opendir for rename check failed\n"); exit(-1);
+    }
+    if (dir_has_entry(ext4_dir, "rename_src", true)) {
+        printf("test_ext4_rw: old name still visible after rename\n");
+        sys_cap_remove(ext4_dir); exit(-1);
+    }
+    if (!dir_has_entry(ext4_dir, "rename_dst", true)) {
+        printf("test_ext4_rw: new name not found after rename\n");
+        sys_cap_remove(ext4_dir); exit(-1);
+    }
+    sys_cap_remove(ext4_dir);
+    kmod_unlink("/test_img/rename_dst");
+    printf("test_ext4_rw: rename PASS\n");
+
+    // --- truncate test ---
+    printf("test_ext4_rw: truncate test\n");
+    fd = kmod_mkfile("/test_img/trunc_file", "w+");
+    if (fd < 0) { printf("test_ext4_rw: create trunc_file failed\n"); exit(-1); }
+    kmod_fwrite(fd, "1234567890", 10);
+    kmod_fclose(fd);
+    ret = kmod_truncate("/test_img/trunc_file", 5);
+    if (ret < 0) { printf("test_ext4_rw: truncate shrink failed\n"); exit(-1); }
+    fd = kmod_fopen("/test_img/trunc_file", "r");
+    if (fd < 0) { printf("test_ext4_rw: reopen trunc_file failed\n"); exit(-1); }
+    char tbuf[16];
+    memset(tbuf, 0, sizeof(tbuf));
+    got = kmod_fread(fd, tbuf, 10);
+    kmod_fclose(fd);
+    if (got != 5 || memcmp(tbuf, "12345", 5) != 0) {
+        printf("test_ext4_rw: truncate data mismatch\n"); exit(-1);
+    }
+    ret = kmod_truncate("/test_img/trunc_file", 8);
+    if (ret < 0) { printf("test_ext4_rw: truncate grow failed\n"); exit(-1); }
+    fd = kmod_fopen("/test_img/trunc_file", "r");
+    memset(tbuf, 0, sizeof(tbuf));
+    got = kmod_fread(fd, tbuf, 8);
+    kmod_fclose(fd);
+    if (got != 8 || memcmp(tbuf, "12345\0\0\0", 8) != 0) {
+        printf("test_ext4_rw: truncate grow data mismatch\n"); exit(-1);
+    }
+    kmod_unlink("/test_img/trunc_file");
+    printf("test_ext4_rw: truncate PASS\n");
+
     printf("test_ext4_rw: ALL PASS\n");
     exit(0);
     return 0;
