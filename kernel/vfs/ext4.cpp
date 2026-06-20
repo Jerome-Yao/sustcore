@@ -1155,94 +1155,181 @@ namespace ext4 {
         }
 
         byte *const i_block  = raw.data() + 40;
-        const size_t ib_size = 60;
         auto *eh = reinterpret_cast<Ext4ExtentHeader *>(i_block);
-
         const uint16_t magic = read_le<uint16_t>(&eh->eh_magic);
         if (magic != EXT4_EXT_MAGIC) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        const uint16_t depth    = read_le<uint16_t>(&eh->eh_depth);
-        uint16_t entries        = read_le<uint16_t>(&eh->eh_entries);
+        const uint16_t depth      = read_le<uint16_t>(&eh->eh_depth);
+        uint16_t entries          = read_le<uint16_t>(&eh->eh_entries);
         const uint16_t max_entries = read_le<uint16_t>(&eh->eh_max);
 
-        if (depth != 0) {
-            unexpect_return(ErrCode::NOT_SUPPORTED);
+        if (depth > EXT4_MAX_EXTENT_DEPTH) {
+            unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        auto *extents = reinterpret_cast<Ext4Extent *>(
-            i_block + sizeof(Ext4ExtentHeader));
+        if (depth == 0) {
+            auto *extents = reinterpret_cast<Ext4Extent *>(
+                i_block + sizeof(Ext4ExtentHeader));
 
-        for (uint16_t i = 0; i < entries; ++i) {
-            const uint32_t first   = read_le<uint32_t>(&extents[i].ee_block);
-            const uint16_t len_raw = read_le<uint16_t>(&extents[i].ee_len);
-            const uint32_t elen    = extent_len(len_raw);
+            for (uint16_t i = 0; i < entries; ++i) {
+                const uint32_t first = read_le<uint32_t>(&extents[i].ee_block);
+                const uint16_t len_raw = read_le<uint16_t>(&extents[i].ee_len);
+                const uint32_t elen = extent_len(len_raw);
 
-            if (logical + len == first &&
-                physical + static_cast<uint64_t>(len) * _block_size ==
+                if (logical + len == first &&
+                    physical + static_cast<uint64_t>(len) * _block_size ==
+                        ((static_cast<uint64_t>(
+                              read_le<uint16_t>(&extents[i].ee_start_hi))
+                          << 32) |
+                         read_le<uint32_t>(&extents[i].ee_start_lo))) {
+                    write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
+                                                 i * sizeof(Ext4Extent),
+                                          logical);
+                    write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
+                                                 i * sizeof(Ext4Extent) + 4,
+                                          static_cast<uint16_t>(len + elen));
+                    return write_inode_raw(inode_id, raw);
+                }
+
+                if (first == logical + len &&
                     ((static_cast<uint64_t>(
                           read_le<uint16_t>(&extents[i].ee_start_hi))
                       << 32) |
-                     read_le<uint32_t>(&extents[i].ee_start_lo)))
-            {
-                write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                                             i * sizeof(Ext4Extent),
-                                      logical);
-                const uint16_t new_len = static_cast<uint16_t>(len + elen);
-                write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                                             i * sizeof(Ext4Extent) + 4,
-                                      new_len);
+                     read_le<uint32_t>(&extents[i].ee_start_lo)) ==
+                        physical + static_cast<uint64_t>(len) * _block_size) {
+                    write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
+                                                 i * sizeof(Ext4Extent) + 4,
+                                          static_cast<uint16_t>(len + elen));
+                    return write_inode_raw(inode_id, raw);
+                }
+            }
+
+            if (entries < max_entries) {
+                uint16_t insert_pos = entries;
+                for (uint16_t i = 0; i < entries; ++i) {
+                    if (logical < read_le<uint32_t>(&extents[i].ee_block)) {
+                        insert_pos = i;
+                        break;
+                    }
+                }
+                for (uint16_t i = entries; i > insert_pos; --i) {
+                    const size_t dst = 40 + sizeof(Ext4ExtentHeader) +
+                                       i * sizeof(Ext4Extent);
+                    memcpy(raw.data() + dst, raw.data() + dst - sizeof(Ext4Extent),
+                           sizeof(Ext4Extent));
+                }
+                const size_t off =
+                    40 + sizeof(Ext4ExtentHeader) + insert_pos * sizeof(Ext4Extent);
+                write_le_at<uint32_t>(raw, off, logical);
+                write_le_at<uint16_t>(raw, off + 4, static_cast<uint16_t>(len));
+                write_le_at<uint16_t>(raw, off + 6,
+                                      static_cast<uint16_t>(physical >> 32));
+                write_le_at<uint32_t>(raw, off + 8,
+                                      static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
+                write_le_at<uint16_t>(raw, 42,
+                                      static_cast<uint16_t>(entries + 1));
                 return write_inode_raw(inode_id, raw);
             }
 
-            if (first == logical + len &&
-                ((static_cast<uint64_t>(
-                      read_le<uint16_t>(&extents[i].ee_start_hi))
-                  << 32) |
-                 read_le<uint32_t>(&extents[i].ee_start_lo)) ==
-                    physical + static_cast<uint64_t>(len) * _block_size)
-            {
-                const uint16_t new_len = static_cast<uint16_t>(len + elen);
-                write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                                             i * sizeof(Ext4Extent) + 4,
-                                      new_len);
-                return write_inode_raw(inode_id, raw);
+            // leaf full — split: allocate two new leaf blocks
+            const uint16_t total = static_cast<uint16_t>(entries + 1);
+            const uint16_t half  = total / 2;
+
+            struct NewEntry { uint32_t block; uint32_t len; uint64_t phys; };
+            std::vector<NewEntry> sorted;
+            bool inserted = false;
+            for (uint16_t i = 0; i < entries; ++i) {
+                const uint32_t eb = read_le<uint32_t>(&extents[i].ee_block);
+                if (!inserted && logical < eb) {
+                    sorted.push_back({logical, len, physical});
+                    inserted = true;
+                }
+                sorted.push_back({eb, extent_len(read_le<uint16_t>(&extents[i].ee_len)),
+                                  (static_cast<uint64_t>(read_le<uint16_t>(&extents[i].ee_start_hi)) << 32) |
+                                      read_le<uint32_t>(&extents[i].ee_start_lo)});
             }
-        }
-
-        if (entries >= max_entries) {
-            unexpect_return(ErrCode::NOT_SUPPORTED);
-        }
-
-        uint16_t insert_pos = entries;
-        for (uint16_t i = 0; i < entries; ++i) {
-            if (logical < read_le<uint32_t>(&extents[i].ee_block)) {
-                insert_pos = i;
-                break;
+            if (!inserted) {
+                sorted.push_back({logical, len, physical});
             }
+
+            auto blk_a = alloc_block();
+            propagate(blk_a);
+            auto blk_b = alloc_block();
+            if (!blk_b.has_value()) {
+                free_block(blk_a.value());
+                propagate_return(blk_b);
+            }
+
+            std::vector<byte> leaf_a(_block_size, 0);
+            std::vector<byte> leaf_b(_block_size, 0);
+            auto *ha = reinterpret_cast<Ext4ExtentHeader *>(leaf_a.data());
+            auto *hb = reinterpret_cast<Ext4ExtentHeader *>(leaf_b.data());
+            write_le_at<uint16_t>(leaf_a, 0, EXT4_EXT_MAGIC);
+            write_le_at<uint16_t>(leaf_a, 4, max_entries);
+            write_le_at<uint16_t>(leaf_a, 6, 0);
+            write_le_at<uint16_t>(leaf_b, 0, EXT4_EXT_MAGIC);
+            write_le_at<uint16_t>(leaf_b, 4, max_entries);
+            write_le_at<uint16_t>(leaf_b, 6, 0);
+
+            auto *ea = reinterpret_cast<Ext4Extent *>(
+                leaf_a.data() + sizeof(Ext4ExtentHeader));
+            auto *eb = reinterpret_cast<Ext4Extent *>(
+                leaf_b.data() + sizeof(Ext4ExtentHeader));
+
+            for (uint16_t i = 0; i < half; ++i) {
+                write_le_at<uint32_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
+                                      sorted[i].block);
+                write_le_at<uint16_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
+                                      static_cast<uint16_t>(sorted[i].len));
+                write_le_at<uint16_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 6,
+                                      static_cast<uint16_t>(sorted[i].phys >> 32));
+                write_le_at<uint32_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 8,
+                                      static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
+            }
+            write_le_at<uint16_t>(leaf_a, 2, half);
+
+            for (uint16_t i = half; i < total; ++i) {
+                const uint16_t j = i - half;
+                write_le_at<uint32_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent),
+                                      sorted[i].block);
+                write_le_at<uint16_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 4,
+                                      static_cast<uint16_t>(sorted[i].len));
+                write_le_at<uint16_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 6,
+                                      static_cast<uint16_t>(sorted[i].phys >> 32));
+                write_le_at<uint32_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 8,
+                                      static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
+            }
+            write_le_at<uint16_t>(leaf_b, 2, static_cast<uint16_t>(total - half));
+
+            auto wa = write_fs_block(blk_a.value(), leaf_a.data(), leaf_a.size());
+            propagate(wa);
+            auto wb = write_fs_block(blk_b.value(), leaf_b.data(), leaf_b.size());
+            if (!wb.has_value()) {
+                free_block(blk_b.value());
+                propagate_return(wb);
+            }
+
+            // convert inode's i_block to root index node
+            write_le_at<uint16_t>(raw, 42, 2);
+            write_le_at<uint16_t>(raw, 46, 1);
+            auto *idx = reinterpret_cast<Ext4ExtentIdx *>(i_block + sizeof(Ext4ExtentHeader));
+            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader), sorted[0].block);
+            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 4,
+                                  static_cast<uint32_t>(blk_a.value() & 0xFFFFFFFFULL));
+            write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 8,
+                                  static_cast<uint16_t>(blk_a.value() >> 32));
+            memset(raw.data() + 40 + sizeof(Ext4ExtentHeader) + 12, 0, 12);
+            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 12, sorted[half].block);
+            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 16,
+                                  static_cast<uint32_t>(blk_b.value() & 0xFFFFFFFFULL));
+            write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 20,
+                                  static_cast<uint16_t>(blk_b.value() >> 32));
+            return write_inode_raw(inode_id, raw);
         }
 
-        for (uint16_t i = entries; i > insert_pos; --i) {
-            const size_t dst = 40 + sizeof(Ext4ExtentHeader) +
-                               i * sizeof(Ext4Extent);
-            const size_t src = dst - sizeof(Ext4Extent);
-            memcpy(raw.data() + dst, raw.data() + src, sizeof(Ext4Extent));
-        }
-
-        const size_t entry_off =
-            40 + sizeof(Ext4ExtentHeader) + insert_pos * sizeof(Ext4Extent);
-        write_le_at<uint32_t>(raw, entry_off, logical);
-        write_le_at<uint16_t>(raw, entry_off + 4,
-                              static_cast<uint16_t>(len));
-        write_le_at<uint16_t>(raw, entry_off + 6,
-                              static_cast<uint16_t>(physical >> 32));
-        write_le_at<uint32_t>(raw, entry_off + 8,
-                              static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
-        write_le_at<uint16_t>(raw, 42,
-                              static_cast<uint16_t>(entries + 1));
-
-        return write_inode_raw(inode_id, raw);
+        unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
     Result<void> Ext4Superblock::update_inode_size(inode_t inode_id,
@@ -1369,7 +1456,26 @@ namespace ext4 {
             }
         }
 
-        unexpect_return(ErrCode::NOT_SUPPORTED);
+        auto new_block = alloc_block();
+        propagate(new_block);
+        auto insert_ext = insert_extent(parent_inode,
+                                        static_cast<uint32_t>(block_count),
+                                        new_block.value(), 1);
+        propagate(insert_ext);
+        auto update_sz = update_inode_size(
+            parent_inode, size_res.value() + _block_size);
+        propagate(update_sz);
+
+        std::vector<byte> new_dir_block(_block_size, 0);
+        write_le_at<uint32_t>(new_dir_block, 0, child_inode);
+        write_le_at<uint16_t>(new_dir_block, 4,
+                              static_cast<uint16_t>(_block_size));
+        new_dir_block[6] = static_cast<uint8_t>(name.size());
+        new_dir_block[7] = file_type;
+        memcpy(new_dir_block.data() + sizeof(Ext4DirEntry2), name.data(),
+               name.size());
+        return write_fs_block(new_block.value(), new_dir_block.data(),
+                              new_dir_block.size());
     }
 
     Result<inode_t> Ext4Superblock::create_file(inode_t parent_inode,
@@ -1691,6 +1797,8 @@ namespace ext4 {
         if (_read_only) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
+        auto size_res = inode_size(inode_id);
+        propagate(size_res);
         auto mode_res = inode_mode(inode_id);
         propagate(mode_res);
         const uint16_t type = mode_res.value() & EXT4_S_IFMT;
@@ -1704,51 +1812,46 @@ namespace ext4 {
             }
         }
 
+        const uint64_t block_count =
+            (size_res.value() + _block_size - 1) / _block_size;
+        for (uint64_t logical = 0; logical < block_count; ++logical) {
+            auto phys_res =
+                extent_lookup(inode_id, static_cast<uint32_t>(logical));
+            if (!phys_res.has_value()) continue;
+            if (!phys_res.value().mapped) continue;
+            auto free_res = free_block(phys_res.value().physical_block);
+            if (!free_res.has_value()) {
+                loggers::VFS::WARN("Ext4 delete_file free block failed: block=%lu",
+                                    (unsigned long)phys_res.value().physical_block);
+            }
+        }
+
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
         auto &raw = raw_res.value();
-        if (raw.size() < 100) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        const uint16_t depth =
-            read_le<uint16_t>(raw.data() + 46);
-        uint16_t entries =
-            read_le<uint16_t>(raw.data() + 42);
-
-        if (depth == 0 && entries > 0) {
-            const size_t ext_off = 40 + sizeof(Ext4ExtentHeader);
-            if (ext_off + static_cast<size_t>(entries) * sizeof(Ext4Extent) >
-                raw.size()) {
-                unexpect_return(ErrCode::INVALID_PARAM);
-            }
-            for (uint16_t i = 0; i < entries; ++i) {
-                const size_t off = ext_off + i * sizeof(Ext4Extent);
-                const uint16_t len_raw =
-                    read_le<uint16_t>(raw.data() + off + 4);
-                const uint32_t elen = extent_len(len_raw);
-                const uint64_t start =
+        const uint16_t depth = read_le<uint16_t>(raw.data() + 46);
+        if (depth > 0) {
+            const uint16_t idx_entries = read_le<uint16_t>(raw.data() + 42);
+            const size_t idx_base = 40 + sizeof(Ext4ExtentHeader);
+            for (uint16_t i = 0; i < idx_entries; ++i) {
+                const size_t off = idx_base + i * sizeof(Ext4ExtentIdx);
+                const uint64_t leaf_block =
                     (static_cast<uint64_t>(
-                         read_le<uint16_t>(raw.data() + off + 6))
+                         read_le<uint16_t>(raw.data() + off + 8))
                      << 32) |
-                    read_le<uint32_t>(raw.data() + off + 8);
-                for (uint32_t j = 0; j < elen; ++j) {
-                    auto free_res = free_block(start + j);
-                    if (!free_res.has_value()) {
-                        loggers::VFS::WARN(
-                            "Ext4 delete_file free block failed: block=%lu",
-                            (unsigned long)(start + j));
-                    }
+                    read_le<uint32_t>(raw.data() + off + 4);
+                if (leaf_block != 0) {
+                    free_block(leaf_block);
                 }
             }
-            memset(raw.data() + 40, 0, 60);
-            write_le_at<uint16_t>(raw, 40, EXT4_EXT_MAGIC);
-            write_le_at<uint16_t>(raw, 44, 4);
-            write_le_at<uint32_t>(raw, 4, 0);
-            write_le_at<uint32_t>(raw, 108, 0);
-            auto write_res = write_inode_raw(inode_id, raw);
-            propagate(write_res);
         }
+        memset(raw.data() + 40, 0, 60);
+        write_le_at<uint16_t>(raw_res.value(), 40, EXT4_EXT_MAGIC);
+        write_le_at<uint16_t>(raw_res.value(), 44, 4);
+        write_le_at<uint32_t>(raw_res.value(), 4, 0);
+        write_le_at<uint32_t>(raw_res.value(), 108, 0);
+        auto write_res = write_inode_raw(inode_id, raw_res.value());
+        propagate(write_res);
 
         auto release_res = release_file_inode(inode_id);
         propagate(release_res);

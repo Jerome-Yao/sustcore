@@ -144,6 +144,48 @@ int kmod_main() {
     }
     printf("test_ext4_rw: write+read PASS\n");
 
+    // --- large write test (exercises extent split) ---
+    printf("test_ext4_rw: large write test\n");
+    kmod_fclose(fd);
+    fd = kmod_mkfile("/test_img/large_file", "w+");
+    if (fd < 0) {
+        fd = kmod_fopen("/test_img/large_file", "r+");
+        if (fd < 0) {
+            printf("test_ext4_rw: create large_file failed\n");
+            exit(-1);
+        }
+    }
+    constexpr size_t kLargeSize = 10240;
+    char large_buf[kLargeSize];
+    for (size_t i = 0; i < kLargeSize; ++i) large_buf[i] = static_cast<char>(i & 0xFF);
+    written = kmod_fwrite(fd, large_buf, kLargeSize);
+    if (written != kLargeSize) {
+        printf("test_ext4_rw: large write failed wrote=%u\n",
+               static_cast<unsigned>(written));
+        kmod_fclose(fd);
+        exit(-1);
+    }
+    kmod_fclose(fd);
+    fd = kmod_fopen("/test_img/large_file", "r");
+    if (fd < 0) { printf("test_ext4_rw: reopen large_file failed\n"); exit(-1); }
+    memset(large_buf, 0, kLargeSize);
+    got = kmod_fread(fd, large_buf, kLargeSize);
+    kmod_fclose(fd);
+    if (got != kLargeSize) {
+        printf("test_ext4_rw: large read failed got=%u\n",
+               static_cast<unsigned>(got));
+        exit(-1);
+    }
+    for (size_t i = 0; i < kLargeSize; ++i) {
+        if (static_cast<unsigned char>(large_buf[i]) != static_cast<unsigned char>(i & 0xFF)) {
+            printf("test_ext4_rw: large data mismatch at %u\n",
+                   static_cast<unsigned>(i));
+            exit(-1);
+        }
+    }
+    kmod_fclose(fd);
+    printf("test_ext4_rw: large write+read PASS\n");
+
     // verify file visible in directory
     CapIdx ext4_dir = sys_vfs_opendir(root_cap, "test_img", flags::O_READ);
     if (ext4_dir == cap::null || ext4_dir == cap::error) {
