@@ -2193,6 +2193,50 @@ namespace ext4 {
         propagate(mode_res);
         const bool is_file =
             (mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFDIR;
+
+        if (old_parent == new_parent) {
+            auto sz = inode_size(old_parent);
+            propagate(sz);
+            const uint64_t blk_cnt = (sz.value() + _block_size - 1) / _block_size;
+            std::vector<byte> blk(_block_size);
+            for (uint64_t lg = 0; lg < blk_cnt; ++lg) {
+                auto phys = extent_lookup(old_parent, static_cast<uint32_t>(lg));
+                propagate(phys);
+                if (!phys.value().mapped) continue;
+                auto rd = read_fs_block(phys.value().physical_block, blk.data(), _block_size);
+                propagate(rd);
+                size_t off = 0;
+                while (off + sizeof(Ext4DirEntry2) <= _block_size) {
+                    auto *de = reinterpret_cast<Ext4DirEntry2 *>(blk.data() + off);
+                    const uint32_t ino = read_le<uint32_t>(&de->inode);
+                    const uint16_t rl = read_le<uint16_t>(&de->rec_len);
+                    const uint8_t nl = de->name_len;
+                    if (rl < sizeof(Ext4DirEntry2) || off + rl > _block_size ||
+                        nl > rl - sizeof(Ext4DirEntry2)) break;
+                    if (ino != 0 && nl == old_name.size() &&
+                        memcmp(blk.data() + off + sizeof(Ext4DirEntry2),
+                               old_name.data(), nl) == 0) {
+                        const uint16_t need = min_dir_rec_len(new_name.size());
+                        if (need > rl) {
+                            unexpect_return(ErrCode::NOT_SUPPORTED);
+                        }
+                        blk[off + 6] = static_cast<uint8_t>(new_name.size());
+                        memset(blk.data() + off + sizeof(Ext4DirEntry2), 0, nl);
+                        memcpy(blk.data() + off + sizeof(Ext4DirEntry2),
+                               new_name.data(), new_name.size());
+                        auto wr = write_fs_block(phys.value().physical_block,
+                                                 blk.data(), _block_size);
+                        propagate(wr);
+                        auto sync_res = sync();
+                        propagate(sync_res);
+                        void_return();
+                    }
+                    off += rl;
+                }
+            }
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+
         auto insert_res =
             insert_dir_entry(new_parent, target, new_name,
                              is_file ? EXT4_FT_REG_FILE : EXT4_FT_DIR);
