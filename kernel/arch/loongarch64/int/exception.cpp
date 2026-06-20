@@ -500,7 +500,7 @@ namespace exception {
             ctx->linux_ra() = ctx->pc() + 4;
             ctx->pc() =
                 current_tcb->task->linux_subsystem_entry.arith();
-            loggers::SYSCALL::INFO(
+            loggers::SYSCALL::DEBUG(
                 "POSIX Linux syscall 重定向: pid=%lu sysno=%lu entry=%p ret=%p",
                 current_tcb->task->pid, args.syscall_number,
                 current_tcb->task->linux_subsystem_entry.addr(),

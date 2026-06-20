@@ -9,26 +9,15 @@
  *
  */
 
-#include <sus/types.h>
-#include <syscall.h>
-
 #include <cstddef>
+#include <std/stdio.h>
+
+#include <sus/types.h>
+#include <sustcore/syscall_str.h>
+#include <syscall.h>
+#include <syscall.h.in>
 
 volatile bool g_linux_initialized = false;
-
-size_t strlen(const char *str) {
-    size_t len = 0;
-    while (str[len] != '\0') {
-        ++len;
-    }
-    return len;
-}
-
-size_t puts(const char *str) {
-    size_t len = strlen(str);
-    sys_write_serial(str, len);
-    return len;
-}
 
 extern "C" void linux_init();
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
@@ -45,10 +34,9 @@ extern "C" size_t linux_ss_main(size_t a0, size_t a1, size_t a2, size_t a3,
 
 extern "C" void linux_init() {
     g_linux_initialized = true;
-    puts("linux-subsystem: initialized\n");
+    puts("linux-subsystem: initialized");
 }
 
-#define LINUX_SYS_WRITE 64
 #define INVALID_VALUE   0xFFFF'FFFF'FFFF'FFFF
 
 size_t linux_sys_write(size_t fd, const void *buf, size_t len) {
@@ -56,17 +44,18 @@ size_t linux_sys_write(size_t fd, const void *buf, size_t len) {
         sys_write_serial(reinterpret_cast<const char *>(buf), len);
         return len;
     }
-    puts("linux-subsystem: unsupported fd\n");
+    printf("linux-subsystem: unsupported fd %d\n", fd);
     return INVALID_VALUE;
 }
 
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                  size_t a4, size_t a5, size_t a6, size_t a7) {
     switch (a7) {
-        case LINUX_SYS_WRITE:
+        case __NR_write:
             return linux_sys_write(a0, reinterpret_cast<const void *>(a1), a2);
         default:
-            puts("linux-subsystem: unknown syscall\n");
+            printf("linux-subsystem: unsupported syscall %s (%d)\n",
+                   syscall_to_string(a7), a7);
             return INVALID_VALUE;
     }
 }

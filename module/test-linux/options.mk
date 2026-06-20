@@ -21,6 +21,7 @@ include-cpp := -I$(path-include) -I$(path-include)/std -I$(path-include)/std/c++
 	-I$(path-third_party)/include/std -I$(component-root) -I$(path-include)/arch
 defs-cpp := -DASSERT_IMPLEMENTED=0 $(defs-mode-cpp)
 
-# ifeq ($(architecture),loongarch64)
-# flags-cpp += -mno-lsx
-# endif
+include-asm := -I$(path-include) -I$(path-include)/std \
+	-I$(path-third_party)/include -I$(path-third_party)/include/std \
+	-I$(component-root)
+
