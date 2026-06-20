@@ -137,8 +137,7 @@ namespace tarfs {
                 util::Path rel = entry_path.relative_to(parent_path);
                 if (rel != "." && rel != "" && rel.filename() == rel) {
                     entries.push_back(DirectoryEntryInfo{
-                        .is_file = p->header.typeflag[0] != '5',
-                        .name    = std::string(rel.view()),
+                        .name = std::string(rel.view()),
                     });
                 }
             }

@@ -192,6 +192,9 @@ namespace syscall {
             case SYS_VFS_RENAME:          return "SYS_VFS_RENAME";
             case SYS_VFS_SYMLINK:         return "SYS_VFS_SYMLINK";
             case SYS_VFS_LINK:           return "SYS_VFS_LINK";
+            case SYS_VFS_STAT:           return "SYS_VFS_STAT";
+            case SYS_VFS_LSTAT:          return "SYS_VFS_LSTAT";
+            case SYS_VFS_READLINK:       return "SYS_VFS_READLINK";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -375,7 +378,7 @@ namespace syscall {
             case SYS_VFS_SYMLINK: {
                 UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 UString target((VirAddr)arg1, MAX_SYSCALL_PATH);
-                ret = result_value_ret(
+                ret = result_void_ret(
                     "symlink", vfs_symlink(capidx, path, target));
                 break;
             }
@@ -383,6 +386,28 @@ namespace syscall {
                 UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
                 ret = result_void_ret(
                     "link", vfs_link(capidx, path, arg1));
+                break;
+            }
+            case SYS_VFS_STAT: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                UBuffer buf((VirAddr)arg1, sizeof(NodeMeta));
+                ret = result_void_ret("stat",
+                                      vfs_stat(capidx, path, std::move(buf)));
+                break;
+            }
+            case SYS_VFS_LSTAT: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                UBuffer buf((VirAddr)arg1, sizeof(NodeMeta));
+                ret = result_void_ret("lstat",
+                                      vfs_lstat(capidx, path, std::move(buf)));
+                break;
+            }
+            case SYS_VFS_READLINK: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                UBuffer buf((VirAddr)arg1, arg2);
+                ret = result_value_ret(
+                    "readlink",
+                    vfs_readlink(capidx, path, std::move(buf), arg2));
                 break;
             }
             case SYS_VFS_READ: {

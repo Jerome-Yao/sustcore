@@ -329,12 +329,7 @@ int kmod_symlink(const char *path, const char *target) {
     {
         return -1;
     }
-    CapIdx cap = sys_vfs_symlink(base.cap, base.relpath, target);
-    if (cap == cap::error || cap == cap::null) {
-        return -1;
-    }
-    sys_cap_remove(cap);
-    return 0;
+    return sys_vfs_symlink(base.cap, base.relpath, target) ? 0 : -1;
 }
 
 int kmod_link(const char *path, const char *target_path) {

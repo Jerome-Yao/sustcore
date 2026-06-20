@@ -26,7 +26,7 @@ namespace {
 extern "C" long linux_write(size_t fd, const void *buf, size_t len);
 
 extern "C" [[noreturn]] void test_linux_main() {
-    const char *msg = "test-linux: trigger linux write syscall\n";
+    const char *msg = "Hello, linux subsystem!\n";
     (void)linux_write(STDOUT_FD, msg, strlen(msg));
     (void)linux_write(STDOUT_FD, msg, strlen(msg));
     (void)linux_write(STDOUT_FD, msg, strlen(msg));

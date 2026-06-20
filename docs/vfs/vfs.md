@@ -54,6 +54,11 @@ VFS 当前承担四类职责:
 3. 用返回的 `IINode` 构造 `VINode`。
 4. 若 `inode_cache() != INodeCachePolicy::NONE`，则把 `VINode` 放入缓存。
 
+当 inode 仍然存在但其内容或目录项视图已变化时，VFS 会优先调用
+`invalidate_inode(inode_id)` 原地刷新已缓存的 `VINode`，而不是移除该
+`VINode` 对象本身。这样可以保持引用该 vnode 的挂载键和已打开 payload
+地址稳定。
+
 `VSuperblock::on_death()` 会释放 inode 缓存引用并删除底层 `ISuperblock`。
 
 ### `VINode`
@@ -65,6 +70,9 @@ VFS 当前承担四类职责:
 - `util::refc_ptr<VSuperblock> _vsb`
 
 这保证只要 VFS 层仍持有某个 vnode，其所属文件系统驱动和 superblock 都不会提前销毁。
+
+`VINode::invalidate()` 会重新向底层 superblock 请求同一 `inode_id` 的
+新 `IINode`，并在保留 `VINode *` 身份不变的前提下替换内部 `_inode`。
 
 ### `VFile`
 

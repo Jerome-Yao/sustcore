@@ -76,6 +76,7 @@ public:
         return *_fsd;
     }
     Result<util::refc_ptr<VINode>> get_vnode(inode_t inode_id);
+    Result<void> invalidate_inode(inode_t inode_id);
     void evict_inode(inode_t inode_id);
     void on_death();
 };
@@ -93,6 +94,8 @@ public:
     void on_death() {
         delete this;
     }
+
+    Result<void> invalidate();
 
     constexpr IINode *inode() const {
         return _inode.get();
@@ -202,6 +205,16 @@ private:
     Result<util::refc_ptr<VINode>> _resolve_from(
         util::refc_ptr<VINode> base, const util::Path &base_path,
         const util::Path &path, VSuperblock *vsb) const;
+    [[nodiscard]]
+    Result<util::refc_ptr<VINode>> _resolve_path(
+        util::refc_ptr<VINode> base, util::Path &mount_path,
+        const util::Path &base_path, const util::Path &path, VSuperblock *vsb,
+        size_t symlink_budget, bool follow_final_symlink = true) const;
+    [[nodiscard]]
+    Result<util::refc_ptr<VINode>> _follow_symlink(
+        util::refc_ptr<VINode> symlink_vnode, const util::Path &mount_path,
+        const util::Path &symlink_path, const util::Path &remaining_path,
+        size_t symlink_budget, bool follow_final_symlink) const;
 
     [[nodiscard]]
     Result<VFile *> _open_file_at(VINode &parent, const util::Path &mount_path,
@@ -220,7 +233,7 @@ private:
     Result<VDirectory *> _open_dir(const char *filepath);
 
     [[nodiscard]]
-    Result<MountRecord *> _lookup_mount_record(const MountKey &key);
+    Result<MountRecord *> _lookup_mount_record(const MountKey &key) const;
     [[nodiscard]]
     Result<std::pair<MountKey, util::Path>> _build_mount_key(
         const util::Path &mount_path);
@@ -229,7 +242,12 @@ private:
 
     [[nodiscard]]
     Result<util::refc_ptr<VINode>> _resolve_inode(const util::Path &path,
-                                                  util::Path &mount_path);
+                                                  util::Path &mount_path) const;
+    [[nodiscard]]
+    Result<util::refc_ptr<VINode>> _resolve_inode_no_follow(
+        const util::Path &path, util::Path &mount_path) const;
+    [[nodiscard]]
+    Result<void> _stat_from_vinode(VINode &vnode, NodeMeta &out) const;
     [[nodiscard]]
     Result<std::pair<util::Path, util::Path>> _global_target_path(
         const VDirectory &base, const char *relpath) const;
@@ -301,16 +319,25 @@ public:
     Result<void> truncate(cap::Capability &file_cap, size_t new_size);
     [[nodiscard]]
     Result<void> link(cap::Capability &parent_dir_cap,
-                      const char *relpath, inode_t target);
+                      const char *relpath,
+                      cap::Capability &target_inode_cap);
     [[nodiscard]]
     Result<void> rename(cap::Capability &old_parent_cap,
                         const char *old_name,
                         cap::Capability &new_parent_cap,
                         const char *new_name);
     [[nodiscard]]
-    Result<CapIdx> symlink(cap::Capability &parent_dir_cap,
-                           const char *relpath, const char *target,
-                           cap::CHolder &holder);
+    Result<void> symlink(cap::Capability &parent_dir_cap,
+                         const char *relpath, const char *target);
+    [[nodiscard]]
+    Result<void> stat(cap::Capability &parent_dir_cap, const char *relpath,
+                      NodeMeta &out) const;
+    [[nodiscard]]
+    Result<void> lstat(cap::Capability &parent_dir_cap, const char *relpath,
+                       NodeMeta &out) const;
+    [[nodiscard]]
+    Result<size_t> readlink(cap::Capability &parent_dir_cap, const char *relpath,
+                            char *buf, size_t bufsiz) const;
     [[nodiscard]]
     Result<CapIdx> open_dir(const char *filepath, cap::CHolder &holder,
                             b64 perm);

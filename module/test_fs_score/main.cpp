@@ -134,7 +134,9 @@ namespace {
                 if (nm[0] == 't' && nm[1] == '_' && nm[2] == 'd' &&
                     nm[3] == 'i' && nm[4] == 'r' && nl == 5) {
                     found = true;
-                    check(N, !h->is_file, "t_dir should be dir");
+                    NodeMeta st {};
+                    check(N, sys_vfs_stat(dir, nm, &st), "stat t_dir failed");
+                    check(N, st.type == EntryType::DIR, "t_dir should be dir");
                     break;
                 }
                 off += h->next_offset;

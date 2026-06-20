@@ -342,6 +342,30 @@ sys_vfs_link:
     ecall
     ret
 
+    .global sys_vfs_stat
+    .type sys_vfs_stat, @function
+sys_vfs_stat:
+    /* a0 = parent_dir_cap, a1 = name, a2 = stat* */
+    li a7, SYS_VFS_STAT
+    ecall
+    ret
+
+    .global sys_vfs_lstat
+    .type sys_vfs_lstat, @function
+sys_vfs_lstat:
+    /* a0 = parent_dir_cap, a1 = name, a2 = stat* */
+    li a7, SYS_VFS_LSTAT
+    ecall
+    ret
+
+    .global sys_vfs_readlink
+    .type sys_vfs_readlink, @function
+sys_vfs_readlink:
+    /* a0 = parent_dir_cap, a1 = name, a2 = buf, a3 = bufsiz */
+    li a7, SYS_VFS_READLINK
+    ecall
+    ret
+
     .global sys_vfs_read
     .type sys_vfs_read, @function
 sys_vfs_read:

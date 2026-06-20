@@ -37,7 +37,6 @@ namespace syscall {
             auto *header =
                 reinterpret_cast<dir_entry_header *>(_buf + startpos);
             header->next_offset = 0;
-            header->is_file     = entry.is_file;
             memcpy(_buf + startpos + sizeof(dir_entry_header),
                    entry.name.c_str(), entry.name.size() + 1);
             return record_size;
@@ -271,31 +270,64 @@ namespace syscall {
                                    *new_parent_res.value(), new_name.kbuf());
     }
 
-    Result<CapIdx> vfs_symlink(CapIdx parent_dir_cap, const UString &relpath,
-                               const UString &target) {
-        auto holder_res = current_holder_for_vfs();
-        propagate(holder_res);
+    Result<void> vfs_symlink(CapIdx parent_dir_cap, const UString &relpath,
+                             const UString &target) {
         auto parent_res = lookup_current_cap(parent_dir_cap);
         propagate(parent_res);
         return VFS::inst().symlink(*parent_res.value(), relpath.kbuf(),
-                                   target.kbuf(), *holder_res.value());
+                                   target.kbuf());
     }
 
     Result<void> vfs_link(CapIdx parent_dir_cap, const UString &relpath,
                           CapIdx target_file_cap) {
-        auto holder_res = current_holder_for_vfs();
-        propagate(holder_res);
         auto parent_res = lookup_current_cap(parent_dir_cap);
         propagate(parent_res);
         auto target_res = lookup_current_cap(target_file_cap);
         propagate(target_res);
-        auto *vf = target_res.value()->payload_as<VFile>();
-        if (vf == nullptr) {
-            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
-        }
-        inode_t target_inode = vf->vinode()->inode()->inode_id();
         return VFS::inst().link(*parent_res.value(), relpath.kbuf(),
-                                target_inode);
+                                *target_res.value());
+    }
+
+    Result<void> vfs_stat(CapIdx parent_dir_cap, const UString &relpath,
+                          UBuffer &&out) {
+        if (out.kbuf() == nullptr || out.len() < sizeof(NodeMeta)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        NodeMeta st {};
+        auto stat_res = VFS::inst().stat(*parent_res.value(), relpath.kbuf(), st);
+        propagate(stat_res);
+        memcpy(out.kbuf(), &st, sizeof(st));
+        return out.commit_to_user(sizeof(st));
+    }
+
+    Result<void> vfs_lstat(CapIdx parent_dir_cap, const UString &relpath,
+                           UBuffer &&out) {
+        if (out.kbuf() == nullptr || out.len() < sizeof(NodeMeta)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        NodeMeta st {};
+        auto stat_res =
+            VFS::inst().lstat(*parent_res.value(), relpath.kbuf(), st);
+        propagate(stat_res);
+        memcpy(out.kbuf(), &st, sizeof(st));
+        return out.commit_to_user(sizeof(st));
+    }
+
+    Result<size_t> vfs_readlink(CapIdx parent_dir_cap, const UString &relpath,
+                                UBuffer &&buf, size_t bufsiz) {
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        auto readlink_res =
+            VFS::inst().readlink(*parent_res.value(), relpath.kbuf(),
+                                 buf.kbuf(), bufsiz);
+        propagate(readlink_res);
+        auto commit_res = buf.commit_to_user(readlink_res.value());
+        propagate(commit_res);
+        return readlink_res.value();
     }
 
 }  // namespace syscall

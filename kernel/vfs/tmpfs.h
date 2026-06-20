@@ -31,6 +31,7 @@ namespace tmpfs {
         TmpFSMetadata metadata;
         std::unordered_map<std::string, inode_t> entries;
         std::vector<byte> content;
+        std::string symlink_target;
     };
 
     class TmpFSFile final : public IFile {
@@ -79,6 +80,9 @@ namespace tmpfs {
         Result<inode_t> mkdir(std::string_view name,
                               const char *options) override;
         [[nodiscard]]
+        Result<inode_t> symlink(std::string_view name,
+                                std::string_view target) override;
+        [[nodiscard]]
         Result<size_t> entry_count() override;
         [[nodiscard]]
         Result<DirectoryEntryInfo> entry_at(size_t index) override;
@@ -118,6 +122,10 @@ namespace tmpfs {
         Result<inode_t> root() final;
         [[nodiscard]]
         Result<util::owner<IINode *>> get_inode(inode_t inode_id) final;
+        [[nodiscard]]
+        Result<bool> is_symlink(inode_t inode_id) final;
+        [[nodiscard]]
+        Result<std::string> readlink(inode_t inode_id) final;
         [[nodiscard]]
         Result<inode_t> alloc_inode(INodeType type) final;
         [[nodiscard]]

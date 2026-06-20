@@ -15,7 +15,7 @@
 // read means you're capable to read the file,
 // write means you're capable to write the file,
 // execute means you're capable to execute the file (if it's executable)
-// execute is somehow special cuz when the execute flag is set 
+// execute is somehow special cuz when the execute flag is set
 // and you're opening a file, the read & write flags are ignored.
 // you need to open an executable file with execute flag,
 // and when calling create_process and execve,
@@ -45,13 +45,29 @@ namespace flags {
     constexpr ppflg_t PP_WRITE_OTHERS = 0b010000000;
     constexpr ppflg_t PP_EXEC_OTHERS  = 0b100000000;
 
-    constexpr ppflg_t PP_RWX_OWNER    = PP_READ_OWNER | PP_WRITE_OWNER | PP_EXEC_OWNER;
-    constexpr ppflg_t PP_RW_OWNER     = PP_READ_OWNER | PP_WRITE_OWNER;
+    constexpr ppflg_t PP_RWX_OWNER =
+        PP_READ_OWNER | PP_WRITE_OWNER | PP_EXEC_OWNER;
+    constexpr ppflg_t PP_RW_OWNER = PP_READ_OWNER | PP_WRITE_OWNER;
 };  // namespace flags
+
 
 struct dir_entry_header {
     size_t next_offset;
-    bool is_file;
 };
+
+enum class EntryType : uint64_t {
+    FILE    = 0,
+    DIR     = 1,
+    SYMLINK = 2,
+};
+
+struct NodeMeta {
+    EntryType type;
+    size_t size;
+    size_t inode;
+};
+
+static_assert(sizeof(dir_entry_header) == sizeof(size_t),
+              "dir_entry_header must match next_offset size");
 
 constexpr size_t DIR_ENTRY_END = 0xFFFFFFFFFFFFFFFFULL;

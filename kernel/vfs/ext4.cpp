@@ -288,8 +288,7 @@ namespace ext4 {
         }
         const auto &entry = entries_res.value()[index];
         return DirectoryEntryInfo{
-            .is_file = entry.is_file,
-            .name    = entry.name,
+            .name = entry.name,
         };
     }
 
@@ -1830,28 +1829,6 @@ namespace ext4 {
         return write_inode_raw(inode_id, raw_res.value());
     }
 
-    Result<bool> Ext4Superblock::dir_entry_is_file(inode_t inode_id,
-                                                   uint8_t file_type) {
-        if ((_feature_incompat & EXT4_FEATURE_INCOMPAT_FILETYPE) != 0) {
-            if (file_type == EXT4_FT_DIR) {
-                return false;
-            }
-            if (file_type == EXT4_FT_REG_FILE ||
-                file_type == EXT4_FT_SYMLINK)
-            {
-                return true;
-            }
-            if (file_type != EXT4_FT_UNKNOWN) {
-                return true;
-            }
-        }
-
-        auto mode_res = inode_mode(inode_id);
-        propagate(mode_res);
-        const uint16_t type = mode_res.value() & EXT4_S_IFMT;
-        return type != EXT4_S_IFDIR;
-    }
-
     Result<void> Ext4Superblock::insert_dir_entry(inode_t parent_inode,
                                                   inode_t child_inode,
                                                   std::string_view name,
@@ -2432,12 +2409,8 @@ namespace ext4 {
                         block.data() + off + sizeof(Ext4DirEntry2));
                     std::string entry_name(name, name_len);
                     if (entry_name != "." && entry_name != "..") {
-                        auto is_file_res = dir_entry_is_file(
-                            static_cast<inode_t>(ino), file_type);
-                        propagate(is_file_res);
                         entries.push_back(Ext4DirEntry{
                             .inode_id = static_cast<inode_t>(ino),
-                            .is_file  = is_file_res.value(),
                             .name     = entry_name,
                         });
                     }
@@ -2786,6 +2759,34 @@ namespace ext4 {
             return util::owner<IINode *>(file);
         }
         unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+
+    Result<bool> Ext4Superblock::is_symlink(inode_t inode_id) {
+        auto mode_res = inode_mode(inode_id);
+        propagate(mode_res);
+        return (mode_res.value() & EXT4_S_IFMT) == EXT4_S_IFLNK;
+    }
+
+    Result<std::string> Ext4Superblock::readlink(inode_t inode_id) {
+        auto symlink_res = is_symlink(inode_id);
+        propagate(symlink_res);
+        if (!symlink_res.value()) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+
+        auto size_res = inode_size(inode_id);
+        propagate(size_res);
+        std::string target;
+        target.resize(static_cast<size_t>(size_res.value()));
+        if (target.empty()) {
+            return target;
+        }
+
+        auto read_res =
+            read_inode_data(inode_id, 0, target.data(), target.size());
+        propagate(read_res);
+        target.resize(read_res.value());
+        return target;
     }
 
     Result<inode_t> Ext4Superblock::alloc_inode(INodeType type) {

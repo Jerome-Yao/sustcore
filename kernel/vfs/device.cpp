@@ -97,12 +97,8 @@ namespace devfs {
             ++it;
         }
 
-        auto child_res = _sb->lookup_record(it->second);
-        propagate(child_res);
-        auto *child = child_res.value();
         return DirectoryEntryInfo{
-            .is_file = child->state != DevFSSuperblock::NodeState::DIRECTORY,
-            .name    = it->first,
+            .name = it->first,
         };
     }
 

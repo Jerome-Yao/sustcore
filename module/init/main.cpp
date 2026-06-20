@@ -184,11 +184,35 @@ namespace {
                              name);
                 }
 
+                NodeMeta st {};
+                bool stat_ok = sys_vfs_lstat(dir_cap, name, &st);
+                const bool is_dir = stat_ok && st.type == EntryType::DIR;
+                const char *kind =
+                    !stat_ok ? "UNK "
+                             : (st.type == EntryType::DIR
+                                    ? "DIR "
+                                    : (st.type == EntryType::SYMLINK
+                                           ? "LNK "
+                                           : "FILE"));
+                char link_target[256]{};
+                bool has_link_target = false;
+                if (stat_ok && st.type == EntryType::SYMLINK) {
+                    size_t got =
+                        sys_vfs_readlink(dir_cap, name, link_target,
+                                         sizeof(link_target) - 1);
+                    if (got < sizeof(link_target)) {
+                        link_target[got] = '\0';
+                        has_link_target = true;
+                    }
+                }
                 print_indent(depth);
-                printf("%s %s\n", header->is_file ? "FILE" : "DIR ",
-                       child_path);
+                if (has_link_target) {
+                    printf("%s %s -> %s\n", kind, child_path, link_target);
+                } else {
+                    printf("%s %s\n", kind, child_path);
+                }
 
-                if (!header->is_file && depth + 1 < kMaxPrintDepth) {
+                if (is_dir && depth + 1 < kMaxPrintDepth) {
                     CapIdx subdir =
                         sys_vfs_opendir(dir_cap, name, flags::O_READ);
                     if (subdir != cap::null && subdir != cap::error) {
@@ -306,6 +330,11 @@ int kmod_main() {
     //     kmod_fclose(fd);
     // }
 
+    if (kmod_symlink("/lib", "/initrd/tmp/lib/") < 0) {
+        printf("init: create /lib symlink failed\n");
+    }
+    printf ("link /lib/ -> /initrd/tmp/lib/ created\n");
+
     fd = kmod_fopen("/initrd/test-linux.mod", "x");
     if (fd >= 0) {
         size_t pid =
@@ -357,8 +386,8 @@ int kmod_main() {
     //     printf("init: can't open `/sys/dev/serial@10000000/serial` !\n");
     // }
 
-    // printf("init: 打印目录树\n");
-    // print_tree(root_dir_cap, "/");
+    printf("init: 打印目录树\n");
+    print_tree(root_dir_cap, "/");
 
     printf("init: 启动完成, 退出\n");
     exit(0);

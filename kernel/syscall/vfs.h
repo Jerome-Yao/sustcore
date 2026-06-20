@@ -58,10 +58,19 @@ namespace syscall {
     Result<void> vfs_rename(CapIdx old_parent_cap, const UString &old_name,
                             CapIdx new_parent_cap, const UString &new_name);
     [[nodiscard]]
-    Result<CapIdx> vfs_symlink(CapIdx parent_dir_cap, const UString &relpath,
-                                const UString &target);
+    Result<void> vfs_symlink(CapIdx parent_dir_cap, const UString &relpath,
+                             const UString &target);
     [[nodiscard]]
     Result<void> vfs_link(CapIdx parent_dir_cap, const UString &relpath,
                           CapIdx target_file_cap);
+    [[nodiscard]]
+    Result<void> vfs_stat(CapIdx parent_dir_cap, const UString &relpath,
+                          UBuffer &&out);
+    [[nodiscard]]
+    Result<void> vfs_lstat(CapIdx parent_dir_cap, const UString &relpath,
+                           UBuffer &&out);
+    [[nodiscard]]
+    Result<size_t> vfs_readlink(CapIdx parent_dir_cap, const UString &relpath,
+                                UBuffer &&buf, size_t bufsiz);
 
 }  // namespace syscall

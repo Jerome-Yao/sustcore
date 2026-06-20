@@ -293,3 +293,21 @@ sys_vfs_symlink:
 sys_vfs_link:
     li.d $a7, SYS_VFS_LINK
     do_syscall
+
+    .global sys_vfs_stat
+    .type sys_vfs_stat, @function
+sys_vfs_stat:
+    li.d $a7, SYS_VFS_STAT
+    do_syscall
+
+    .global sys_vfs_lstat
+    .type sys_vfs_lstat, @function
+sys_vfs_lstat:
+    li.d $a7, SYS_VFS_LSTAT
+    do_syscall
+
+    .global sys_vfs_readlink
+    .type sys_vfs_readlink, @function
+sys_vfs_readlink:
+    li.d $a7, SYS_VFS_READLINK
+    do_syscall

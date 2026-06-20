@@ -63,9 +63,12 @@ namespace {
                 if (memchr(name, '\0', name_room) == nullptr) return false;
                 const size_t name_len = strlen(name);
                 if (name_len == entry_name_len &&
-                    memcmp(name, g_entry_name_buf, entry_name_len) == 0 &&
-                    header->is_file == expect_file)
-                    return true;
+                    memcmp(name, g_entry_name_buf, entry_name_len) == 0) {
+                    NodeMeta st {};
+                    if (!sys_vfs_stat(dir_cap, name, &st)) return false;
+                    return expect_file ? st.type == EntryType::FILE
+                                       : st.type == EntryType::DIR;
+                }
                 ++parsed;
                 if (header->next_offset == DIR_ENTRY_END) break;
                 if (header->next_offset == 0 || offset + header->next_offset > bytes)
