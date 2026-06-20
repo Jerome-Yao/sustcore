@@ -4,6 +4,7 @@ module-output := test-posix.mod
 module-libc := kmod
 module-libraries := basecpp kmod
 module-linker-script := riscv64-posix.ld
+variant.loongarch64.script-ld := $(component-root)/loongarch64-posix.ld
 
 flags-ld := $(flags-module-ld) $(flags-common-ld) $(flags-mode-ld)
 

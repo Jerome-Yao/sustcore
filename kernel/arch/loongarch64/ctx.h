@@ -21,7 +21,7 @@
 
 namespace la64 {
     struct Context {
-        umb_t ra;
+        umb_t _ra;
         umb_t tp;
         umb_t _sp;
         umb_t a0;
@@ -59,6 +59,33 @@ namespace la64 {
         umb_t _kstack_top;
 
         [[nodiscard]]
+        constexpr umb_t &ra() {
+            return _ra;
+        }
+        [[nodiscard]]
+        constexpr const umb_t &ra() const {
+            return _ra;
+        }
+
+        [[nodiscard]]
+        constexpr umb_t &posix_ra() {
+            return t0;
+        }
+        [[nodiscard]]
+        constexpr const umb_t &posix_ra() const {
+            return t0;
+        }
+
+        [[nodiscard]]
+        constexpr umb_t &kthread_arg0() {
+            return s0;
+        }
+        [[nodiscard]]
+        constexpr const umb_t &kthread_arg0() const {
+            return s0;
+        }
+
+        [[nodiscard]]
         constexpr umb_t &pc() {
             return era;
         }
@@ -88,7 +115,7 @@ namespace la64 {
         }
 
         constexpr void setup_regs(bool smode, bool sie, bool spie) {
-            ra         = 0;
+            _ra        = 0;
             crmd       = {};
             prmd       = {};
             crmd.plv   = PLV_KERNEL;
@@ -125,7 +152,7 @@ namespace la64 {
     static_assert(ContextTrait<Context>);
     static_assert(sizeof(Context) == Context::size_bytes(),
                   "la64::Context layout must match ctxlayout slots");
-    static_assert(offsetof(Context, ra) == CTX_SLOT_OFFSET(CTX_RA_SLOT));
+    static_assert(offsetof(Context, _ra) == CTX_SLOT_OFFSET(CTX_RA_SLOT));
     static_assert(offsetof(Context, tp) == CTX_SLOT_OFFSET(CTX_TP_SLOT));
     static_assert(offsetof(Context, _sp) == CTX_SLOT_OFFSET(CTX_SP_SLOT));
     static_assert(offsetof(Context, a0) == CTX_SLOT_OFFSET(CTX_A0_SLOT));

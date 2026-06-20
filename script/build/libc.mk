@@ -15,4 +15,5 @@ libc.posix-sslibc.crt-head := $(path-objects)/posix-sslibc/$(architecture)/arch/
 	$(path-objects)/posix-sslibc/$(architecture)/arch/$(architecture)/crti.o
 libc.posix-sslibc.crt-tail := $(path-objects)/posix-sslibc/$(architecture)/arch/$(architecture)/crtn.o
 libc.posix-sslibc.module-linker-script.riscv64 := $(path-e)/libs/posix-sslibc/arch/riscv64/posix-ss.ld
+libc.posix-sslibc.module-linker-script.loongarch64 := $(path-e)/libs/posix-sslibc/arch/loongarch64/posix-ss.ld
 libc.posix-sslibc.module-linker-script := $(or $(libc.posix-sslibc.module-linker-script.$(architecture)),$(path-e)/libs/posix-sslibc/arch/riscv64/posix-ss.ld)

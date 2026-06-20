@@ -11,7 +11,7 @@
 
 #include <cstddef>
 
-extern "C" void sys_write_serial(const char *str, size_t len);
+#include <syscall.h>
 
 namespace {
     volatile bool g_posix_initialized = false;

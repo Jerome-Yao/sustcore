@@ -179,7 +179,7 @@ namespace exception {
         }
 
         loggers::EXCEPTION::ERROR(
-            "regs: ra=0x%016lx  sp=0x%016lx  gp=0x%016lx tp=0x%016lx", ctx->ra,
+            "regs: ra=0x%016lx  sp=0x%016lx  gp=0x%016lx tp=0x%016lx", ctx->ra(),
             ctx->sp(), ctx->gp, ctx->tp);
         loggers::EXCEPTION::ERROR(
             "regs: t0=0x%016lx  t1=0x%016lx  t2=0x%016lx s0=0x%016lx", ctx->t0,
@@ -270,7 +270,8 @@ namespace exception {
         }
         loggers::EXCEPTION::ERROR(
             "ctx: ptr=%p, mode=%s, sstatus=0x%016lx, sp=0x%016lx, ra=0x%016lx",
-            ctx, privilege_name(ctx), ctx->sstatus.value, ctx->sp(), ctx->ra);
+            ctx, privilege_name(ctx), ctx->sstatus.value, ctx->sp(),
+            ctx->ra());
         loggers::EXCEPTION::ERROR(
             "args: a0=0x%016lx, a1=0x%016lx, a2=0x%016lx, a3=0x%016lx", ctx->a0,
             ctx->a1, ctx->a2, ctx->a3);
@@ -755,19 +756,19 @@ namespace exception {
             current_tcb->task->posix_subsystem_entry.nonnull() &&
             syscall::is_linux_syscall_number(args.syscall_number))
         {
-            ctx->t0   = sepc + 4;
-            ctx->sepc =
+            ctx->posix_ra() = sepc + 4;
+            ctx->pc()       =
                 current_tcb->task->posix_subsystem_entry.arith();
             loggers::SYSCALL::INFO(
                 "POSIX Linux syscall 重定向: pid=%lu sysno=%lu entry=%p ret=%p",
                 current_tcb->task->pid, args.syscall_number,
                 current_tcb->task->posix_subsystem_entry.addr(),
-                reinterpret_cast<void *>(ctx->t0));
+                reinterpret_cast<void *>(ctx->posix_ra()));
             env::inst().trap_context(env::key::trap_context()) = nullptr;
             return true;
         }
 
-        ctx->sepc += 4;
+        ctx->pc() += 4;
         syscall::handle_user_ecall(util::nnullforce(current_tcb),
                                    util::nnullforce(ctx), args);
         env::inst().trap_context(env::key::trap_context()) = nullptr;

@@ -100,6 +100,13 @@ namespace task {
                               util::nonnull<PCB *> task /* ... args*/);
         Result<void> recycle_tcb(util::nonnull<TCB *> tcb);
         /**
+         * @brief 分配一个新的 TCB 并完成与所属 PCB 的基础绑定.
+         *
+         * @param pcb 所属 PCB.
+         * @return 成功返回已完成基础初始化的 TCB.
+         */
+        Result<util::nonnull<TCB *>> create_bound_tcb(util::nonnull<PCB *> pcb);
+        /**
          * @brief 初始化一个空 PCB, 只填入生命周期与进程基础状态.
          *
          * @param pcb 要初始化的 PCB, 必须为非空指针.
@@ -163,6 +170,16 @@ namespace task {
          */
         Result<util::nonnull<PCB *>> create_loaded_user_task(
             TaskSpec spec, schd::ClassType schd_class, bool wakeup);
+        /**
+         * @brief 将已装载好的 TaskSpec 提交为正式用户进程.
+         *
+         * @param spec 已完成装载但尚未移交所有权的任务规格.
+         * @param schd_class 主线程调度类别.
+         * @param wakeup 是否立即唤醒主线程.
+         * @return 创建成功的 PCB.
+         */
+        Result<util::nonnull<PCB *>> commit_loaded_task(
+            TaskSpec spec, schd::ClassType schd_class, bool wakeup);
 
         /**
          * @brief 使用 fork 语义填充已初始化的子 PCB.
@@ -183,15 +200,6 @@ namespace task {
          */
         Result<util::nonnull<PCB *>> kernel_pcb();
 
-        /**
-         * @brief 终止并清理指定的 TCB, 包括释放与其相关的内核资源.
-         *
-         * @param tcb 要终止的 TCB, 必须为非空指针.
-         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
-         * @note 调用方需保证该 TCB 当前未被运行或已从调度器中移除,
-         * 并处理并发访问场景.
-         */
-        Result<void> terminate_tcb(util::nonnull<TCB *> tcb);
         /**
          * @brief 终止并清理指定的 PCB, 包括其所有线程和占用的资源.
          *
@@ -262,8 +270,7 @@ namespace task {
         Result<util::nonnull<PCB *>> load_posix_task_image(
             CapIdx image_cap, cap::CHolder *holder, CapIdx subsystem_image_cap,
             schd::ClassType schd_class, bool wakeup,
-            const void *startup_blob = nullptr,
-            size_t startup_blob_size = 0);
+            const void *startup_blob = nullptr, size_t startup_blob_size = 0);
 
     public:
         /**
