@@ -196,7 +196,7 @@ namespace syscall {
          * @param str 字符串代理.
          * @param len 输出长度.
          */
-        void write_serial(const UString &str, size_t len) noexcept {
+        void write_serial(const UBuffer &str, size_t len) noexcept {
             sys_write_serial(str.kbuf(), len);
         }
 
@@ -320,7 +320,8 @@ namespace syscall {
 
         switch (sysno) {
             case SYS_WRITE_SERIAL: {
-                UString str((VirAddr)arg0, arg1);
+                UBuffer str((VirAddr)arg0, arg1);
+                str.sync_from_user();
                 write_serial(str, arg1);
                 break;
             }
