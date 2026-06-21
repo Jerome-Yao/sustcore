@@ -21,6 +21,11 @@
 #include <cstring>
 
 namespace {
+    [[nodiscard]]
+    bool less_by_begin(const VMA &lhs, const VMA &rhs) noexcept {
+        return lhs.varea.begin < rhs.varea.begin;
+    }
+
     bool valid_user_area(const VirArea &varea) {
         return varea.begin <= varea.end && is_user_vaddr(varea.begin) &&
                is_user_vaddr(varea.end);
@@ -91,7 +96,7 @@ TaskMemoryManager::~TaskMemoryManager() {
 
 Result<util::nonnull<VMA *>> TaskMemoryManager::add_vma(
     VMA::Type type, VMA::Growth growth, const VirArea &varea,
-    cap::MemoryPayload *memory, PageMan::RWX rwx, size_t mem_offset) {
+    cap::MemoryPayload *memory, VMA::Prot prot, size_t mem_offset) {
     if (memory == nullptr) {
         unexpect_return(ErrCode::NULLPTR);
     }
@@ -102,8 +107,18 @@ Result<util::nonnull<VMA *>> TaskMemoryManager::add_vma(
         unexpect_return(ErrCode::BUSY);
     }
 
-    VMA *vma = new VMA(this, type, growth, varea, memory, rwx, mem_offset);
-    vma_list.push_back(*vma);
+    VMA *vma = new VMA(this, type, growth, varea, memory, prot, mem_offset);
+    auto it  = vma_list.begin();
+    for (; it != vma_list.end(); ++it) {
+        if (varea.begin < it->varea.begin) {
+            break;
+        }
+    }
+    if (it == vma_list.end()) {
+        vma_list.push_back(*vma);
+    } else {
+        vma_list.insert(it, *vma);
+    }
     return util::nonnull(*vma);
 }
 
@@ -111,7 +126,7 @@ Result<util::nonnull<VMA *>> TaskMemoryManager::clone_vma(
     util::nonnull<VMA *> vma, TaskMemoryManager &dst) {
     return __check_vma(vma).and_then([&dst](VMA *vma) {
         return dst.add_vma(vma->type, vma->growth, vma->varea, vma->memory,
-                           vma->rwx, vma->mem_offset);
+                           vma->prot, vma->mem_offset);
     });
 }
 
@@ -157,6 +172,63 @@ Result<void> TaskMemoryManager::remove_vma(util::nonnull<VMA *> vma) {
         _pman.flush_tlb();
         void_return();
     });
+}
+
+Result<void> TaskMemoryManager::remove_vma_range(const VirArea &varea) {
+    if (varea.nullable()) {
+        void_return();
+    }
+    if (!valid_user_area(varea)) {
+        unexpect_return(ErrCode::INVALID_PARAM);
+    }
+
+    auto it = vma_list.begin();
+    while (it != vma_list.end()) {
+        VMA *vma = &*it;
+        ++it;
+        if (!is_intersecting(vma->varea, varea)) {
+            continue;
+        }
+
+        VirAddr cut_begin = varea.begin > vma->varea.begin ? varea.begin
+                                                           : vma->varea.begin;
+        VirAddr cut_end   = varea.end < vma->varea.end ? varea.end
+                                                       : vma->varea.end;
+        if (cut_begin >= cut_end) {
+            continue;
+        }
+
+        VirArea old_area = vma->varea;
+        const size_t cut_offset = static_cast<size_t>(cut_begin - old_area.begin);
+        const size_t cut_size   = static_cast<size_t>(cut_end - cut_begin);
+
+        if (cut_begin == old_area.begin && cut_end == old_area.end) {
+            auto remove_res = remove_vma(util::nnullforce(vma));
+            propagate(remove_res);
+            continue;
+        }
+        if (cut_begin == old_area.begin) {
+            unmap_pages(VirArea(cut_begin, cut_end));
+            vma->varea.begin = cut_end;
+            vma->mem_offset += cut_size;
+            continue;
+        }
+        if (cut_end == old_area.end) {
+            unmap_pages(VirArea(cut_begin, cut_end));
+            vma->varea.end = cut_begin;
+            continue;
+        }
+
+        VMA right(this, vma->type, vma->growth, VirArea(cut_end, old_area.end),
+                  vma->memory, vma->prot, vma->mem_offset + cut_offset + cut_size);
+        unmap_pages(VirArea(cut_begin, cut_end));
+        vma->varea.end = cut_begin;
+        auto add_res = add_vma(right.type, right.growth, right.varea, right.memory,
+                               right.prot, right.mem_offset);
+        propagate(add_res);
+    }
+    _pman.flush_tlb();
+    void_return();
 }
 
 void TaskMemoryManager::unmap_pages(const VirArea &varea) {
@@ -333,6 +405,51 @@ Result<cap::MemoryPayload *> TaskMemoryManager::cloned_memory_for(
     unexpect_return(ErrCode::ENTRY_NOT_FOUND);
 }
 
+Result<TaskMemoryManager::VMAQueryResult> TaskMemoryManager::query_vaddr(
+    VirAddr vaddr, CapIdx mem_cap) const {
+    for (const auto &vma : vma_list) {
+        if (within(vma.varea, vaddr) ||
+            (vma.varea.size() == 0 && vma.varea.begin == vaddr))
+        {
+            return VMAQueryResult{
+                .type    = vma.type,
+                .prot    = vma.prot,
+                .start   = vma.varea.begin,
+                .size    = vma.size(),
+                .mem_cap = mem_cap,
+            };
+        }
+    }
+    unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+}
+
+std::vector<TaskMemoryManager::VMAQueryResult> TaskMemoryManager::query_vspace(
+    size_t offset, size_t max_entries,
+    const std::function<CapIdx(const VMA &)> &mem_cap_resolver) const {
+    std::vector<VMAQueryResult> results{};
+    if (max_entries == 0) {
+        return results;
+    }
+
+    size_t index = 0;
+    for (const auto &vma : vma_list) {
+        if (index++ < offset) {
+            continue;
+        }
+        if (results.size() >= max_entries) {
+            break;
+        }
+        results.push_back(VMAQueryResult{
+            .type    = vma.type,
+            .prot    = vma.prot,
+            .start   = vma.varea.begin,
+            .size    = vma.size(),
+            .mem_cap = mem_cap_resolver(vma),
+        });
+    }
+    return results;
+}
+
 bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
     loggers::PAGING::DEBUG(
         "TM::on_np: access_address=%p, tm_pgd=%p, pman_root=%p",
@@ -366,7 +483,7 @@ bool TaskMemoryManager::on_np(const NoPresentEvent &e) {
     assert(paddr.nonnull());
 
     // load the page
-    PageMan::RWX rwx  = vma->rwx;
+    PageMan::RWX rwx  = VMA::prot_to_rwx(vma->prot);
     auto refcount_res = vma->memory->page_refcount(mem_offset);
     if (!refcount_res.has_value()) {
         loggers::PAGING::ERROR("TM::on_np: 无法获取页共享计数: addr=%p err=%d",
@@ -462,7 +579,8 @@ bool TaskMemoryManager::on_wp(VirAddr fault_addr) {
     PageMan::set_paddr(qres.pte, page_res.value());
     PageMan::restore_from_cow(
         qres.pte,
-        PageMan::page_flags(vma->rwx, PageMan::is_user_accessible(*qres.pte),
+        PageMan::page_flags(VMA::prot_to_rwx(vma->prot),
+                            PageMan::is_user_accessible(*qres.pte),
                             PageMan::is_global(*qres.pte),
                             PageMan::is_present(*qres.pte)));
     PageMan::flush_tlb();
@@ -476,7 +594,7 @@ Result<void> TaskMemoryManager::clone_to_cow(TaskMemoryManager &dst) {
         auto *memory =
             static_cast<cap::MemoryPayload *>(vma.memory->clone_payload());
         auto add_res = dst.add_vma(vma.type, vma.growth, vma.varea, memory,
-                                   vma.rwx, vma.mem_offset);
+                                   vma.prot, vma.mem_offset);
         propagate(add_res);
 
         VirArea map_area = page_outer_area(vma.varea);

@@ -622,7 +622,7 @@ namespace task {
         auto vma_res =
             pcb->tmm->add_vma(VMA::Type::STACK, VMA::Growth::GROW_DOWN,
                               VirArea(USER_STACK_BOTTOM, USER_STACK_TOP),
-                              stack_mem, PageMan::RWX::RW);
+                              stack_mem, VMA::PROT_R | VMA::PROT_W);
         propagate(vma_res);
         loggers::TASK::INFO(
             "创建STACK VMA: pid=%lu area=[%p,%p) mem=%p memsz=%lu mem_off=%lu",

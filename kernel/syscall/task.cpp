@@ -98,6 +98,23 @@ namespace syscall {
         return memory;
     }
 
+    static Result<cap::MemoryPayload *> lookup_memory_in_holder(
+        cap::CHolder *holder, CapIdx idx, cap::Capability **out_cap) {
+        if (holder == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto cap_res = holder->lookup(idx);
+        propagate(cap_res);
+        if (out_cap != nullptr) {
+            *out_cap = cap_res.value();
+        }
+        auto *memory = cap_res.value()->payload_as<cap::MemoryPayload>();
+        if (memory == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return memory;
+    }
+
     static Result<cap::Capability *> lookup_vfile(CapIdx idx) {
         auto holder_res = current_holder();
         propagate(holder_res);
@@ -407,20 +424,72 @@ namespace syscall {
         return true;
     }
 
-    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
-                         PageMan::RWX rwx, cap::MemoryGrowth growth) {
+    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset,
+                         VirAddr vaddr, size_t sz, b64 protflg) {
         cap::Capability *pcb_cap_obj = nullptr;
         auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
         propagate(pcb_res);
 
         cap::Capability *mem_cap_obj = nullptr;
-        auto memory_res              = lookup_memory(mem_cap, &mem_cap_obj);
+        cap::CHolder *target_holder  = pcb_res.value()->pcb->cholder;
+        auto memory_res =
+            lookup_memory_in_holder(target_holder, mem_cap, &mem_cap_obj);
         propagate(memory_res);
         cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
         cap::MemoryObject mem_obj(util::nnullforce(mem_cap_obj));
-        auto map_res = pcb_obj.map(mem_obj, vaddr, rwx, growth);
+        auto map_res = pcb_obj.map(mem_obj, offset, vaddr, sz, protflg);
         propagate(map_res);
         return true;
+    }
+
+    Result<bool> pcb_unmap(CapIdx pcb_cap, VirAddr vaddr, size_t sz) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto unmap_res = pcb_obj.unmap(vaddr, sz);
+        propagate(unmap_res);
+        return true;
+    }
+
+    Result<void> pcb_query_vaddr(CapIdx pcb_cap, VirAddr vaddr,
+                                 UBuffer &&info_buf, bool expose_mem_cap) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto query_res = pcb_obj.query_vaddr(
+            vaddr, expose_mem_cap ? cap::null : cap::error);
+        propagate(query_res);
+        if (info_buf.len() < sizeof(cap::VMAInfo)) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        memcpy(info_buf.kbuf(), &query_res.value(), sizeof(cap::VMAInfo));
+        auto commit_res = info_buf.commit_to_user();
+        propagate(commit_res);
+        void_return();
+    }
+
+    Result<size_t> pcb_query_vspace(CapIdx pcb_cap, size_t offset,
+                                    UBuffer &&info_buf, size_t max_entries,
+                                    bool expose_mem_cap) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto query_res =
+            pcb_obj.query_vspace(offset, max_entries, expose_mem_cap);
+        propagate(query_res);
+        if (info_buf.len() < query_res.value().size() * sizeof(cap::VMAInfo)) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        auto *out = reinterpret_cast<cap::VMAInfo *>(info_buf.kbuf());
+        for (size_t i = 0; i < query_res.value().size(); ++i) {
+            out[i] = query_res.value()[i];
+        }
+        auto commit_res = info_buf.commit_to_user();
+        propagate(commit_res);
+        return query_res.value().size();
     }
 
     Result<bool> pcb_execve(CapIdx pcb_cap, CapIdx image_cap,

@@ -88,15 +88,115 @@ namespace cap {
         void_return();
     }
 
-    Result<void> PCBObject::map(MemoryObject &memory, VirAddr vaddr,
-                                PageMan::RWX rwx, MemoryGrowth growth) const {
+    Result<void> PCBObject::map(MemoryObject &memory, size_t offset,
+                                VirAddr vaddr, size_t sz,
+                                VMA::Prot protflg) const {
         if (!imply(perm::pcb::VMCONTEXT)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
         if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
-        return memory.map_into(*_obj->pcb->tmm, vaddr, rwx, growth);
+        if (!memory.cap()->imply(perm::memory::MAP)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if ((protflg & VMA::PROT_R) != 0 &&
+            !memory.cap()->imply(perm::memory::READ))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if ((protflg & VMA::PROT_W) != 0 &&
+            !memory.cap()->imply(perm::memory::WRITE))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if ((protflg & VMA::PROT_X) != 0 &&
+            !memory.cap()->imply(perm::memory::EXEC))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+
+        auto *payload = memory.obj();
+        if (payload == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if ((offset % PAGESIZE) != 0 || (vaddr.arith() % PAGESIZE) != 0 ||
+            (sz % PAGESIZE) != 0)
+        {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (sz == 0 || offset > payload->memsz || sz > payload->memsz - offset) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        VMA::Type type =
+            (protflg & VMA::PROT_SHARE) != 0 ? VMA::Type::SHARE
+                                             : VMA::Type::DATA;
+        auto add_res = _obj->pcb->tmm->add_vma(
+            type, MemoryGrowth::FIXED, VirArea(vaddr, vaddr + sz), payload,
+            protflg, offset);
+        propagate(add_res);
+        void_return();
+    }
+
+    Result<void> PCBObject::unmap(VirAddr vaddr, size_t sz) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if ((vaddr.arith() % PAGESIZE) != 0 || (sz % PAGESIZE) != 0 || sz == 0) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return _obj->pcb->tmm->remove_vma_range(VirArea(vaddr, vaddr + sz));
+    }
+
+    Result<cap::VMAInfo> PCBObject::query_vaddr(VirAddr vaddr,
+                                                CapIdx mem_cap) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto query_res = _obj->pcb->tmm->query_vaddr(vaddr, mem_cap);
+        propagate(query_res);
+        auto result = query_res.value();
+        return cap::VMAInfo{
+            .vma_type  = static_cast<b64>(result.type),
+            .vma_prot  = result.prot,
+            .vma_start = result.start.addr(),
+            .vma_size  = result.size,
+            .mem_cap   = result.mem_cap,
+        };
+    }
+
+    Result<std::vector<cap::VMAInfo>> PCBObject::query_vspace(
+        size_t offset, size_t max_entries, bool expose_mem_cap) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto entries = _obj->pcb->tmm->query_vspace(
+            offset, max_entries,
+            [expose_mem_cap](const VMA &) {
+                return expose_mem_cap ? cap::null : cap::error;
+            });
+        std::vector<cap::VMAInfo> results{};
+        results.reserve(entries.size());
+        for (size_t i = 0; i < entries.size(); ++i) {
+            results.push_back(cap::VMAInfo{
+                .vma_type  = static_cast<b64>(entries[i].type),
+                .vma_prot  = entries[i].prot,
+                .vma_start = entries[i].start.addr(),
+                .vma_size  = entries[i].size,
+                .mem_cap   = entries[i].mem_cap,
+            });
+        }
+        return results;
     }
 
     Result<task::PCB *> PCBObject::require_new_thread() const {

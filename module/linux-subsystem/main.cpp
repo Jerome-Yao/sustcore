@@ -30,6 +30,17 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
 
 namespace {
     constexpr size_t UTSNAME_FIELD_SIZE = 65;
+    constexpr size_t LINUX_MMAP_QUERY_BATCH = 64;
+    constexpr size_t PROT_READ             = 0x1;
+    constexpr size_t PROT_WRITE            = 0x2;
+    constexpr size_t PROT_EXEC             = 0x4;
+    constexpr size_t VMA_PROT_R            = 0x1;
+    constexpr size_t VMA_PROT_W            = 0x2;
+    constexpr size_t VMA_PROT_X            = 0x4;
+    constexpr size_t MAP_PRIVATE           = 0x02;
+    constexpr size_t MAP_FIXED             = 0x10;
+    constexpr size_t MAP_ANONYMOUS         = 0x20;
+    constexpr uint64_t MEMORY_GROWTH_FIXED = 0;
 
     struct linux_utsname {
         char sysname[UTSNAME_FIELD_SIZE];
@@ -44,6 +55,51 @@ namespace {
         const void *iov_base;
         size_t iov_len;
     };
+
+    [[nodiscard]]
+    size_t page_align_up_user(size_t value) noexcept {
+        return (value + PAGESIZE - 1) & ~(PAGESIZE - 1);
+    }
+
+    [[nodiscard]]
+    size_t prot_to_vma_prot(size_t prot) noexcept {
+        size_t vma_prot = 0;
+        if ((prot & PROT_READ) != 0) {
+            vma_prot |= VMA_PROT_R;
+        }
+        if ((prot & PROT_WRITE) != 0) {
+            vma_prot |= VMA_PROT_W;
+        }
+        if ((prot & PROT_EXEC) != 0) {
+            vma_prot |= VMA_PROT_X;
+        }
+        return vma_prot;
+    }
+
+    [[nodiscard]]
+    size_t choose_mmap_base(size_t length) {
+        VMAInfo infos[LINUX_MMAP_QUERY_BATCH]{};
+        size_t offset = 0;
+        size_t cursor = page_align_up_user(__linuxss_ssheap_base + PAGESIZE);
+        while (true) {
+            size_t count = sys_pcb_query_vspace(__linuxss_pcb_cap, offset, infos,
+                                                LINUX_MMAP_QUERY_BATCH);
+            if (count == 0 || count == static_cast<size_t>(-1)) {
+                return cursor;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                size_t start = reinterpret_cast<size_t>(infos[i].vma_start);
+                size_t end   = start + infos[i].vma_size;
+                if (cursor + length <= start) {
+                    return cursor;
+                }
+                if (cursor < end) {
+                    cursor = page_align_up_user(end);
+                }
+            }
+            offset += count;
+        }
+    }
 
     void copy_uts_field(char (&dst)[UTSNAME_FIELD_SIZE],
                         const char *src) noexcept {
@@ -280,7 +336,7 @@ size_t linux_sys_writev(size_t fd, const linux_iovec *iov, size_t iovcnt) {
 }
 
 size_t linux_sys_brk(size_t newbrk) {
-    return linuxss_brk(newbrk);
+    return linux_brk(newbrk);
 }
 
 size_t linux_sys_uname(void *buf) {
@@ -299,6 +355,50 @@ size_t linux_sys_uname(void *buf) {
     return 0;
 }
 
+size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
+                      size_t fd, size_t offset) {
+    if ((flags & MAP_ANONYMOUS) == 0 || (flags & MAP_PRIVATE) == 0) {
+        return INVALID_VALUE;
+    }
+    if (fd != static_cast<size_t>(-1) || offset != 0 || length == 0) {
+        return INVALID_VALUE;
+    }
+
+    size_t aligned_length = page_align_up_user(length);
+    size_t target_addr =
+        (flags & MAP_FIXED) != 0 ? reinterpret_cast<size_t>(addr)
+                                 : choose_mmap_base(aligned_length);
+    if ((target_addr % PAGESIZE) != 0) {
+        return INVALID_VALUE;
+    }
+
+    CapIdx mem_cap =
+        sys_mem_create(aligned_length, false, false, MEMORY_GROWTH_FIXED);
+    if (mem_cap == cap::null || mem_cap == cap::error) {
+        return INVALID_VALUE;
+    }
+    if (!sys_pcb_map(__linuxss_pcb_cap, mem_cap, 0,
+                     reinterpret_cast<void *>(target_addr), aligned_length,
+                     prot_to_vma_prot(prot)))
+    {
+        return INVALID_VALUE;
+    }
+    return target_addr;
+}
+
+size_t linux_sys_munmap(void *addr, size_t length) {
+    if (addr == nullptr || length == 0) {
+        return INVALID_VALUE;
+    }
+    size_t aligned_length = page_align_up_user(length);
+    size_t target_addr    = reinterpret_cast<size_t>(addr);
+    if ((target_addr % PAGESIZE) != 0) {
+        return INVALID_VALUE;
+    }
+    return sys_pcb_unmap(__linuxss_pcb_cap, addr, aligned_length) ? 0
+                                                                   : INVALID_VALUE;
+}
+
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                  size_t a4, size_t a5, size_t a6, size_t a7) {
     switch (a7) {
@@ -307,6 +407,11 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_writev:
             return linux_sys_writev(
                 a0, reinterpret_cast<const linux_iovec *>(a1), a2);
+        case __NR_mmap:
+            return linux_sys_mmap(reinterpret_cast<void *>(a0), a1, a2, a3,
+                                  a4, a5);
+        case __NR_munmap:
+            return linux_sys_munmap(reinterpret_cast<void *>(a0), a1);
         case __NR_brk: return linux_sys_brk(a0);
         case __NR_uname:
             return linux_sys_uname(reinterpret_cast<void *>(a0));

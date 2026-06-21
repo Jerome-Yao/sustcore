@@ -203,23 +203,22 @@ namespace loader::elf {
     }
 
     constexpr VMA::Type phdr_to_vma_type(Elf64_Word flags) noexcept {
-        const bool read  = (flags & PF_R) != 0;
-        const bool write = (flags & PF_W) != 0;
         const bool exec  = (flags & PF_X) != 0;
+        return exec ? VMA::Type::CODE : VMA::Type::DATA;
+    }
 
-        if (read && write && exec) {
-            return VMA::Type::RWX;
+    constexpr VMA::Prot phdr_to_vma_prot(Elf64_Word flags) noexcept {
+        VMA::Prot prot = 0;
+        if ((flags & PF_R) != 0) {
+            prot |= VMA::PROT_R;
         }
-        if (read && !write && exec) {
-            return VMA::Type::CODE;
+        if ((flags & PF_W) != 0) {
+            prot |= VMA::PROT_W;
         }
-        if (read && write && !exec) {
-            return VMA::Type::DATA;
+        if ((flags & PF_X) != 0) {
+            prot |= VMA::PROT_X;
         }
-        if (read && !write && !exec) {
-            return VMA::Type::RODATA;
-        }
-        return VMA::Type::DATA;
+        return prot;
     }
 
     inline bool overflow_add_u64(uint64_t a, uint64_t b) noexcept {
@@ -428,12 +427,13 @@ namespace loader::elf {
 
             // 为该段在TM中添加一个VMA
             VMA::Type vma_type = phdr_to_vma_type(phdr.p_flags);
+            VMA::Prot vma_prot = phdr_to_vma_prot(phdr.p_flags);
             auto *segment_mem  = new cap::MemoryPayload(
                 map_memsz, false, false, VMA::Growth::FIXED);
             auto add_res = spec.tmm->add_vma(
                 vma_type, VMA::Growth::FIXED,
                 VirArea(aligned_segvaddr, segvend),
-                segment_mem, VMA::seg2rwx(vma_type));
+                segment_mem, vma_prot);
             if (!add_res.has_value()) {
                 delete segment_mem;
                 loggers::SUSTCORE::ERROR("无法为段%d添加VMA: %d", i,
@@ -471,7 +471,14 @@ namespace loader::elf {
         }
 
         if (create_heap) {
-            VirAddr heap_start = VirAddr(max_pload_end).page_align_up();
+            spec.heap_vaddr = VirAddr(max_pload_end).page_align_up();
+        }
+        if (!create_heap) {
+            spec.linuxss_image_end = VirAddr(max_pload_end).page_align_up();
+        }
+
+        if (create_heap) {
+            VirAddr heap_start = spec.heap_vaddr;
             auto *heap_mem =
                 new cap::MemoryPayload(0, false, false, VMA::Growth::FLEXUP);
             auto heap_cap_res = spec.holder->insert_to_free(heap_mem);
@@ -481,7 +488,8 @@ namespace loader::elf {
             }
             auto heap_res = spec.tmm->add_vma(
                 VMA::Type::HEAP, VMA::Growth::FLEXUP,
-                VirArea(heap_start, heap_start), heap_mem, PageMan::RWX::RW);
+                VirArea(heap_start, heap_start), heap_mem,
+                VMA::PROT_R | VMA::PROT_W);
             if (!heap_res.has_value()) {
                 loggers::SUSTCORE::ERROR("无法初始化堆VMA: %d",
                                          heap_res.error());
@@ -505,7 +513,7 @@ namespace loader::elf {
         propagate(load_res);
 
         for (auto &vma : spec.tmm->vmas()) {
-            PageMan::RWX rwx = VMA::seg2rwx(vma.type);
+            PageMan::RWX rwx = VMA::prot_to_rwx(vma.prot);
             spec.tmm->pman().modify_range_flags<PageMan::make_mask(0b001111)>(
                 vma.varea.begin, vma.size(),
                 PageMan::page_flags(rwx, true, false));

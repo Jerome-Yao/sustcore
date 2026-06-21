@@ -60,7 +60,12 @@ bool execve(CapIdx image_cap, CapIdx rsvdlst[], const char *argv[],
 }
 
 bool sys_mem_map(CapIdx idx, void *vaddr, uint64_t rwx, uint64_t growth) {
-    return sys_pcb_map(__pcb_cap, idx, vaddr, rwx, growth);
+    static_cast<void>(growth);
+    MemQueryRet query{};
+    if (!sys_mem_query(idx, &query)) {
+        return false;
+    }
+    return sys_pcb_map(__pcb_cap, idx, 0, vaddr, query.memsz, rwx);
 }
 
 size_t brk(size_t newbrk) {

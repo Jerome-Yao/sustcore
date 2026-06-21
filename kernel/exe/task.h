@@ -75,6 +75,7 @@ struct TaskSpec {
     CapIdx heap_mem_cap = cap::null;
     VirAddr linuxss_heap_vaddr = VirAddr(static_cast<addr_t>(0));
     CapIdx linuxss_heap_mem_cap = cap::null;
+    VirAddr linuxss_image_end = VirAddr(static_cast<addr_t>(0));
     // 传递给新镜像的参数与 bootstrap 记录.
     std::vector<std::string> argv{};
     std::vector<std::string> envp{};

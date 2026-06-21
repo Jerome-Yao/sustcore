@@ -15,6 +15,7 @@
 #elif defined(__ARCH_loongarch64__)
 #include <arch/loongarch64/callconv.h>
 #endif
+#include <object/task.h>
 #include <sustcore/addr.h>
 #include <sustcore/syscall.h>
 #include <syscall/cap.h>
@@ -235,6 +236,9 @@ namespace syscall {
             case SYS_YIELD_THREAD:        return "SYS_YIELD_THREAD";
             case SYS_EXECVE:              return "SYS_EXECVE";
             case SYS_PCB_MAP:             return "SYS_PCB_MAP";
+            case SYS_PCB_UNMAP:           return "SYS_PCB_UNMAP";
+            case SYS_PCB_QUERY_VADDR:     return "SYS_PCB_QUERY_VADDR";
+            case SYS_PCB_QUERY_VSPACE:    return "SYS_PCB_QUERY_VSPACE";
             case SYS_NOTIF_CREATE:        return "SYS_NOTIF_CREATE";
             case SYS_NOTIF_SIGNAL:        return "SYS_NOTIF_SIGNAL";
             case SYS_NOTIF_UNSIGNAL:      return "SYS_NOTIF_UNSIGNAL";
@@ -691,9 +695,30 @@ namespace syscall {
             case SYS_PCB_MAP: {
                 ret = result_bool_ret(
                     "pcb_map",
-                    pcb_map(capidx, static_cast<CapIdx>(arg0), VirAddr(arg1),
-                            static_cast<PageMan::RWX>(arg2),
-                            static_cast<cap::MemoryGrowth>(arg3)));
+                    pcb_map(capidx, static_cast<CapIdx>(arg0), arg1,
+                            VirAddr(arg2), arg3, arg4));
+                break;
+            }
+            case SYS_PCB_UNMAP: {
+                ret = result_bool_ret("pcb_unmap",
+                                      pcb_unmap(capidx, VirAddr(arg0), arg1));
+                break;
+            }
+            case SYS_PCB_QUERY_VADDR: {
+                UBuffer info_buf((VirAddr)arg1, sizeof(cap::VMAInfo));
+                auto query_res = pcb_query_vaddr(
+                    capidx, VirAddr(arg0), std::move(info_buf),
+                    pcb_is_current(capidx));
+                ret = result_void_ret("pcb_query_vaddr", query_res);
+                break;
+            }
+            case SYS_PCB_QUERY_VSPACE: {
+                UBuffer info_buf((VirAddr)arg1,
+                                 arg2 * sizeof(cap::VMAInfo));
+                auto query_res =
+                    pcb_query_vspace(capidx, arg0, std::move(info_buf), arg2,
+                                     pcb_is_current(capidx));
+                ret = result_value_ret("pcb_query_vspace", query_res);
                 break;
             }
             case SYS_MEM_UNMAP: {

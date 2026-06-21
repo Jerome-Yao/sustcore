@@ -112,8 +112,8 @@ namespace {
         PhyAddr base = paddr_res.value();
         for (size_t i = 0; i < pages; ++i) {
             memory->phy_pages.insert_or_assign(i,
-                                               cap::PhyPage{base + i * PAGESIZE,
-                                                            1});
+                                               cap::PhyPage{.addr=base + i * PAGESIZE,
+                                                            .refcount=1});
         }
         void_return();
     }
@@ -436,8 +436,9 @@ namespace cap {
         propagate(cont_res);
 
         VirArea area(vaddr, vaddr + _obj->memsz);
-        auto add_res =
-            tmm.add_vma(VMA::Type::SHARE_RW, req_growth, area, _obj, rwx);
+        auto add_res = tmm.add_vma(
+            VMA::Type::SHARE, req_growth, area, _obj,
+            VMA::rwx_to_prot(rwx, true));
         propagate(add_res);
         void_return();
     }

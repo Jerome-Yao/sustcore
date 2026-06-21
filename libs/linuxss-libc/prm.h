@@ -31,6 +31,7 @@ extern const bsheader **__linuxss_bsargv;
 
 extern "C" void linuxss_restore_runtime_from_bootstrap(
     size_t bsargc, const bsheader *bsargv[]);
+extern "C" size_t linux_brk(size_t newbrk);
 extern "C" size_t linuxss_brk(size_t newbrk);
 extern "C" size_t linuxss_entry(const void *stack_sp, size_t init_a0,
                                 size_t init_a1, size_t init_a2);

@@ -38,11 +38,23 @@ struct MemQueryRet {
     size_t allocated;
 };
 
+struct VMAInfo {
+    b64 vma_type;
+    b64 vma_prot;
+    void *vma_start;
+    size_t vma_size;
+    CapIdx mem_cap;
+};
+
 extern "C" {
 void sys_write_serial(const char *str, size_t len);
 bool sys_pcb_kill(CapIdx pcb_cap, int exit_code);
-bool sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, void *vaddr, uint64_t rwx,
-                 uint64_t growth);
+bool sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset, void *vaddr,
+                 size_t sz, uint64_t protflg);
+bool sys_pcb_unmap(CapIdx pcb_cap, void *vaddr, size_t sz);
+size_t sys_pcb_query_vaddr(CapIdx pcb_cap, void *vaddr, VMAInfo *info);
+size_t sys_pcb_query_vspace(CapIdx pcb_cap, size_t offset, VMAInfo *info_array,
+                            size_t max_entries);
 CapIdx sys_pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
                               size_t sched_class, CapIdx caps[],
                               const char *argv[], const char *envp[],

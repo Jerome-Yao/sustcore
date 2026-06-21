@@ -71,14 +71,24 @@ namespace syscall {
      *
      * @param pcb_cap 目标 PCB capability. 
      * @param mem_cap Memory capability. 
+     * @param offset Memory 内偏移. 
      * @param vaddr 目标虚拟地址. 
-     * @param rwx 页权限. 
-     * @param growth VMA 增长方式. 
+     * @param sz 映射大小. 
+     * @param protflg VMA 权限位掩码. 
      * @return true 成功; false 失败. 
      */
     [[nodiscard]]
-    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
-                         PageMan::RWX rwx, cap::MemoryGrowth growth);
+    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset,
+                         VirAddr vaddr, size_t sz, b64 protflg);
+    [[nodiscard]]
+    Result<bool> pcb_unmap(CapIdx pcb_cap, VirAddr vaddr, size_t sz);
+    [[nodiscard]]
+    Result<void> pcb_query_vaddr(CapIdx pcb_cap, VirAddr vaddr,
+                                 UBuffer &&info_buf, bool expose_mem_cap);
+    [[nodiscard]]
+    Result<size_t> pcb_query_vspace(CapIdx pcb_cap, size_t offset,
+                                    UBuffer &&info_buf, size_t max_entries,
+                                    bool expose_mem_cap);
 
     /**
      * @brief execve, 预留 capability 列表已由 dispatcher 预处理.

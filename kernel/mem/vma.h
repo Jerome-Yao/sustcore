@@ -19,64 +19,74 @@
 #include <sus/range.h>
 #include <sus/types.h>
 #include <sustcore/addr.h>
+#include <sustcore/capability.h>
 #include <sustcore/epacks.h>
 #include <sustcore/errcode.h>
 
 #include <cassert>
+#include <functional>
+#include <vector>
 
 struct VMA {
     enum class Type {
-        NONE      = 0,
-        CODE      = 1,
-        RODATA    = 2,
-        DATA      = 3,
-        RWX       = 4,
-        STACK     = 5,
-        HEAP      = 6,
-        SHARE_RW  = 7,
-        SHARE_RO  = 8,
-        SHARE_RX  = 9,
-        SHARE_RWX = 10,
+        NONE  = 0,
+        CODE  = 1,
+        DATA  = 2,
+        STACK = 3,
+        HEAP  = 4,
+        SHARE = 5,
     };
 
     using Growth = cap::MemoryGrowth;
+    using Prot = b64;
+    static constexpr Prot PROT_R     = 0x1;
+    static constexpr Prot PROT_W     = 0x2;
+    static constexpr Prot PROT_X     = 0x4;
+    static constexpr Prot PROT_SHARE = 0x8;
 
-    static constexpr PageMan::RWX seg2rwx(Type type) {
-        switch (type) {
-            case Type::CODE:      return PageMan::RWX::RX;
-            case Type::RODATA:    return PageMan::RWX::RO;
-            case Type::DATA:
-            case Type::STACK:
-            case Type::HEAP:
-            case Type::SHARE_RW:  return PageMan::RWX::RW;
-            case Type::RWX:
-            case Type::SHARE_RWX: return PageMan::RWX::RWX;
-            case Type::SHARE_RO:  return PageMan::RWX::RO;
-            case Type::SHARE_RX:  return PageMan::RWX::RX;
-            default:              return PageMan::RWX::NONE;
+    static constexpr PageMan::RWX prot_to_rwx(Prot prot) {
+        const bool readable   = (prot & PROT_R) != 0;
+        const bool writable   = (prot & PROT_W) != 0;
+        const bool executable = (prot & PROT_X) != 0;
+
+        if (readable && writable && executable) {
+            return PageMan::RWX::RWX;
         }
+        if (readable && writable) {
+            return PageMan::RWX::RW;
+        }
+        if (readable && executable) {
+            return PageMan::RWX::RX;
+        }
+        if (readable) {
+            return PageMan::RWX::RO;
+        }
+        return PageMan::RWX::NONE;
     }
 
-    static constexpr bool sharable(Type type) {
-        switch (type) {
-            case Type::SHARE_RW:
-            case Type::SHARE_RO:
-            case Type::SHARE_RX:
-            case Type::SHARE_RWX: return true;
-            default:              return false;
+    static constexpr Prot rwx_to_prot(PageMan::RWX rwx, bool shared = false) {
+        Prot prot = 0;
+        if (PageMan::is_readable(rwx)) {
+            prot |= PROT_R;
         }
+        if (PageMan::is_writable(rwx)) {
+            prot |= PROT_W;
+        }
+        if (PageMan::is_executable(rwx)) {
+            prot |= PROT_X;
+        }
+        if (shared) {
+            prot |= PROT_SHARE;
+        }
+        return prot;
     }
 
-    static constexpr bool cowable(Type type) {
-        switch (type) {
-            case Type::CODE:
-            case Type::RODATA:
-            case Type::DATA:
-            case Type::RWX:
-            case Type::STACK:
-            case Type::HEAP:  return true;
-            default:          return false;
-        }
+    static constexpr bool sharable(Prot prot) {
+        return (prot & PROT_SHARE) != 0;
+    }
+
+    static constexpr bool cowable(Prot prot) {
+        return !sharable(prot);
     }
 
     Type type                  = Type::NONE;
@@ -84,8 +94,8 @@ struct VMA {
     TaskMemoryManager *tm      = nullptr;
     /// 该 VMA 关联的 Memory payload. 所有 VMA 都必须持有有效 Memory. 
     cap::MemoryPayload *memory = nullptr;
-    /// 该 VMA 映射时使用的页权限. 
-    PageMan::RWX rwx           = PageMan::RWX::NONE;
+    /// 该 VMA 映射时使用的权限位掩码. 
+    Prot prot                  = 0;
     /// VMA 起始地址对应的 Memory 内偏移. 
     size_t mem_offset          = 0;
     VirArea varea;
@@ -102,16 +112,16 @@ struct VMA {
      * @param g VMA 增长方式. 
      * @param varea 虚拟地址范围. 
      * @param memory 关联 Memory payload. 
-     * @param rwx 页权限. 
+     * @param prot 权限位掩码. 
      * @param mem_offset VMA 起点对应的 Memory 内偏移. 
      */
     VMA(TaskMemoryManager *tm, Type t, Growth g, const VirArea &varea,
-        cap::MemoryPayload *memory, PageMan::RWX rwx, size_t mem_offset)
+        cap::MemoryPayload *memory, Prot prot, size_t mem_offset)
         : type(t),
           growth(g),
           tm(tm),
           memory(memory),
-          rwx(rwx),
+          prot(prot),
           mem_offset(mem_offset),
           varea(varea),
           list_head({}) {
@@ -129,7 +139,7 @@ struct VMA {
           growth(g),
           tm(tm),
           memory(memory),
-          rwx(other.rwx),
+          prot(other.prot),
           mem_offset(other.mem_offset),
           varea(other.varea),
           list_head({}) {
@@ -156,15 +166,10 @@ constexpr const char *to_string(VMA::Type type) {
     switch (type) {
         case VMA::Type::NONE:      return "NONE";
         case VMA::Type::CODE:      return "CODE";
-        case VMA::Type::RODATA:    return "RODATA";
         case VMA::Type::DATA:      return "DATA";
-        case VMA::Type::RWX:       return "RWX";
         case VMA::Type::STACK:     return "STACK";
         case VMA::Type::HEAP:      return "HEAP";
-        case VMA::Type::SHARE_RW:  return "SHARE_RW";
-        case VMA::Type::SHARE_RO:  return "SHARE_RO";
-        case VMA::Type::SHARE_RX:  return "SHARE_RX";
-        case VMA::Type::SHARE_RWX: return "SHARE_RWX";
+        case VMA::Type::SHARE:     return "SHARE";
         default:                   return "UNKNOWN";
     }
 }
@@ -213,7 +218,7 @@ public:
     Result<util::nonnull<VMA *>> add_vma(VMA::Type type, VMA::Growth growth,
                                          const VirArea &varea,
                                          cap::MemoryPayload *memory,
-                                         PageMan::RWX rwx,
+                                         VMA::Prot prot,
                                          size_t mem_offset = 0);
     Result<util::nonnull<VMA *>> locate(VirAddr vaddr);
     Result<util::nonnull<VMA *>> locate_range(const VirArea &varea);
@@ -236,6 +241,7 @@ public:
      * 生命周期管理. 
      */
     Result<void> remove_vma(util::nonnull<VMA *> vma);
+    Result<void> remove_vma_range(const VirArea &varea);
     Result<VirArea> grow_vma(util::nonnull<VMA *> vma, const VirArea &varea);
     /**
      * @brief 查询当前地址空间是否仍有 VMA 引用指定 Memory. 
@@ -270,6 +276,21 @@ public:
      */
     Result<cap::MemoryPayload *> cloned_memory_for(
         cap::MemoryPayload *source, TaskMemoryManager &dst) const;
+
+    struct VMAQueryResult {
+        VMA::Type type;
+        VMA::Prot prot;
+        VirAddr start;
+        size_t size;
+        CapIdx mem_cap;
+    };
+
+    [[nodiscard]]
+    Result<VMAQueryResult> query_vaddr(VirAddr vaddr, CapIdx mem_cap) const;
+    [[nodiscard]]
+    std::vector<VMAQueryResult> query_vspace(
+        size_t offset, size_t max_entries,
+        const std::function<CapIdx(const VMA &)> &mem_cap_resolver) const;
 
     [[nodiscard]]
     constexpr const util::IntrusiveList<VMA> &vmas() const {

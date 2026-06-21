@@ -79,7 +79,13 @@ namespace {
         }
         ++desc;
         size_t kind_len = strlen(kind);
-        return strncmp(desc, kind, kind_len) == 0 && desc[kind_len] == ':';
+        if (strncmp(desc, kind, kind_len) != 0) {
+            return false;
+        }
+        if (desc[kind_len] != ':') {
+            return false;
+        }
+        return desc == kind || desc[-1] == '#';
     }
 
     void restore_runtime_from_bootstrap() {

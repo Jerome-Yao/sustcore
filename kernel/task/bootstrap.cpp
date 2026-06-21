@@ -39,7 +39,8 @@ namespace task {
             }
             auto heap_res = spec.tmm->add_vma(
                 VMA::Type::HEAP, VMA::Growth::FLEXUP,
-                VirArea(heap_start, heap_start), heap_mem, PageMan::RWX::RW);
+                VirArea(heap_start, heap_start), heap_mem,
+                VMA::PROT_R | VMA::PROT_W);
             if (!heap_res.has_value()) {
                 loggers::SUSTCORE::ERROR("无法初始化 POSIX 子系统堆VMA: %d",
                                          heap_res.error());
@@ -325,8 +326,10 @@ namespace task {
                                      to_cstring(load_subsystem_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
-        VirAddr linuxss_heap_start =
-            spec.tmm->vmas().back().varea.end.page_align_up();
+        if (!spec.linuxss_image_end.nonnull()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        VirAddr linuxss_heap_start = spec.linuxss_image_end.page_align_up();
         auto linuxss_heap_res =
             create_linux_subsystem_heap(spec, linuxss_heap_start);
         propagate(linuxss_heap_res);
