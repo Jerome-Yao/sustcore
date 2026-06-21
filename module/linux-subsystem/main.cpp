@@ -16,6 +16,7 @@
 #include <sustcore/syscall_str.h>
 #include <prm.h>
 #include <syscall.h>
+#include "prog.h"
 
 #include <cstddef>
 #include <cstring>
@@ -29,7 +30,6 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
 #define INVALID_VALUE 0xFFFF'FFFF'FFFF'FFFF
 
 namespace {
-    constexpr size_t UTSNAME_FIELD_SIZE = 65;
     constexpr size_t LINUX_MMAP_QUERY_BATCH = 64;
     constexpr size_t PROT_READ             = 0x1;
     constexpr size_t PROT_WRITE            = 0x2;
@@ -41,15 +41,6 @@ namespace {
     constexpr size_t MAP_FIXED             = 0x10;
     constexpr size_t MAP_ANONYMOUS         = 0x20;
     constexpr uint64_t MEMORY_GROWTH_FIXED = 0;
-
-    struct linux_utsname {
-        char sysname[UTSNAME_FIELD_SIZE];
-        char nodename[UTSNAME_FIELD_SIZE];
-        char release[UTSNAME_FIELD_SIZE];
-        char version[UTSNAME_FIELD_SIZE];
-        char machine[UTSNAME_FIELD_SIZE];
-        char domainname[UTSNAME_FIELD_SIZE];
-    };
 
     struct linux_iovec {
         const void *iov_base;
@@ -82,8 +73,9 @@ namespace {
         size_t offset = 0;
         size_t cursor = page_align_up_user(__linuxss_ssheap_base + PAGESIZE);
         while (true) {
-            size_t count = sys_pcb_query_vspace(__linuxss_pcb_cap, offset, infos,
-                                                LINUX_MMAP_QUERY_BATCH);
+            size_t count =
+                sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                     LINUX_MMAP_QUERY_BATCH);
             if (count == 0 || count == static_cast<size_t>(-1)) {
                 return cursor;
             }
@@ -101,25 +93,6 @@ namespace {
         }
     }
 
-    void copy_uts_field(char (&dst)[UTSNAME_FIELD_SIZE],
-                        const char *src) noexcept {
-        if (src == nullptr) {
-            dst[0] = '\0';
-            return;
-        }
-        strncpy(dst, src, UTSNAME_FIELD_SIZE - 1);
-        dst[UTSNAME_FIELD_SIZE - 1] = '\0';
-    }
-
-    const char *linux_machine_name() noexcept {
-#if defined(__ARCH_riscv64__)
-        return "riscv64";
-#elif defined(__ARCH_loongarch64__)
-        return "loongarch64";
-#else
-        return "unknown";
-#endif
-    }
 }  // namespace
 
 const char *at_to_string(int a_type) {
@@ -290,6 +263,7 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
                            const Elf64_auxv_t *auxv, size_t bsargc,
                            const bsheader *bsargv[]) {
     g_linux_initialized = true;
+    init_prog_data(bsargc, bsargv);
     // puts("linux-subsystem: initialized");
     // printf("stack dump:\n");
     // stack_dump(stack_sp, auxv);
@@ -335,26 +309,6 @@ size_t linux_sys_writev(size_t fd, const linux_iovec *iov, size_t iovcnt) {
     return total;
 }
 
-size_t linux_sys_brk(size_t newbrk) {
-    return linux_brk(newbrk);
-}
-
-size_t linux_sys_uname(void *buf) {
-    if (buf == nullptr) {
-        return INVALID_VALUE;
-    }
-
-    linux_utsname uts{};
-    copy_uts_field(uts.sysname, "sustcore");
-    copy_uts_field(uts.nodename, "qemu");
-    copy_uts_field(uts.release, "4.15.0");
-    copy_uts_field(uts.version, "build 0");
-    copy_uts_field(uts.machine, linux_machine_name());
-    copy_uts_field(uts.domainname, "(none)");
-    memcpy(buf, &uts, sizeof(uts));
-    return 0;
-}
-
 size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
                       size_t fd, size_t offset) {
     if ((flags & MAP_ANONYMOUS) == 0 || (flags & MAP_PRIVATE) == 0) {
@@ -377,7 +331,7 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     if (mem_cap == cap::null || mem_cap == cap::error) {
         return INVALID_VALUE;
     }
-    if (!sys_pcb_map(__linuxss_pcb_cap, mem_cap, 0,
+    if (!sys_pcb_map(__prog_pcb_cap, mem_cap, 0,
                      reinterpret_cast<void *>(target_addr), aligned_length,
                      prot_to_vma_prot(prot)))
     {
@@ -395,8 +349,8 @@ size_t linux_sys_munmap(void *addr, size_t length) {
     if ((target_addr % PAGESIZE) != 0) {
         return INVALID_VALUE;
     }
-    return sys_pcb_unmap(__linuxss_pcb_cap, addr, aligned_length) ? 0
-                                                                   : INVALID_VALUE;
+    return sys_pcb_unmap(__prog_pcb_cap, addr, aligned_length) ? 0
+                                                                : INVALID_VALUE;
 }
 
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,

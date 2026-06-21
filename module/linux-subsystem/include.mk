@@ -1,1 +1,1 @@
-sources += main.cpp
+sources += main.cpp basic.cpp
