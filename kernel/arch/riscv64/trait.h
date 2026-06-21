@@ -15,7 +15,6 @@
 #include <arch/riscv64/ctx.h>
 #include <arch/riscv64/ctxlayout.h>
 #include <arch/trait.h>
-#include <task/startup.h>
 
 namespace rv64 {
     class EarlySerial {

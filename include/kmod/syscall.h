@@ -11,11 +11,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <sustcore/capability.h>
 #include <sustcore/files.h>
 #include <sustcore/msg.h>
-#include <sustcore/startup.h>
 
 extern CapIdx __pcb_cap;
 extern CapIdx __main_tcb_cap;
@@ -38,8 +37,6 @@ struct MemQueryRet {
     size_t memsz;
     size_t allocated;
 };
-
-extern const task::KmodAuxvEntry *__auxv;
 
 extern "C" {
 void sys_write_serial(const char *str, size_t len);

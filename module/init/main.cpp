@@ -9,7 +9,7 @@
  *
  */
 
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
 
 #include <cstddef>
@@ -31,18 +31,22 @@ namespace {
         bool ok    = bootstrap_foreach_record(
             __bsargv, __bsargc,
             [&](const BootstrapRecordView &view) {
-                if (found || view.header->type != BOOTSTRAP_TYPE_DIRCAPEXPLAIN)
+                if (found || view.header->type != boot::TYPE_CAPEXP)
                 {
                     return;
                 }
-                BootstrapCapPathView cap_path{};
-                if (!bootstrap_parse_cap_path(view, cap_path)) {
+                BootstrapCapExplainView cap_explain{};
+                if (!bootstrap_parse_cap_explain(view, cap_explain) ||
+                    cap_explain.cap_type != PayloadType::VDIR ||
+                    cap_explain.cap_desc == nullptr ||
+                    cap_explain.cap_desc[0] != '#')
+                {
                     return;
                 }
-                if (strcmp(cap_path.path, "/") != 0) {
+                if (strcmp(cap_explain.cap_desc + 1, "/") != 0) {
                     return;
                 }
-                cap   = cap_path.cap;
+                cap   = cap_explain.cap_idx;
                 found = true;
             });
         return ok && found ? cap : cap::null;
@@ -66,15 +70,20 @@ namespace {
 
         struct RootDirBootstrap {
             bsheader header;
-            CapIdx cap;
-            char path[2];
+            BootstrapCapExplainPayloadHead explain;
+            char desc[3];
         } bootstrap{
             .header = bsheader{
                 .size = sizeof(RootDirBootstrap),
-                .type = BOOTSTRAP_TYPE_DIRCAPEXPLAIN,
+                .type = boot::TYPE_CAPEXP,
             },
-            .cap  = child_root_cap,
-            .path = "/",
+            .explain =
+                BootstrapCapExplainPayloadHead{
+                    .cap_idx  = child_root_cap,
+                    .cap_type = PayloadType::VDIR,
+                    .cap_perm = ~b64(0),
+                },
+            .desc = "#/",
         };
 
         CapIdx initial_caps[] = {child_root_cap, cap::null};
@@ -106,15 +115,20 @@ namespace {
 
         struct RootDirBootstrap {
             bsheader header;
-            CapIdx cap;
-            char path[2];
+            BootstrapCapExplainPayloadHead explain;
+            char desc[3];
         } bootstrap{
             .header = bsheader{
                 .size = sizeof(RootDirBootstrap),
-                .type = BOOTSTRAP_TYPE_DIRCAPEXPLAIN,
+                .type = boot::TYPE_CAPEXP,
             },
-            .cap  = child_root_cap,
-            .path = "/",
+            .explain =
+                BootstrapCapExplainPayloadHead{
+                    .cap_idx  = child_root_cap,
+                    .cap_type = PayloadType::VDIR,
+                    .cap_perm = ~b64(0),
+                },
+            .desc = "#/",
         };
 
         CapIdx initial_caps[] = {child_root_cap, cap::null};
@@ -276,6 +290,9 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         }
         kmod_fclose(fd);
     }
+    else {
+        printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
+    }
 
     // fd = kmod_fopen("/initrd/test_thread.mod", "x");
     // if (fd >= 0) {
@@ -312,6 +329,9 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         }
         kmod_fclose(fd);
     }
+    else {
+        printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
+    }
 
     // fd = kmod_fopen("/initrd/test_rpc_server.mod", "x");
     // if (fd >= 0) {
@@ -340,6 +360,9 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     if (kmod_symlink("/lib", "/initrd/tmp/lib/") < 0) {
         printf("init: create /lib symlink failed\n");
     }
+    else {
+        printf("init: unable to create /lib symlink, maybe it already exists\n");
+    }
     printf ("link /lib/ -> /initrd/tmp/lib/ created\n");
 
     fd = kmod_fopen("/initrd/test-linux.mod", "x");
@@ -354,6 +377,9 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         }
         kmod_fclose(fd);
     }
+    else {
+        printf("init: /initrd/test-linux.mod not found, skipping linux test\n");
+    }
 
     fd = kmod_fopen("/initrd/tmp/write", "x");
     if (fd >= 0) {
@@ -366,6 +392,9 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
                    static_cast<unsigned long>(pid));
         }
         kmod_fclose(fd);
+    }
+    else {
+        printf("init: /initrd/tmp/write not found, skipping write test\n");
     }
 
     // ext4 score tests — run sequentially after rw test

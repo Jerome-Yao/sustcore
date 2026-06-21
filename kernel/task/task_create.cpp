@@ -18,7 +18,6 @@
 #include <object/task.h>
 #include <sus/raii.h>
 #include <task/scheduler.h>
-#include <task/startup.h>
 #include <task/task.h>
 #include <vfs/vfs.h>
 
@@ -28,6 +27,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <elf.h>
 
 namespace task {
     namespace {
@@ -261,7 +261,7 @@ namespace task {
             VirAddr sp;
             std::vector<VirAddr> argv_ptrs{};
             std::vector<VirAddr> envp_ptrs{};
-            std::vector<task::KmodAuxvEntry> auxv_entries{};
+            std::vector<uint64_t> auxv_entries{};
             std::vector<VirAddr> bsargv_ptrs{};
         };
 
@@ -336,15 +336,15 @@ namespace task {
 
         [[nodiscard]]
         Result<void> build_auxv(StartupStackBuilder &builder,
-                                const std::vector<task::KmodAuxvEntry> &auxv) {
+                                const std::vector<uint64_t> &auxv) {
             builder.auxv_entries = auxv;
             if (builder.auxv_entries.empty() ||
-                builder.auxv_entries.back().a_type != task::KMOD_AT_NULL)
+                builder.auxv_entries.size() < 2 ||
+                builder.auxv_entries[builder.auxv_entries.size() - 2] !=
+                    AT_NULL)
             {
-                builder.auxv_entries.push_back(task::KmodAuxvEntry{
-                    .a_type = task::KMOD_AT_NULL,
-                    .a_val  = 0,
-                });
+                builder.auxv_entries.push_back(AT_NULL);
+                builder.auxv_entries.push_back(0);
             }
             void_return();
         }
@@ -443,28 +443,46 @@ namespace task {
             .sp        = stack_top,
         };
 
-        spec.auxv = {
-            task::KmodAuxvEntry{
-                .a_type = task::KMOD_AT_SUS_HEAP_BASE,
-                .a_val  = spec.heap_vaddr.arith(),
-            },
-            task::KmodAuxvEntry{
-                .a_type = task::KMOD_AT_SUS_PCB_CAP,
-                .a_val  = pcb_cap,
-            },
-            task::KmodAuxvEntry{
-                .a_type = task::KMOD_AT_SUS_MAIN_TCB,
-                .a_val  = main_tcb_cap,
-            },
-            task::KmodAuxvEntry{
-                .a_type = task::KMOD_AT_SUS_HEAP_MEM,
-                .a_val  = spec.heap_mem_cap,
-            },
-            task::KmodAuxvEntry{
-                .a_type = task::KMOD_AT_SUS_STACK_MEM,
-                .a_val  = stack_mem_cap,
-            },
-        };
+        spec.auxv = {};
+        auto pcb_explain_res = append_bootstrap_cap_explain_record(
+            spec, pcb_cap, PayloadType::PCB, perm::allperm(), "#self:0");
+        propagate(pcb_explain_res);
+        auto tcb_explain_res = append_bootstrap_cap_explain_record(
+            spec, main_tcb_cap, PayloadType::TCB, perm::allperm(), "#main:0");
+        propagate(tcb_explain_res);
+
+        char heap_desc[128];
+        snprintf(heap_desc, sizeof(heap_desc), "#heap:[%p,%p)",
+                 spec.heap_vaddr.addr(), spec.heap_vaddr.addr());
+        auto heap_cap_res = append_bootstrap_cap_explain_record(
+            spec, spec.heap_mem_cap, PayloadType::MEMORY, perm::allperm(),
+            heap_desc);
+        propagate(heap_cap_res);
+
+        char stack_desc[128];
+        snprintf(stack_desc, sizeof(stack_desc), "#stack:[%p,%p)",
+                 USER_STACK_BOTTOM.addr(), USER_STACK_TOP.addr());
+        auto stack_cap_explain_res = append_bootstrap_cap_explain_record(
+            spec, stack_mem_cap, PayloadType::MEMORY, perm::allperm(),
+            stack_desc);
+        propagate(stack_cap_explain_res);
+
+        auto heap_vaddr_res =
+            append_bootstrap_vaddr_explain_record(spec, spec.heap_vaddr, "#heap");
+        propagate(heap_vaddr_res);
+        auto stack_vaddr_res = append_bootstrap_vaddr_explain_record(
+            spec, USER_STACK_BOTTOM, "#stack");
+        propagate(stack_vaddr_res);
+        auto entry_vaddr_res = append_bootstrap_vaddr_explain_record(
+            spec, spec.linuxproc_entrypoint.nonnull() ? spec.linuxproc_entrypoint
+                                                       : spec.entrypoint,
+            "#entrypoint");
+        propagate(entry_vaddr_res);
+        if (spec.linuxproc_entrypoint.nonnull()) {
+            auto ss_vaddr_res = append_bootstrap_vaddr_explain_record(
+                spec, spec.entrypoint, "#ss-entrypoint");
+            propagate(ss_vaddr_res);
+        }
         auto argv_res  = build_argv(builder, spec.argv);
         auto envp_res  = build_envp(builder, spec.envp);
         auto auxv_res  = build_auxv(builder, spec.auxv);
@@ -488,9 +506,8 @@ namespace task {
             layout.push_back(ptr.arith());
         }
         layout.push_back(0);
-        for (const auto &entry : builder.auxv_entries) {
-            layout.push_back(entry.a_type);
-            layout.push_back(entry.a_val);
+        for (auto value : builder.auxv_entries) {
+            layout.push_back(value);
         }
         layout.push_back(builder.bsargv_ptrs.size());
         for (auto ptr : builder.bsargv_ptrs) {
@@ -513,7 +530,7 @@ namespace task {
 
     Result<util::nonnull<TCB *>> TaskManager::setup_user_main_thread(
         util::nonnull<PCB *> pcb, util::nonnull<TCB *> tcb, TaskSpec &spec,
-        task::StartupInfo startup_info, bool link_into_pcb, const char *log_tag) {
+        bool link_into_pcb, const char *log_tag) {
         if (pcb->cholder == nullptr || pcb->tmm.get() == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -542,12 +559,9 @@ namespace task {
         propagate(tcb_cap_res);
 
         pcb->main_tcb_cap          = tcb_cap_res.value();
-        startup_info.pcb_cap       = pcb->pcb_cap;
-        startup_info.main_tcb_cap  = pcb->main_tcb_cap;
-        startup_info.stack_mem_cap = stack_cap_res.value();
-        auto stack_top_res =
-            build_user_stack(*stack_mem, USER_STACK_TOP, spec, pcb->pcb_cap,
-                             pcb->main_tcb_cap, stack_cap_res.value());
+        auto stack_top_res = build_user_stack(*stack_mem, USER_STACK_TOP, spec,
+                                              pcb->pcb_cap, pcb->main_tcb_cap,
+                                              stack_cap_res.value());
         propagate(stack_top_res);
         loggers::TASK::DEBUG("栈内存分配: pid=%lu 栈内存地址=%p 已分配=%lu",
                              pcb->pid, stack_mem, stack_mem->allocated_size());
@@ -607,16 +621,6 @@ namespace task {
             propagate(pcb_cap_res);
         }
 
-        task::StartupInfo startup_info{
-            .heap_vaddr    = spec.heap_vaddr,
-            .stack_vaddr   = USER_STACK_BOTTOM,
-            .entrypoint    = spec.entrypoint,
-            .pcb_cap       = pcb->pcb_cap,
-            .main_tcb_cap  = cap::null,
-            .heap_mem_cap  = spec.heap_mem_cap,
-            .stack_mem_cap = cap::null,
-        };
-
         if (reuse_main_tcb == nullptr) {
             auto tcb_res = create_bound_tcb(pcb);
             propagate(tcb_res);
@@ -627,7 +631,7 @@ namespace task {
             tcb->boot_role  = BootThreadRole::NONE;
             tcb->schd_class = schd_class;
             auto setup_res = setup_user_main_thread(
-                pcb, tcb, spec, startup_info, true, "构造用户主线程");
+                pcb, tcb, spec, true, "构造用户主线程");
             propagate(setup_res);
             tcb_guard.release();
             return setup_res.value();
@@ -638,8 +642,7 @@ namespace task {
         tcb->is_kernel  = false;
         tcb->boot_role  = BootThreadRole::NONE;
         tcb->schd_class = schd_class;
-        return setup_user_main_thread(pcb, tcb, spec, startup_info, true,
-                                      "复用主线程上下文");
+        return setup_user_main_thread(pcb, tcb, spec, true, "复用主线程上下文");
     }
 
     Result<util::nonnull<PCB *>> TaskManager::commit_loaded_task(
@@ -860,17 +863,23 @@ namespace task {
         propagate(root_res);
         std::vector<TaskSpec::BootstrapRecordData> bsargv{};
         {
-            std::vector<char> payload(sizeof(CapIdx) + 2);
-            memcpy(payload.data(), &root_res.value(), sizeof(CapIdx));
-            memcpy(payload.data() + sizeof(CapIdx), "/", 2);
+            BootstrapCapExplainPayloadHead head{
+                .cap_idx  = root_res.value(),
+                .cap_type = PayloadType::VDIR,
+                .cap_perm = perm::vdir::READ | perm::vdir::WRITE |
+                            perm::vdir::EXEC | perm::basic::CLONE,
+            };
+            std::vector<char> payload(sizeof(head) + 3);
+            memcpy(payload.data(), &head, sizeof(head));
+            memcpy(payload.data() + sizeof(head), "#/", 3);
             bsargv.push_back(TaskSpec::BootstrapRecordData{
-                .type  = BOOTSTRAP_TYPE_DIRCAPEXPLAIN,
+                .type  = boot::TYPE_CAPEXP,
                 .bytes = std::vector<char>(sizeof(bsheader) + payload.size()),
             });
             auto *header =
                 reinterpret_cast<bsheader *>(bsargv.back().bytes.data());
             header->size = bsargv.back().bytes.size();
-            header->type = BOOTSTRAP_TYPE_DIRCAPEXPLAIN;
+            header->type = boot::TYPE_CAPEXP;
             memcpy(bsargv.back().bytes.data() + sizeof(bsheader),
                    payload.data(), payload.size());
         }

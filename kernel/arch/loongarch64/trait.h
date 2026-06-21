@@ -16,7 +16,6 @@
 #include <arch/loongarch64/ctxlayout.h>
 #include <arch/trait.h>
 #include <sus/types.h>
-#include <task/startup.h>
 
 #include <cstddef>
 

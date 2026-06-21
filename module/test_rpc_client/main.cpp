@@ -1,4 +1,4 @@
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
 #include <rpc/metahelper.h>
 #include <rpc/packet.h>

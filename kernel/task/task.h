@@ -13,7 +13,7 @@
 
 #include <arch/description.h>
 #include <exe/task.h>
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <schd/schdbase.h>
 #include <sus/list.h>
 #include <sus/map.h>
@@ -164,8 +164,7 @@ namespace task {
          */
         Result<util::nonnull<TCB *>> setup_user_main_thread(
             util::nonnull<PCB *> pcb, util::nonnull<TCB *> tcb, TaskSpec &spec,
-            task::StartupInfo startup_info, bool link_into_pcb,
-            const char *log_tag);
+            bool link_into_pcb, const char *log_tag);
         /**
          * @brief 创建一个已完成装载的用户进程, 可选择是否立即唤醒主线程.
          */
@@ -237,8 +236,12 @@ namespace task {
         Result<void> validate_bootstrap_record(
             const TaskSpec::BootstrapRecordData &record) noexcept;
         [[nodiscard]]
-        Result<void> append_bootstrap_cap_path_record(
-            TaskSpec &spec, uint32_t type, CapIdx cap, const char *path);
+        Result<void> append_bootstrap_cap_explain_record(
+            TaskSpec &spec, CapIdx cap_idx, PayloadType cap_type, b64 cap_perm,
+            const char *cap_desc);
+        [[nodiscard]]
+        Result<void> append_bootstrap_vaddr_explain_record(
+            TaskSpec &spec, VirAddr vaddr, const char *vaddr_desc);
         /**
          * @brief 复制启动缓冲区、预加载并装载 ELF 到 TaskSpec.
          */

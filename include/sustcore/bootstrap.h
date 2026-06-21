@@ -1,7 +1,7 @@
 /**
  * @file bootstrap.h
  * @author theflysong (song_of_the_fly@163.com)
- * @brief kmod 启动缓冲区中使用的简单引导参数结构
+ * @brief 启动缓冲区中使用的 bootstrap 记录结构
  * @version alpha-1.0.0
  * @date 2026-06-05
  *
@@ -11,51 +11,61 @@
 
 #pragma once
 
+#include <sustcore/addr.h>
+#include <sustcore/capability.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 
-#include <sustcore/capability.h>
-
-/**
- * @brief 单条 bootstrap 信息的公共头部.
- */
 struct bsheader {
-    uint32_t size;  ///< 记录总长度, 包含头部与 payload.
-    uint32_t type;  ///< 记录类型.
+    uint32_t size;
+    uint32_t type;
 };
 
-/**
- * @brief bootstrap 记录的只读视图.
- */
 struct BootstrapRecordView {
     const bsheader *header;
     const void *data;
     size_t data_size;
 };
 
-/**
- * @brief FILECAPEXPLAIN/DIRCAPEXPLAIN 的解析结果.
- */
-struct BootstrapCapPathView {
-    CapIdx cap;
-    const char *path;
+struct BootstrapCapExplainPayloadHead {
+    CapIdx cap_idx;
+    PayloadType cap_type;
+    b64 cap_perm;
 };
 
-constexpr uint32_t BOOTSTRAP_TYPE_FILECAPEXPLAIN = 0x1;
-constexpr uint32_t BOOTSTRAP_TYPE_DIRCAPEXPLAIN  = 0x2;
-constexpr uint32_t BOOTSTRAP_USER_TYPE_PREFIX    = 0xFFFF0000U;
+struct BootstrapCapExplainView {
+    CapIdx cap_idx;
+    PayloadType cap_type;
+    b64 cap_perm;
+    const char *cap_desc;
+};
 
-/**
- * @brief 单个 CapIdx 作为 payload 的简单记录模板.
- */
+struct BootstrapVaddrExplainPayloadHead {
+    addr_t vaddr;
+};
+
+struct BootstrapVaddrExplainView {
+    VirAddr vaddr;
+    const char *vaddr_desc;
+};
+
+namespace boot {
+    constexpr uint32_t TYPE_CAPEXP   = 0x1;
+    constexpr uint32_t TYPE_VADDREXP = 0x2;
+}  // namespace boot
+
+constexpr uint32_t BOOTSTRAP_USER_TYPE_PREFIX = 0xFFFF0000U;
+
 template <uint32_t Type>
 struct BootstrapSingleCapRecord {
     bsheader header;
     CapIdx cap;
 
     explicit constexpr BootstrapSingleCapRecord(CapIdx value) noexcept
-        : header{sizeof(BootstrapSingleCapRecord<Type>), Type}, cap(value) {}
+        : header{.size = sizeof(BootstrapSingleCapRecord<Type>), .type = Type},
+          cap(value) {}
 };
 
 [[nodiscard]]
@@ -103,17 +113,50 @@ inline bool bootstrap_parse_single_cap(const BootstrapRecordView &view,
 }
 
 [[nodiscard]]
-inline bool bootstrap_parse_cap_path(const BootstrapRecordView &view,
-                                     BootstrapCapPathView &cap_path) {
-    if (view.data == nullptr || view.data_size < sizeof(CapIdx) + 1) {
+inline bool bootstrap_parse_cap_explain(const BootstrapRecordView &view,
+                                        BootstrapCapExplainView &cap_explain) {
+    if (view.data == nullptr ||
+        view.data_size < sizeof(BootstrapCapExplainPayloadHead) + 1)
+    {
         return false;
     }
 
     auto *bytes = static_cast<const char *>(view.data);
-    memcpy(&cap_path.cap, bytes, sizeof(cap_path.cap));
-    cap_path.path = bytes + sizeof(CapIdx);
+    auto *head =
+        reinterpret_cast<const BootstrapCapExplainPayloadHead *>(bytes);
+    cap_explain.cap_idx  = head->cap_idx;
+    cap_explain.cap_type = head->cap_type;
+    cap_explain.cap_perm = head->cap_perm;
+    cap_explain.cap_desc = bytes + sizeof(BootstrapCapExplainPayloadHead);
 
-    for (size_t i = sizeof(CapIdx); i < view.data_size; ++i) {
+    for (size_t i = sizeof(BootstrapCapExplainPayloadHead); i < view.data_size;
+         ++i)
+    {
+        if (bytes[i] == '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]]
+inline bool bootstrap_parse_vaddr_explain(
+    const BootstrapRecordView &view, BootstrapVaddrExplainView &vaddr_explain) {
+    if (view.data == nullptr ||
+        view.data_size < sizeof(BootstrapVaddrExplainPayloadHead) + 1)
+    {
+        return false;
+    }
+
+    auto *bytes = static_cast<const char *>(view.data);
+    auto *head =
+        reinterpret_cast<const BootstrapVaddrExplainPayloadHead *>(bytes);
+    vaddr_explain.vaddr      = VirAddr(head->vaddr);
+    vaddr_explain.vaddr_desc = bytes + sizeof(BootstrapVaddrExplainPayloadHead);
+
+    for (size_t i = sizeof(BootstrapVaddrExplainPayloadHead);
+         i < view.data_size; ++i)
+    {
         if (bytes[i] == '\0') {
             return true;
         }
@@ -123,8 +166,8 @@ inline bool bootstrap_parse_cap_path(const BootstrapRecordView &view,
 
 [[nodiscard]]
 inline bool bootstrap_find_single_cap(const bsheader *const *bsargv,
-                                      size_t bsargc,
-                                      uint32_t type, CapIdx &cap) {
+                                      size_t bsargc, uint32_t type,
+                                      CapIdx &cap) {
     bool found = false;
     bool ok    = bootstrap_foreach_record(
         bsargv, bsargc, [&](const BootstrapRecordView &view) {

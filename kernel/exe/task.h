@@ -12,7 +12,7 @@
 #pragma once
 
 #include <cap/cholder.h>
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <mem/vma.h>
 #include <sustcore/addr.h>
 #include <sustcore/capability.h>
@@ -66,6 +66,6 @@ struct TaskSpec {
     // 传递给新镜像的参数与 bootstrap 记录.
     std::vector<std::string> argv{};
     std::vector<std::string> envp{};
-    std::vector<task::KmodAuxvEntry> auxv{};
+    std::vector<uint64_t> auxv{};
     std::vector<BootstrapRecordData> bsargv{};
 };

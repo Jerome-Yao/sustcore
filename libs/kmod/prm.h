@@ -9,10 +9,8 @@
  *
  */
 
-#include <kmod/bootstrap.h>
-#include <sustcore/startup.h>
 #include <sustcore/capability.h>
-
+#include <sustcore/bootstrap.h>
 #include <cstddef>
 
 extern size_t __heap_base;
@@ -24,6 +22,5 @@ extern CapIdx __stack_mem_cap;
 extern size_t __argc;
 extern const char **__argv;
 extern const char **__envp;
-extern const task::KmodAuxvEntry *__auxv;
 extern size_t __bsargc;
 extern const bsheader **__bsargv;

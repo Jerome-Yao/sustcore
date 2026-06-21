@@ -11,7 +11,7 @@
 
 #include <cap/permission.h>
 #include <exe/elfloader.h>
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <logger.h>
 #include <mem/alloc.h>
 #include <task/task.h>
@@ -21,13 +21,23 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include <elf.h>
 
 namespace task {
     namespace {
         [[nodiscard]]
-        bool valid_bootstrap_cap_path(CapIdx cap, const char *path) noexcept {
-            return cap != cap::null && cap != cap::error && path != nullptr &&
-                   path[0] == '/';
+        bool valid_cap_explain(CapIdx cap_idx, PayloadType cap_type,
+                               const char *cap_desc) noexcept {
+            return cap_idx != cap::null && cap_idx != cap::error &&
+                   cap_type != PayloadType::NONE && cap_desc != nullptr &&
+                   cap_desc[0] != '\0';
+        }
+
+        [[nodiscard]]
+        bool valid_vaddr_explain(VirAddr vaddr,
+                                 const char *vaddr_desc) noexcept {
+            return vaddr.nonnull() && vaddr_desc != nullptr &&
+                   vaddr_desc[0] != '\0';
         }
 
         [[nodiscard]]
@@ -115,12 +125,19 @@ namespace task {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        if (header->type == BOOTSTRAP_TYPE_FILECAPEXPLAIN ||
-            header->type == BOOTSTRAP_TYPE_DIRCAPEXPLAIN)
-        {
-            BootstrapCapPathView cap_path{};
-            if (!bootstrap_parse_cap_path(view, cap_path) ||
-                !valid_bootstrap_cap_path(cap_path.cap, cap_path.path))
+        if (header->type == boot::TYPE_CAPEXP) {
+            BootstrapCapExplainView cap_explain{};
+            if (!bootstrap_parse_cap_explain(view, cap_explain) ||
+                !valid_cap_explain(cap_explain.cap_idx, cap_explain.cap_type,
+                                   cap_explain.cap_desc))
+            {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+        } else if (header->type == boot::TYPE_VADDREXP) {
+            BootstrapVaddrExplainView vaddr_explain{};
+            if (!bootstrap_parse_vaddr_explain(view, vaddr_explain) ||
+                !valid_vaddr_explain(vaddr_explain.vaddr,
+                                     vaddr_explain.vaddr_desc))
             {
                 unexpect_return(ErrCode::INVALID_PARAM);
             }
@@ -129,17 +146,43 @@ namespace task {
         void_return();
     }
 
-    Result<void> TaskManager::append_bootstrap_cap_path_record(
-        TaskSpec &spec, uint32_t type, CapIdx cap, const char *path) {
-        if (!valid_bootstrap_cap_path(cap, path)) {
+    Result<void> TaskManager::append_bootstrap_cap_explain_record(
+        TaskSpec &spec, CapIdx cap_idx, PayloadType cap_type, b64 cap_perm,
+        const char *cap_desc) {
+        if (!valid_cap_explain(cap_idx, cap_type, cap_desc)) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        std::vector<char> payload(sizeof(CapIdx) + strlen(path) + 1);
-        memcpy(payload.data(), &cap, sizeof(cap));
-        memcpy(payload.data() + sizeof(cap), path, strlen(path) + 1);
-        spec.bsargv.push_back(make_bootstrap_record(type, payload.data(),
+        BootstrapCapExplainPayloadHead head{
+            .cap_idx  = cap_idx,
+            .cap_type = cap_type,
+            .cap_perm = cap_perm,
+        };
+        std::vector<char> payload(sizeof(head) + strlen(cap_desc) + 1);
+        memcpy(payload.data(), &head, sizeof(head));
+        memcpy(payload.data() + sizeof(head), cap_desc, strlen(cap_desc) + 1);
+        spec.bsargv.push_back(make_bootstrap_record(boot::TYPE_CAPEXP,
+                                                    payload.data(),
                                                     payload.size()));
+        void_return();
+    }
+
+    Result<void> TaskManager::append_bootstrap_vaddr_explain_record(
+        TaskSpec &spec, VirAddr vaddr, const char *vaddr_desc) {
+        if (!valid_vaddr_explain(vaddr, vaddr_desc)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        BootstrapVaddrExplainPayloadHead head{
+            .vaddr = vaddr.arith(),
+        };
+        std::vector<char> payload(sizeof(head) + strlen(vaddr_desc) + 1);
+        memcpy(payload.data(), &head, sizeof(head));
+        memcpy(payload.data() + sizeof(head), vaddr_desc,
+               strlen(vaddr_desc) + 1);
+        spec.bsargv.push_back(
+            make_bootstrap_record(boot::TYPE_VADDREXP, payload.data(),
+                                  payload.size()));
         void_return();
     }
 
@@ -224,9 +267,7 @@ namespace task {
             propagate(validate_res);
             spec.bsargv.push_back(record);
         }
-        spec.auxv = {
-            task::KmodAuxvEntry{.a_type = task::KMOD_AT_NULL, .a_val = 0},
-        };
+        spec.auxv = {AT_NULL, 0};
         spec.linuxproc_entrypoint = linux_entry;
         void_return();
     }

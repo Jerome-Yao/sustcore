@@ -3,7 +3,7 @@
  * @brief Ext4 read-write and mkdir tests
  */
 
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
 
 #include <cstdio>
@@ -27,12 +27,16 @@ namespace {
         bool ok    = bootstrap_foreach_record(
             __bsargv, __bsargc,
             [&](const BootstrapRecordView &view) {
-                if (found || view.header->type != BOOTSTRAP_TYPE_DIRCAPEXPLAIN)
+                if (found || view.header->type != boot::TYPE_CAPEXP)
                     return;
-                BootstrapCapPathView cap_path {};
-                if (!bootstrap_parse_cap_path(view, cap_path)) return;
-                if (strcmp(cap_path.path, "/") != 0) return;
-                cap   = cap_path.cap;
+                BootstrapCapExplainView cap_explain{};
+                if (!bootstrap_parse_cap_explain(view, cap_explain) ||
+                    cap_explain.cap_type != PayloadType::VDIR ||
+                    cap_explain.cap_desc == nullptr ||
+                    cap_explain.cap_desc[0] != '#')
+                    return;
+                if (strcmp(cap_explain.cap_desc + 1, "/") != 0) return;
+                cap   = cap_explain.cap_idx;
                 found = true;
             });
         return ok && found ? cap : cap::null;
