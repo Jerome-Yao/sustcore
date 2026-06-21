@@ -15,6 +15,8 @@
 #include <logger.h>
 #include <mem/alloc.h>
 #include <task/task.h>
+#include <device/model.h>
+#include <vfs/vfs.h>
 
 #include <cstring>
 #include <string>
@@ -237,14 +239,53 @@ namespace task {
             propagate_return(preload_res);
         }
 
-        auto load_linux_res = loader::elf::load_segments(spec, prm, true);
+        std::string interp_path{};
+        auto load_linux_res =
+            loader::elf::load_segments(spec, prm, true,
+                                       task::GENERIC_PROCESS_BASE, true,
+                                       &interp_path);
         if (!load_linux_res.has_value()) {
             loggers::SUSTCORE::ERROR("加载POSIX程序失败! 错误码: %s",
                                      to_cstring(load_linux_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
 
-        VirAddr linux_entry = spec.entrypoint;
+        const bool user_program_dyn           = spec.dyn;
+        const bool user_program_has_interp    = spec.has_interp;
+        const VirAddr user_program_load_base  = spec.load_base;
+        const VirAddr user_program_interp_base = spec.interp_base;
+        const VirAddr user_program_entrypoint = spec.program_entrypoint;
+        const VirAddr user_program_phdr_vaddr = spec.phdr_vaddr;
+        const size_t user_program_phdr_num    = spec.phdr_num;
+        const size_t user_program_phdr_entsize = spec.phdr_entsize;
+
+        VirAddr runtime_entry = user_program_entrypoint;
+        if (spec.dyn) {
+            if (interp_path.empty()) {
+                unexpect_return(ErrCode::NOT_SUPPORTED);
+            }
+            auto interp_cap_res = VFS::inst().open(interp_path.c_str(), *holder);
+            propagate(interp_cap_res);
+            LoadPrm interp_prm{
+                .image_file_cap = interp_cap_res.value(),
+                .src_path       = interp_path,
+            };
+            spec.has_interp = true;
+            spec.interp_base = task::GENERIC_INTERPRET_BASE;
+            auto interp_load_res = loader::elf::load_segments(
+                spec, interp_prm, false, task::GENERIC_INTERPRET_BASE, true,
+                nullptr);
+            if (!interp_load_res.has_value()) {
+                loggers::SUSTCORE::ERROR("加载POSIX解释器失败! 错误码: %s",
+                                         to_cstring(interp_load_res.error()));
+                unexpect_return(ErrCode::CREATION_FAILED);
+            }
+            spec.interp_entrypoint = spec.entrypoint;
+            runtime_entry          = spec.interp_entrypoint;
+        }
+
+        const VirAddr user_program_interp_entrypoint = spec.interp_entrypoint;
+
         LoadPrm subsystem_prm{
             .image_file_cap = subsystem_image_cap,
             .src_path       = "<cap>",
@@ -259,16 +300,60 @@ namespace task {
             unexpect_return(ErrCode::CREATION_FAILED);
         }
 
+        spec.dyn               = user_program_dyn;
+        spec.has_interp        = user_program_has_interp;
+        spec.load_base         = user_program_load_base;
+        spec.interp_base       = user_program_interp_base;
+        spec.interp_entrypoint = user_program_interp_entrypoint;
+        spec.program_entrypoint = user_program_entrypoint;
+        spec.phdr_vaddr        = user_program_phdr_vaddr;
+        spec.phdr_num          = user_program_phdr_num;
+        spec.phdr_entsize      = user_program_phdr_entsize;
+
         spec.argv = argv;
         spec.envp = envp;
+        spec.linux_execfn.clear();
         spec.bsargv.clear();
         for (const auto &record : bsargv) {
             auto validate_res = validate_bootstrap_record(record);
             propagate(validate_res);
             spec.bsargv.push_back(record);
         }
-        spec.auxv = {AT_NULL, 0};
-        spec.linuxproc_entrypoint = linux_entry;
+        auto *platform = device::DeviceModel::inst().platform();
+        if (platform == nullptr || platform->clock_source() == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        spec.linux_execfn =
+            prm.src_path.empty() ? std::string{} : std::string(prm.src_path);
+        spec.auxv = {
+            AT_PHDR,
+            spec.phdr_vaddr.arith(),
+            AT_PHNUM,
+            spec.phdr_num,
+            AT_PHENT,
+            spec.phdr_entsize,
+            AT_PAGESZ,
+            PAGESIZE,
+            AT_CLKTCK,
+            platform->clock_source()->frequency().to_hz(),
+            AT_ENTRY,
+            spec.program_entrypoint.arith(),
+            AT_BASE,
+            task::GENERIC_INTERPRET_BASE.arith(),
+            AT_UID,
+            0,
+            AT_EUID,
+            0,
+            AT_GID,
+            0,
+            AT_EGID,
+            0,
+            AT_SECURE,
+            0,
+            AT_FLAGS,
+            0,
+        };
+        spec.linuxproc_entrypoint = runtime_entry;
         void_return();
     }
 }  // namespace task

@@ -60,6 +60,16 @@ struct TaskSpec {
     VirAddr entrypoint;
     // 可选的 POSIX 程序真实入口地址, 供 subsystem 返回时使用.
     VirAddr linuxproc_entrypoint;
+    // DYN/解释器装载相关元信息
+    bool dyn                     = false;
+    bool has_interp              = false;
+    VirAddr load_base            = VirAddr(static_cast<addr_t>(0));
+    VirAddr interp_base          = VirAddr(static_cast<addr_t>(0));
+    VirAddr interp_entrypoint    = VirAddr(static_cast<addr_t>(0));
+    VirAddr program_entrypoint   = VirAddr(static_cast<addr_t>(0));
+    VirAddr phdr_vaddr           = VirAddr(static_cast<addr_t>(0));
+    size_t phdr_num              = 0;
+    size_t phdr_entsize          = 0;
     // 堆的起始地址
     VirAddr heap_vaddr;
     CapIdx heap_mem_cap = cap::null;
@@ -67,5 +77,6 @@ struct TaskSpec {
     std::vector<std::string> argv{};
     std::vector<std::string> envp{};
     std::vector<uint64_t> auxv{};
+    std::string linux_execfn{};
     std::vector<BootstrapRecordData> bsargv{};
 };

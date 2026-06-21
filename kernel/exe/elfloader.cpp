@@ -29,6 +29,15 @@ namespace loader::elf {
     namespace {
         constexpr size_t SEGMENT_IO_CHUNK_SIZE = PAGESIZE;
 
+        struct RuntimeLoadSegment {
+            size_t index;
+            Elf64_Phdr phdr;
+            VirAddr runtime_vaddr;
+            VirAddr map_begin;
+            VirAddr map_end;
+            size_t page_prefix;
+        };
+
 #if defined(__ARCH_riscv64__)
         constexpr Elf64_Half SUPPORTED_MACHINE = EM_RISCV;
 #elif defined(__ARCH_loongarch64__)
@@ -43,6 +52,16 @@ namespace loader::elf {
         [[nodiscard]]
         constexpr bool is_load_segment(const Elf64_Phdr &phdr) noexcept {
             return phdr.p_type == PT_LOAD;
+        }
+
+        [[nodiscard]]
+        constexpr bool is_interp_segment(const Elf64_Phdr &phdr) noexcept {
+            return phdr.p_type == PT_INTERP;
+        }
+
+        [[nodiscard]]
+        constexpr bool is_phdr_segment(const Elf64_Phdr &phdr) noexcept {
+            return phdr.p_type == PT_PHDR;
         }
 
         /**
@@ -211,7 +230,8 @@ namespace loader::elf {
      * @brief 校验 ELF64 文件头及程序头表边界.
      */
     [[nodiscard]]
-    Result<void> validate_elf64(const Elf64_Ehdr &ehdr, size_t file_size) noexcept {
+    Result<void> validate_elf64(const Elf64_Ehdr &ehdr, size_t file_size,
+                                bool accept_dyn) noexcept {
         if (!check_magic(ehdr.e_ident)) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
@@ -226,9 +246,9 @@ namespace loader::elf {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
 
-        // only support executable files
-        // dynamic linking is not supported yet.
-        if (ehdr.e_type != ET_EXEC) {
+        if (ehdr.e_type != ET_EXEC &&
+            !(accept_dyn && ehdr.e_type == ET_DYN))
+        {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
 
@@ -250,36 +270,35 @@ namespace loader::elf {
      */
     [[nodiscard]]
     Result<void> loadsegs(VFile &file, TaskMemoryManager &tmm,
-                          const Elf64_Ehdr &ehdr) {
-        for (size_t i = 0; i < ehdr.e_phnum; ++i) {
-            Elf64_Phdr phdr{};
-            off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
-            auto read_phdr_res = read_exact(file, offset, &phdr, sizeof(phdr));
-            propagate(read_phdr_res);
-
-            if (!is_load_segment(phdr)) {
-                continue;
-            }
-
-            VirAddr segvaddr(phdr.p_vaddr);
-            auto vma_res = locate_segment_vma(tmm, segvaddr, phdr.p_memsz);
+                          const std::vector<RuntimeLoadSegment> &segments) {
+        for (const auto &segment : segments) {
+            auto vma_res = locate_segment_vma(
+                tmm, segment.map_begin,
+                static_cast<size_t>(segment.map_end - segment.map_begin));
             propagate(vma_res);
             VMA &vma = vma_res.value().get();
-            size_t mem_offset = vma.mem_offset + (segvaddr - vma.varea.begin);
+            size_t mem_offset = vma.mem_offset + segment.page_prefix;
 
             loggers::SUSTCORE::INFO(
-                "加载ELF段: idx=%u vaddr=%p filesz=%lu memsz=%lu mem_off=%lu",
-                i, segvaddr.addr(), static_cast<unsigned long>(phdr.p_filesz),
-                static_cast<unsigned long>(phdr.p_memsz), mem_offset);
+                "加载ELF段: idx=%u map=[%p,%p) vaddr=%p filesz=%lu memsz=%lu "
+                "prefix=%lu mem_off=%lu",
+                segment.index, segment.map_begin.addr(),
+                segment.map_end.addr(), segment.runtime_vaddr.addr(),
+                static_cast<unsigned long>(segment.phdr.p_filesz),
+                static_cast<unsigned long>(segment.phdr.p_memsz),
+                static_cast<unsigned long>(segment.page_prefix), mem_offset);
 
             auto load_res = load_file_into_memory(
-                file, *vma.memory, phdr.p_offset, mem_offset, phdr.p_filesz);
+                file, *vma.memory, segment.phdr.p_offset, mem_offset,
+                segment.phdr.p_filesz);
             propagate(load_res);
 
-            if (phdr.p_memsz > phdr.p_filesz) {
-                size_t zero_sz = phdr.p_memsz - phdr.p_filesz;
+            if (segment.phdr.p_memsz > segment.phdr.p_filesz) {
+                size_t zero_sz =
+                    segment.phdr.p_memsz - segment.phdr.p_filesz;
                 auto zero_res =
-                    zero_fill_memory(*vma.memory, mem_offset + phdr.p_filesz,
+                    zero_fill_memory(*vma.memory,
+                                     mem_offset + segment.phdr.p_filesz,
                                      zero_sz);
                 propagate(zero_res);
             }
@@ -296,6 +315,13 @@ namespace loader::elf {
 
     Result<void> load_segments(TaskSpec &spec, const LoadPrm &prm,
                                bool create_heap) {
+        return load_segments(spec, prm, create_heap,
+                             VirAddr(static_cast<addr_t>(0)), false, nullptr);
+    }
+
+    Result<void> load_segments(TaskSpec &spec, const LoadPrm &prm,
+                               bool create_heap, VirAddr load_base,
+                               bool accept_dyn, std::string *interp_path) {
         if (spec.tmm.get() == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -327,12 +353,23 @@ namespace loader::elf {
         auto read_hdr_res = read_exact(*file, 0, &ehdr, sizeof(ehdr));
         propagate(read_hdr_res);
 
-        auto valid_res = validate_elf64(ehdr, file_size);
+        auto valid_res = validate_elf64(ehdr, file_size, accept_dyn);
         propagate(valid_res);
-
-        spec.entrypoint = VirAddr(ehdr.e_entry);
+        const bool dyn_image = ehdr.e_type == ET_DYN;
+        spec.dyn            = dyn_image;
+        spec.load_base      = dyn_image ? load_base
+                                        : VirAddr(static_cast<addr_t>(0));
+        spec.phdr_num       = ehdr.e_phnum;
+        spec.phdr_entsize   = ehdr.e_phentsize;
+        spec.program_entrypoint =
+            dyn_image ? VirAddr(load_base.arith() + ehdr.e_entry)
+                      : VirAddr(ehdr.e_entry);
+        spec.entrypoint = spec.program_entrypoint;
 
         addr_t max_pload_end = 0;
+        bool has_pt_phdr     = false;
+        bool phdr_covered    = false;
+        std::vector<RuntimeLoadSegment> runtime_segments{};
 
         // 解析程序头表并为TM添加相应的VMA
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
@@ -341,6 +378,25 @@ namespace loader::elf {
             auto read_phdr_res = read_exact(*file, offset, &phdr,
                                             sizeof(phdr));
             propagate(read_phdr_res);
+
+            if (is_interp_segment(phdr) && interp_path != nullptr) {
+                std::string interp(phdr.p_filesz, '\0');
+                auto interp_read_res =
+                    read_exact(*file, phdr.p_offset, interp.data(),
+                               phdr.p_filesz);
+                propagate(interp_read_res);
+                if (!interp.empty() && interp.back() == '\0') {
+                    interp.pop_back();
+                }
+                *interp_path = std::move(interp);
+            }
+
+            if (is_phdr_segment(phdr)) {
+                has_pt_phdr   = true;
+                spec.phdr_vaddr = dyn_image
+                                      ? VirAddr(load_base.arith() + phdr.p_vaddr)
+                                      : VirAddr(phdr.p_vaddr);
+            }
 
             if (!is_load_segment(phdr)) {
                 continue;
@@ -356,20 +412,27 @@ namespace loader::elf {
                 unexpect_return(ErrCode::OUT_OF_BOUNDARY);
             }
 
-            VirAddr segvaddr(phdr.p_vaddr);
-            VirAddr segvend(phdr.p_vaddr + phdr.p_memsz);
+            VirAddr segvaddr(dyn_image ? load_base.arith() + phdr.p_vaddr
+                                       : phdr.p_vaddr);
+            VirAddr aligned_segvaddr = segvaddr.page_align_down();
+            size_t page_prefix =
+                static_cast<size_t>(segvaddr - aligned_segvaddr);
+            size_t map_memsz = page_align_up(
+                static_cast<size_t>(phdr.p_memsz) + page_prefix);
+            VirAddr segvend = aligned_segvaddr + map_memsz;
 
             // 确认该空间地址是用户空间地址
-            if (!is_user_vaddr(segvaddr) || !is_user_vaddr(segvend)) {
+            if (!is_user_vaddr(aligned_segvaddr) || !is_user_vaddr(segvend)) {
                 unexpect_return(ErrCode::INVALID_PARAM);
             }
 
             // 为该段在TM中添加一个VMA
             VMA::Type vma_type = phdr_to_vma_type(phdr.p_flags);
             auto *segment_mem  = new cap::MemoryPayload(
-                phdr.p_memsz, false, false, VMA::Growth::FIXED);
+                map_memsz, false, false, VMA::Growth::FIXED);
             auto add_res = spec.tmm->add_vma(
-                vma_type, VMA::Growth::FIXED, VirArea(segvaddr, segvend),
+                vma_type, VMA::Growth::FIXED,
+                VirArea(aligned_segvaddr, segvend),
                 segment_mem, VMA::seg2rwx(vma_type));
             if (!add_res.has_value()) {
                 delete segment_mem;
@@ -379,12 +442,32 @@ namespace loader::elf {
             }
             loggers::SUSTCORE::INFO(
                 "创建ELF VMA: type=%s area=[%p,%p) mem=%p memsz=%lu mem_off=%lu",
-                to_string(vma_type), segvaddr.addr(), segvend.addr(),
-                segment_mem, static_cast<unsigned long>(phdr.p_memsz), 0UL);
+                to_string(vma_type), aligned_segvaddr.addr(), segvend.addr(),
+                segment_mem, static_cast<unsigned long>(map_memsz), 0UL);
+
+            runtime_segments.push_back(RuntimeLoadSegment{
+                .index        = i,
+                .phdr         = phdr,
+                .runtime_vaddr = segvaddr,
+                .map_begin     = aligned_segvaddr,
+                .map_end       = segvend,
+                .page_prefix   = page_prefix,
+            });
+
+            if (has_pt_phdr && spec.phdr_vaddr.nonnull() &&
+                spec.phdr_vaddr >= aligned_segvaddr &&
+                spec.phdr_vaddr + ehdr.e_phnum * ehdr.e_phentsize <= segvend)
+            {
+                phdr_covered = true;
+            }
 
             if (segvend.arith() > max_pload_end) {
                 max_pload_end = segvend.arith();
             }
+        }
+
+        if (dyn_image && has_pt_phdr && !phdr_covered) {
+            unexpect_return(ErrCode::INVALID_PARAM);
         }
 
         if (create_heap) {
@@ -418,7 +501,7 @@ namespace loader::elf {
                                     vma.varea.end.addr(), vma.size());
         }
 
-        auto load_res = loadsegs(*file, *spec.tmm, ehdr);
+        auto load_res = loadsegs(*file, *spec.tmm, runtime_segments);
         propagate(load_res);
 
         for (auto &vma : spec.tmm->vmas()) {

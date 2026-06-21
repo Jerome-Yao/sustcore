@@ -19,4 +19,7 @@ namespace loader::elf {
 	Result<void> load(TaskSpec &spec, const LoadPrm &prm);
 	Result<void> load_segments(TaskSpec &spec, const LoadPrm &prm,
 	                           bool create_heap);
+	Result<void> load_segments(TaskSpec &spec, const LoadPrm &prm,
+	                           bool create_heap, VirAddr load_base,
+	                           bool accept_dyn, std::string *interp_path = nullptr);
 };

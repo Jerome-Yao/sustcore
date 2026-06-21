@@ -1,4 +1,6 @@
-    .extern linux_ss_main
+    .extern linuxss_entry
+    .extern linux_dispatch
+    .extern g_linux_initialized
 
     .text
     .global _start
@@ -7,6 +9,32 @@
     .type linux_subsystem_entry, @function
 _start:
 linux_subsystem_entry:
+    la.local $t1, g_linux_initialized
+    ld.bu $t2, $t1, 0
+    bnez $t2, .Ldispatch_path
+
+.Lbootstrap_path:
+    move $t3, $a0
+    move $t4, $a1
+    move $t5, $a2
+    move $a0, $sp
+    move $a1, $t3
+    move $a2, $t4
+    move $a3, $t5
+    addi.d $sp, $sp, -32
+    st.d $t0, $sp, 0
+    st.d $t3, $sp, 8
+    st.d $t4, $sp, 16
+    st.d $t5, $sp, 24
+    bl linuxss_entry
+    ld.d $t0, $sp, 0
+    ld.d $a0, $sp, 8
+    ld.d $a1, $sp, 16
+    ld.d $a2, $sp, 24
+    addi.d $sp, $sp, 32
+    jr $t0
+
+.Ldispatch_path:
     addi.d $sp, $sp, -(13 * 8)
     st.d $ra, $sp, 0
     st.d $tp, $sp, 8
@@ -22,7 +50,9 @@ linux_subsystem_entry:
     st.d $s7, $sp, 88
     st.d $s8, $sp, 96
 
-    bl linux_ss_main
+    bl linux_dispatch
+
+.Ldispatch_resume:
 
     ld.d $ra, $sp, 0
     ld.d $tp, $sp, 8

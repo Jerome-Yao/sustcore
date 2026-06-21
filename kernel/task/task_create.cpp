@@ -10,6 +10,7 @@
  */
 
 #include <cap/permission.h>
+#include <elf.h>
 #include <env.h>
 #include <guard.h>
 #include <kinit.h>
@@ -21,14 +22,14 @@
 #include <task/task.h>
 #include <vfs/vfs.h>
 
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstring>
-#include <elf.h>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <elf.h>
 
 namespace task {
     namespace {
@@ -128,9 +129,9 @@ namespace task {
                 tcb->kernel_context_ptr(),
                 reinterpret_cast<void *>(&new_utask_trampoline), child_user_ctx,
                 tcb->kstack_top());
-            tcb->boot_role = parent_schd_class == schd::ClassType::INIT
-                                 ? BootThreadRole::NONE
-                                 : parent_boot_role;
+            tcb->boot_role  = parent_schd_class == schd::ClassType::INIT
+                                  ? BootThreadRole::NONE
+                                  : parent_boot_role;
             tcb->schd_class = parent_schd_class == schd::ClassType::INIT
                                   ? schd::ClassType::FCFS
                                   : parent_schd_class;
@@ -302,15 +303,15 @@ namespace task {
                                 const std::vector<std::string> &argv) {
             builder.argv_ptrs.clear();
             for (size_t i = argv.size(); i > 0; --i) {
-                const auto &arg = argv[i - 1];
-                auto string_sp_res = push_bytes(
-                    builder, arg.c_str(), arg.size() + 1, alignof(char));
+                const auto &arg    = argv[i - 1];
+                auto string_sp_res = push_bytes(builder, arg.c_str(),
+                                                arg.size() + 1, alignof(char));
                 propagate(string_sp_res);
                 builder.argv_ptrs.push_back(string_sp_res.value());
             }
             for (size_t i = 0, j = builder.argv_ptrs.size(); i < j / 2; ++i) {
-                auto tmp                    = builder.argv_ptrs[i];
-                builder.argv_ptrs[i]        = builder.argv_ptrs[j - 1 - i];
+                auto tmp                     = builder.argv_ptrs[i];
+                builder.argv_ptrs[i]         = builder.argv_ptrs[j - 1 - i];
                 builder.argv_ptrs[j - 1 - i] = tmp;
             }
             void_return();
@@ -321,15 +322,15 @@ namespace task {
                                 const std::vector<std::string> &envp) {
             builder.envp_ptrs.clear();
             for (size_t i = envp.size(); i > 0; --i) {
-                const auto &env = envp[i - 1];
-                auto string_sp_res = push_bytes(
-                    builder, env.c_str(), env.size() + 1, alignof(char));
+                const auto &env    = envp[i - 1];
+                auto string_sp_res = push_bytes(builder, env.c_str(),
+                                                env.size() + 1, alignof(char));
                 propagate(string_sp_res);
                 builder.envp_ptrs.push_back(string_sp_res.value());
             }
             for (size_t i = 0, j = builder.envp_ptrs.size(); i < j / 2; ++i) {
-                auto tmp                    = builder.envp_ptrs[i];
-                builder.envp_ptrs[i]        = builder.envp_ptrs[j - 1 - i];
+                auto tmp                     = builder.envp_ptrs[i];
+                builder.envp_ptrs[i]         = builder.envp_ptrs[j - 1 - i];
                 builder.envp_ptrs[j - 1 - i] = tmp;
             }
             void_return();
@@ -371,8 +372,8 @@ namespace task {
                 builder.bsargv_ptrs.push_back(record_sp_res.value());
             }
             for (size_t i = 0, j = builder.bsargv_ptrs.size(); i < j / 2; ++i) {
-                auto tmp                     = builder.bsargv_ptrs[i];
-                builder.bsargv_ptrs[i]       = builder.bsargv_ptrs[j - 1 - i];
+                auto tmp                       = builder.bsargv_ptrs[i];
+                builder.bsargv_ptrs[i]         = builder.bsargv_ptrs[j - 1 - i];
                 builder.bsargv_ptrs[j - 1 - i] = tmp;
             }
             void_return();
@@ -380,10 +381,19 @@ namespace task {
 
         TaskSpec make_empty_task_spec() {
             return TaskSpec{
-                .tmm          = util::owner<TaskMemoryManager *>(nullptr),
-                .holder       = nullptr,
-                .entrypoint   = VirAddr(static_cast<addr_t>(0)),
+                .tmm        = util::owner<TaskMemoryManager *>(nullptr),
+                .holder     = nullptr,
+                .entrypoint = VirAddr(static_cast<addr_t>(0)),
                 .linuxproc_entrypoint = VirAddr(static_cast<addr_t>(0)),
+                .dyn                  = false,
+                .has_interp           = false,
+                .load_base            = VirAddr(static_cast<addr_t>(0)),
+                .interp_base          = VirAddr(static_cast<addr_t>(0)),
+                .interp_entrypoint    = VirAddr(static_cast<addr_t>(0)),
+                .program_entrypoint   = VirAddr(static_cast<addr_t>(0)),
+                .phdr_vaddr           = VirAddr(static_cast<addr_t>(0)),
+                .phdr_num             = 0,
+                .phdr_entsize         = 0,
             };
         }
 
@@ -431,9 +441,8 @@ namespace task {
     }  // namespace
 
     Result<UserInitLayout> TaskManager::build_user_stack(
-        cap::MemoryPayload &stack_mem, VirAddr stack_top,
-        TaskSpec &spec, CapIdx pcb_cap, CapIdx main_tcb_cap,
-        CapIdx stack_mem_cap) {
+        cap::MemoryPayload &stack_mem, VirAddr stack_top, TaskSpec &spec,
+        CapIdx pcb_cap, CapIdx main_tcb_cap, CapIdx stack_mem_cap) {
         if (!stack_top.nonnull()) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -444,15 +453,37 @@ namespace task {
             .sp        = stack_top,
         };
 
-        spec.auxv = {};
+        constexpr char RANDOM_STRING[] = "ITSARANDOMSTRING";
+        static_assert(sizeof(RANDOM_STRING) == 16 + 1);  // 包含末尾的'\0'
+        auto random_sp_res             = push_bytes(
+            builder, RANDOM_STRING, sizeof(RANDOM_STRING), alignof(char));
+        propagate(random_sp_res);
+
+        if (!spec.linux_execfn.empty() && spec.linux_execfn != "<cap>") {
+            auto execfn_sp_res =
+                push_bytes(builder, spec.linux_execfn.c_str(),
+                           spec.linux_execfn.size() + 1, alignof(char));
+            propagate(execfn_sp_res);
+            auto null_pos = std::find(spec.auxv.begin(), spec.auxv.end(), AT_NULL);
+            if (null_pos != spec.auxv.end()) {
+                spec.auxv.erase(null_pos, spec.auxv.end());
+            }
+            spec.auxv.push_back(AT_EXECFN);
+            spec.auxv.push_back(execfn_sp_res.value().arith());
+        }
+
 #if defined(__ARCH_loongarch64__)
         constexpr char PLATFORM_STRING[] = "loongarch64";
-        auto platform_sp_res = push_bytes(builder, PLATFORM_STRING,
-                                          sizeof(PLATFORM_STRING), alignof(char));
+        auto platform_sp_res             = push_bytes(
+            builder, PLATFORM_STRING, sizeof(PLATFORM_STRING), alignof(char));
         propagate(platform_sp_res);
         spec.auxv.push_back(AT_PLATFORM);
         spec.auxv.push_back(platform_sp_res.value().arith());
 #endif
+        spec.auxv.push_back(AT_RANDOM);
+        spec.auxv.push_back(random_sp_res.value().arith());
+        spec.auxv.push_back(AT_NULL);
+        spec.auxv.push_back(0);
         auto pcb_explain_res = append_bootstrap_cap_explain_record(
             spec, pcb_cap, PayloadType::PCB, perm::allperm(), "#self:0");
         propagate(pcb_explain_res);
@@ -476,15 +507,16 @@ namespace task {
             stack_desc);
         propagate(stack_cap_explain_res);
 
-        auto heap_vaddr_res =
-            append_bootstrap_vaddr_explain_record(spec, spec.heap_vaddr, "#heap");
+        auto heap_vaddr_res = append_bootstrap_vaddr_explain_record(
+            spec, spec.heap_vaddr, "#heap");
         propagate(heap_vaddr_res);
         auto stack_vaddr_res = append_bootstrap_vaddr_explain_record(
             spec, USER_STACK_BOTTOM, "#stack");
         propagate(stack_vaddr_res);
         auto entry_vaddr_res = append_bootstrap_vaddr_explain_record(
-            spec, spec.linuxproc_entrypoint.nonnull() ? spec.linuxproc_entrypoint
-                                                       : spec.entrypoint,
+            spec,
+            spec.linuxproc_entrypoint.nonnull() ? spec.linuxproc_entrypoint
+                                                : spec.entrypoint,
             "#entrypoint");
         propagate(entry_vaddr_res);
         if (spec.linuxproc_entrypoint.nonnull()) {
@@ -492,9 +524,9 @@ namespace task {
                 spec, spec.entrypoint, "#ss-entrypoint");
             propagate(ss_vaddr_res);
         }
-        auto argv_res  = build_argv(builder, spec.argv);
-        auto envp_res  = build_envp(builder, spec.envp);
-        auto auxv_res  = build_auxv(builder, spec.auxv);
+        auto argv_res   = build_argv(builder, spec.argv);
+        auto envp_res   = build_envp(builder, spec.envp);
+        auto auxv_res   = build_auxv(builder, spec.auxv);
         auto bsargv_res = build_bsargv(builder, spec.bsargv);
         propagate(argv_res);
         propagate(envp_res);
@@ -506,7 +538,7 @@ namespace task {
                        builder.envp_ptrs.size() + 1 +
                        builder.auxv_entries.size() * 2 + 1 +
                        builder.bsargv_ptrs.size() + 1);
-        const size_t argc = builder.argv_ptrs.size();
+        const size_t argc        = builder.argv_ptrs.size();
         const size_t argv_offset = layout.size();
         layout.push_back(argc);
         for (auto ptr : builder.argv_ptrs) {
@@ -540,12 +572,11 @@ namespace task {
             .envp = base + envp_offset * sizeof(uint64_t),
             .auxv = base + auxv_offset * sizeof(uint64_t),
         };
-        loggers::TASK::DEBUG("build_user_stack: stack_top=%p final_sp=%p argc=%lu "
-                             "envc=%lu bsargc=%lu",
-                             stack_top.addr(), builder.sp.addr(),
-                             builder.argv_ptrs.size(),
-                             builder.envp_ptrs.size(),
-                             builder.bsargv_ptrs.size());
+        loggers::TASK::DEBUG(
+            "build_user_stack: stack_top=%p final_sp=%p argc=%lu "
+            "envc=%lu bsargc=%lu",
+            stack_top.addr(), builder.sp.addr(), builder.argv_ptrs.size(),
+            builder.envp_ptrs.size(), builder.bsargv_ptrs.size());
         return init_layout;
     }
 
@@ -579,20 +610,20 @@ namespace task {
         auto tcb_cap_res = pcb->cholder->create<cap::TCBPayload>(tcb.get());
         propagate(tcb_cap_res);
 
-        pcb->main_tcb_cap          = tcb_cap_res.value();
-        auto init_layout_res = build_user_stack(
-            *stack_mem, USER_STACK_TOP, spec, pcb->pcb_cap, pcb->main_tcb_cap,
-            stack_cap_res.value());
+        pcb->main_tcb_cap = tcb_cap_res.value();
+        auto init_layout_res =
+            build_user_stack(*stack_mem, USER_STACK_TOP, spec, pcb->pcb_cap,
+                             pcb->main_tcb_cap, stack_cap_res.value());
         propagate(init_layout_res);
         const auto init_layout = init_layout_res.value();
         loggers::TASK::DEBUG("栈内存分配: pid=%lu 栈内存地址=%p 已分配=%lu",
                              pcb->pid, stack_mem, stack_mem->allocated_size());
-        prepare_user_thread(tcb, pcb->entrypoint.addr(),
-                            init_layout.sp.addr(), tcb->schd_class,
-                            spec.linuxproc_entrypoint.arith());
-        tcb->context()->set_init_regs(
-            static_cast<umb_t>(init_layout.argc), init_layout.argv.arith(),
-            init_layout.envp.arith(), init_layout.auxv.arith());
+        prepare_user_thread(tcb, pcb->entrypoint.addr(), init_layout.sp.addr(),
+                            tcb->schd_class, spec.linuxproc_entrypoint.arith());
+
+        tcb->context()->set_init_regs(static_cast<umb_t>(init_layout.argc),
+                                      init_layout.argv.arith(),
+                                      init_layout.envp.arith());
         if (link_into_pcb) {
             pcb->threads.push_back(*tcb);
         }
@@ -654,8 +685,8 @@ namespace task {
             tcb->is_kernel  = false;
             tcb->boot_role  = BootThreadRole::NONE;
             tcb->schd_class = schd_class;
-            auto setup_res = setup_user_main_thread(
-                pcb, tcb, spec, true, "构造用户主线程");
+            auto setup_res =
+                setup_user_main_thread(pcb, tcb, spec, true, "构造用户主线程");
             propagate(setup_res);
             tcb_guard.release();
             return setup_res.value();
@@ -762,7 +793,7 @@ namespace task {
         propagate(pcb_res);
         auto tcb_res = create_bound_tcb(pcb_res.value());
         propagate(tcb_res);
-        auto tcb = tcb_res.value();
+        auto tcb       = tcb_res.value();
         auto tcb_guard = util::Guard([this, tcb]() { (void)recycle_tcb(tcb); });
 
         tcb->kentry = entry;
@@ -878,7 +909,7 @@ namespace task {
                 cap::CHolderManager::inst().remove_holder(holder->id());
             assert(rm_res.has_value());
         });
-        auto image_res = VFS::inst().open(path, *holder);
+        auto image_res    = VFS::inst().open(path, *holder);
         propagate(image_res);
         auto root_res =
             VFS::inst().open_dir("/", *holder,
@@ -1119,15 +1150,12 @@ namespace task {
                         reserved_caps, reserved_count);
     }
 
-    Result<void> TaskManager::exec_pcb(util::nonnull<PCB *> target,
-                                       CapIdx image_cap,
-                                       const CapIdx *reserved_caps,
-                                       size_t reserved_count,
-                                       const std::vector<std::string> &argv,
-                                       const std::vector<std::string> &envp,
-                                       const std::vector<
-                                           TaskSpec::BootstrapRecordData>
-                                           &bsargv) {
+    Result<void> TaskManager::exec_pcb(
+        util::nonnull<PCB *> target, CapIdx image_cap,
+        const CapIdx *reserved_caps, size_t reserved_count,
+        const std::vector<std::string> &argv,
+        const std::vector<std::string> &envp,
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
         PCB *pcb = target.get();
         if (pcb->is_kernel) {
             unexpect_return(ErrCode::INVALID_PARAM);

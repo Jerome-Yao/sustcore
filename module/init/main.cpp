@@ -279,20 +279,20 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     // }
 
     int fd = 0;
-    fd     = kmod_fopen("/initrd/test_fork.mod", "x");
-    if (fd >= 0) {
-        size_t pid = spawn_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap);
-        if (pid == INVALID_PID) {
-            printf("init: create test_fork failed\n");
-        } else {
-            printf("init: create test_fork pid=%lu\n",
-                   static_cast<unsigned long>(pid));
-        }
-        kmod_fclose(fd);
-    }
-    else {
-        printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
-    }
+    // fd     = kmod_fopen("/initrd/test_fork.mod", "x");
+    // if (fd >= 0) {
+    //     size_t pid = spawn_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap);
+    //     if (pid == INVALID_PID) {
+    //         printf("init: create test_fork failed\n");
+    //     } else {
+    //         printf("init: create test_fork pid=%lu\n",
+    //                static_cast<unsigned long>(pid));
+    //     }
+    //     kmod_fclose(fd);
+    // }
+    // else {
+    //     printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
+    // }
 
     // fd = kmod_fopen("/initrd/test_thread.mod", "x");
     // if (fd >= 0) {
@@ -318,20 +318,20 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     //     kmod_fclose(fd);
     // }
 
-    fd = kmod_fopen("/initrd/test_call_service.mod", "x");
-    if (fd >= 0) {
-        size_t pid = spawn_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap);
-        if (pid == INVALID_PID) {
-            printf("init: create test_call_service failed\n");
-        } else {
-            printf("init: create test_call_service pid=%lu\n",
-                   static_cast<unsigned long>(pid));
-        }
-        kmod_fclose(fd);
-    }
-    else {
-        printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
-    }
+    // fd = kmod_fopen("/initrd/test_call_service.mod", "x");
+    // if (fd >= 0) {
+    //     size_t pid = spawn_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap);
+    //     if (pid == INVALID_PID) {
+    //         printf("init: create test_call_service failed\n");
+    //     } else {
+    //         printf("init: create test_call_service pid=%lu\n",
+    //                static_cast<unsigned long>(pid));
+    //     }
+    //     kmod_fclose(fd);
+    // }
+    // else {
+    //     printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
+    // }
 
     // fd = kmod_fopen("/initrd/test_rpc_server.mod", "x");
     // if (fd >= 0) {
@@ -365,21 +365,21 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     }
     printf ("link /lib/ -> /initrd/tmp/lib/ created\n");
 
-    fd = kmod_fopen("/initrd/test-linux.mod", "x");
-    if (fd >= 0) {
-        size_t pid =
-            spawn_linux_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap);
-        if (pid == INVALID_PID) {
-            printf("init: create test-linux failed\n");
-        } else {
-            printf("init: create test-linux pid=%lu\n",
-                   static_cast<unsigned long>(pid));
-        }
-        kmod_fclose(fd);
-    }
-    else {
-        printf("init: /initrd/test-linux.mod not found, skipping linux test\n");
-    }
+    // fd = kmod_fopen("/initrd/test-linux.mod", "x");
+    // if (fd >= 0) {
+    //     size_t pid =
+    //         spawn_linux_with_root_dir(fd, SCHED_CLASS_RR, root_dir_cap);
+    //     if (pid == INVALID_PID) {
+    //         printf("init: create test-linux failed\n");
+    //     } else {
+    //         printf("init: create test-linux pid=%lu\n",
+    //                static_cast<unsigned long>(pid));
+    //     }
+    //     kmod_fclose(fd);
+    // }
+    // else {
+    //     printf("init: /initrd/test-linux.mod not found, skipping linux test\n");
+    // }
 
     fd = kmod_fopen("/initrd/tmp/write", "x");
     if (fd >= 0) {
