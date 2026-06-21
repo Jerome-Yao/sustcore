@@ -184,9 +184,21 @@ namespace loader::elf {
     }
 
     constexpr VMA::Type phdr_to_vma_type(Elf64_Word flags) noexcept {
-        // 可执行段优先映射为 CODE, 其余按可写属性归类到 DATA. 
-        if ((flags & PF_X) != 0) {
+        const bool read  = (flags & PF_R) != 0;
+        const bool write = (flags & PF_W) != 0;
+        const bool exec  = (flags & PF_X) != 0;
+
+        if (read && write && exec) {
+            return VMA::Type::RWX;
+        }
+        if (read && !write && exec) {
             return VMA::Type::CODE;
+        }
+        if (read && write && !exec) {
+            return VMA::Type::DATA;
+        }
+        if (read && !write && !exec) {
+            return VMA::Type::RODATA;
         }
         return VMA::Type::DATA;
     }

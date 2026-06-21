@@ -28,13 +28,15 @@ struct VMA {
     enum class Type {
         NONE      = 0,
         CODE      = 1,
-        DATA      = 2,
-        STACK     = 3,
-        HEAP      = 4,
-        SHARE_RW  = 6,
-        SHARE_RO  = 7,
-        SHARE_RX  = 8,
-        SHARE_RWX = 9,
+        RODATA    = 2,
+        DATA      = 3,
+        RWX       = 4,
+        STACK     = 5,
+        HEAP      = 6,
+        SHARE_RW  = 7,
+        SHARE_RO  = 8,
+        SHARE_RX  = 9,
+        SHARE_RWX = 10,
     };
 
     using Growth = cap::MemoryGrowth;
@@ -42,13 +44,15 @@ struct VMA {
     static constexpr PageMan::RWX seg2rwx(Type type) {
         switch (type) {
             case Type::CODE:      return PageMan::RWX::RX;
+            case Type::RODATA:    return PageMan::RWX::RO;
             case Type::DATA:
             case Type::STACK:
             case Type::HEAP:
             case Type::SHARE_RW:  return PageMan::RWX::RW;
+            case Type::RWX:
+            case Type::SHARE_RWX: return PageMan::RWX::RWX;
             case Type::SHARE_RO:  return PageMan::RWX::RO;
             case Type::SHARE_RX:  return PageMan::RWX::RX;
-            case Type::SHARE_RWX: return PageMan::RWX::RWX;
             default:              return PageMan::RWX::NONE;
         }
     }
@@ -66,7 +70,9 @@ struct VMA {
     static constexpr bool cowable(Type type) {
         switch (type) {
             case Type::CODE:
+            case Type::RODATA:
             case Type::DATA:
+            case Type::RWX:
             case Type::STACK:
             case Type::HEAP:  return true;
             default:          return false;
@@ -150,7 +156,9 @@ constexpr const char *to_string(VMA::Type type) {
     switch (type) {
         case VMA::Type::NONE:      return "NONE";
         case VMA::Type::CODE:      return "CODE";
+        case VMA::Type::RODATA:    return "RODATA";
         case VMA::Type::DATA:      return "DATA";
+        case VMA::Type::RWX:       return "RWX";
         case VMA::Type::STACK:     return "STACK";
         case VMA::Type::HEAP:      return "HEAP";
         case VMA::Type::SHARE_RW:  return "SHARE_RW";

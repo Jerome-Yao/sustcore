@@ -56,6 +56,8 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         default:
             printf("linux-subsystem: unsupported syscall %s (%d)\n",
                    syscall_to_string(a7), a7);
+            // 先卡死以进行测试
+            while (true);
             return INVALID_VALUE;
     }
 }

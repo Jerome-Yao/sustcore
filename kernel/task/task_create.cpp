@@ -23,6 +23,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <elf.h>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -444,6 +445,14 @@ namespace task {
         };
 
         spec.auxv = {};
+#if defined(__ARCH_loongarch64__)
+        constexpr char PLATFORM_STRING[] = "loongarch64";
+        auto platform_sp_res = push_bytes(builder, PLATFORM_STRING,
+                                          sizeof(PLATFORM_STRING), alignof(char));
+        propagate(platform_sp_res);
+        spec.auxv.push_back(AT_PLATFORM);
+        spec.auxv.push_back(platform_sp_res.value().arith());
+#endif
         auto pcb_explain_res = append_bootstrap_cap_explain_record(
             spec, pcb_cap, PayloadType::PCB, perm::allperm(), "#self:0");
         propagate(pcb_explain_res);

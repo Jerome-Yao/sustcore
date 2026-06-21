@@ -43,6 +43,13 @@ namespace task {
         INIT_USER,
     };
 
+    constexpr static VirAddr GENERIC_PROCESS_BASE =
+        VirAddr(static_cast<addr_t>(0x000400000000ULL));
+    constexpr static VirAddr GENERIC_INTERPRET_BASE =
+        VirAddr(static_cast<addr_t>(0x000080000000ULL));
+    constexpr static VirAddr GENERIC_SUBSYSTEM_BASE =
+        VirAddr(static_cast<addr_t>(0x000100000000ULL));
+
     using KThreadEntry = void (*)(void *);
 
     // Make sure that TCB is has standard layout,
