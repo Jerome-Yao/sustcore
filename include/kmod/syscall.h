@@ -47,7 +47,7 @@ struct VMAInfo {
 };
 
 extern "C" {
-void sys_write_serial(const char *str, size_t len);
+void sys_write_serial(size_t __always_zero, const char *str, size_t len);
 bool sys_pcb_kill(CapIdx pcb_cap, int exit_code);
 bool sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset, void *vaddr,
                  size_t sz, uint64_t protflg);
@@ -164,8 +164,8 @@ void endpoint_call(CapIdx endpoint, MsgPacket *sendmsg, MsgPacket *replymsg);
  */
 void endpoint_reply(CapIdx reply_cap, MsgPacket *replymsg);
 
-CapIdx sys_mem_create(size_t memsz, bool shared, bool continuity,
-                      uint64_t growth);
+CapIdx sys_mem_create(size_t __always_zero, size_t memsz, bool shared,
+                      bool continuity, uint64_t growth);
 bool sys_mem_map(CapIdx idx, void *vaddr, uint64_t rwx, uint64_t growth);
 bool sys_mem_unmap(CapIdx idx, void *vaddr);
 bool sys_mem_resize(CapIdx idx, size_t newsz);

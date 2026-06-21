@@ -10,6 +10,7 @@
  */
 
 #include <elf.h>
+#include <errno.h>
 #include <std/stdio.h>
 #include <sus/types.h>
 #include <sustcore/bootstrap.h>
@@ -274,14 +275,14 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
     // dump_vector("envp", envp);
     // printf("\nauxv:\n");
     // dump_auxv(auxv);
-    printf("\nbsargc & bsargv:\n");
-    printf("bsargc = %u\n", static_cast<unsigned>(bsargc));
-    dump_bsargv(bsargc, bsargv);
+    // printf("\nbsargc & bsargv:\n");
+    // printf("bsargc = %u\n", static_cast<unsigned>(bsargc));
+    // dump_bsargv(bsargc, bsargv);
 }
 
 size_t linux_sys_write(size_t fd, const void *buf, size_t len) {
     if (fd == 1 || fd == 2) {
-        sys_write_serial(reinterpret_cast<const char *>(buf), len);
+        sys_write_serial(0, reinterpret_cast<const char *>(buf), len);
         return len;
     }
     printf("linux-subsystem: unsupported fd %d\n", fd);
@@ -302,7 +303,7 @@ size_t linux_sys_writev(size_t fd, const linux_iovec *iov, size_t iovcnt) {
         if (iov[i].iov_base == nullptr && iov[i].iov_len != 0) {
             return INVALID_VALUE;
         }
-        sys_write_serial(reinterpret_cast<const char *>(iov[i].iov_base),
+        sys_write_serial(0, reinterpret_cast<const char *>(iov[i].iov_base),
                          iov[i].iov_len);
         total += iov[i].iov_len;
     }
@@ -327,7 +328,7 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     }
 
     CapIdx mem_cap =
-        sys_mem_create(aligned_length, false, false, MEMORY_GROWTH_FIXED);
+        sys_mem_create(0, aligned_length, false, false, MEMORY_GROWTH_FIXED);
     if (mem_cap == cap::null || mem_cap == cap::error) {
         return INVALID_VALUE;
     }
@@ -370,7 +371,17 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_uname:
             return linux_sys_uname(reinterpret_cast<void *>(a0));
         case __NR_faccessat:
-            return -2;
+            // TODO: 实现 __NR_faccessat 系统调用，目前先返回 -ENOENT;
+            return - ENOENT;
+        case __NR_set_tid_address:
+            // 未实现
+            return -ENOSYS;
+        case __NR_set_robust_list:
+            // 未实现
+            return -ENOSYS;
+        case __NR_exit:
+            sys_pcb_kill(__prog_pcb_cap, a0);
+            return 0;
         default:
             printf("linux-subsystem: unsupported syscall %s (%d)\n",
                    syscall_to_string(a7), a7);

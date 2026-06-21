@@ -4,12 +4,7 @@
     .global sys_write_serial
     .type   sys_write_serial, @function
 sys_write_serial:
-    /* a0 = str, a1 = len */
-    /* 将字符串写入串口 */
-    /* 我们调用系统调用 sys_write_serial */
-    mv a2, a1
-    mv a1, a0
-    li a0, 0
+    /* a0 = __always_zero, a1 = str, a2 = len */
     li a7, SYS_WRITE_SERIAL
     ecall
     ret
@@ -220,12 +215,7 @@ endpoint_reply:
     .global sys_mem_create
     .type sys_mem_create, @function
 sys_mem_create:
-    /* a0 = memsz, a1 = shared, a2 = continuity, a3 = growth */
-    mv a4, a3
-    mv a3, a2
-    mv a2, a1
-    mv a1, a0
-    li a0, 0
+    /* a0 = __always_zero, a1 = memsz, a2 = shared, a3 = continuity, a4 = growth */
     li a7, SYS_MEM_CREATE
     ecall
     ret

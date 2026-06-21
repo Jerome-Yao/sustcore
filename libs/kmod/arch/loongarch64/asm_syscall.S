@@ -10,9 +10,7 @@
     .global sys_write_serial
     .type sys_write_serial, @function
 sys_write_serial:
-    move $a2, $a1
-    move $a1, $a0
-    move $a0, $zero
+    /* $a0 = __always_zero, $a1 = str, $a2 = len */
     li.d $a7, SYS_WRITE_SERIAL
     do_syscall
 
@@ -172,11 +170,7 @@ endpoint_reply:
     .global sys_mem_create
     .type sys_mem_create, @function
 sys_mem_create:
-    move $a4, $a3
-    move $a3, $a2
-    move $a2, $a1
-    move $a1, $a0
-    move $a0, $zero
+    /* $a0 = __always_zero, $a1 = memsz, $a2 = shared, $a3 = continuity, $a4 = growth */
     li.d $a7, SYS_MEM_CREATE
     do_syscall
 

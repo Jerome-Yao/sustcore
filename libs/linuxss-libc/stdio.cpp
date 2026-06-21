@@ -18,7 +18,7 @@
 
 namespace {
     int serial_write_chunk(const char *data, size_t len, void *) {
-        sys_write_serial(data, len);
+        sys_write_serial(0, data, len);
         return static_cast<int>(len);
     }
 }  // namespace
@@ -28,8 +28,8 @@ extern "C" int puts(const char *str) {
 
     const char *out = str != nullptr ? str : NULL_STR;
     size_t len      = strlen(out);
-    sys_write_serial(out, len);
-    sys_write_serial("\n", 1);
+    sys_write_serial(0, out, len);
+    sys_write_serial(0, "\n", 1);
     return static_cast<int>(len + 1);
 }
 

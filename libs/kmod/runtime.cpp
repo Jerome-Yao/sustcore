@@ -32,7 +32,7 @@ void operator delete[](void *ptr, size_t) noexcept {
 
 namespace {
     int panic_write_chunk(const char *data, size_t len, void *) {
-        sys_write_serial(data, len);
+        sys_write_serial(0, data, len);
         return len;
     }
 }  // namespace
