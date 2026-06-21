@@ -9,8 +9,8 @@
  *
  */
 
-#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
+#include <sustcore/bootstrap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -29,10 +29,8 @@ namespace {
         CapIdx cap = cap::null;
         bool found = false;
         bool ok    = bootstrap_foreach_record(
-            __bsargv, __bsargc,
-            [&](const BootstrapRecordView &view) {
-                if (found || view.header->type != boot::TYPE_CAPEXP)
-                {
+            __bsargv, __bsargc, [&](const BootstrapRecordView &view) {
+                if (found || view.header->type != boot::TYPE_CAPEXP) {
                     return;
                 }
                 BootstrapCapExplainView cap_explain{};
@@ -73,10 +71,11 @@ namespace {
             BootstrapCapExplainPayloadHead explain;
             char desc[3];
         } bootstrap{
-            .header = bsheader{
-                .size = sizeof(RootDirBootstrap),
-                .type = boot::TYPE_CAPEXP,
-            },
+            .header =
+                bsheader{
+                    .size = sizeof(RootDirBootstrap),
+                    .type = boot::TYPE_CAPEXP,
+                },
             .explain =
                 BootstrapCapExplainPayloadHead{
                     .cap_idx  = child_root_cap,
@@ -118,10 +117,11 @@ namespace {
             BootstrapCapExplainPayloadHead explain;
             char desc[3];
         } bootstrap{
-            .header = bsheader{
-                .size = sizeof(RootDirBootstrap),
-                .type = boot::TYPE_CAPEXP,
-            },
+            .header =
+                bsheader{
+                    .size = sizeof(RootDirBootstrap),
+                    .type = boot::TYPE_CAPEXP,
+                },
             .explain =
                 BootstrapCapExplainPayloadHead{
                     .cap_idx  = child_root_cap,
@@ -134,9 +134,9 @@ namespace {
         CapIdx initial_caps[] = {child_root_cap, cap::null};
         const char *bsargv[]  = {reinterpret_cast<const char *>(&bootstrap),
                                  nullptr};
-        CapIdx child_pcb = sys_create_linux_process(
-            kmod_getcap(fd), sched_class, initial_caps, nullptr, nullptr,
-            bsargv);
+        CapIdx child_pcb =
+            sys_create_linux_process(kmod_getcap(fd), sched_class, initial_caps,
+                                     nullptr, nullptr, bsargv);
         sys_cap_remove(child_root_cap);
 
         if (child_pcb != cap::error) {
@@ -200,25 +200,23 @@ namespace {
                              name);
                 }
 
-                NodeMeta st {};
-                bool stat_ok = sys_vfs_lstat(dir_cap, name, &st);
+                NodeMeta st{};
+                bool stat_ok      = sys_vfs_lstat(dir_cap, name, &st);
                 const bool is_dir = stat_ok && st.type == EntryType::DIR;
                 const char *kind =
                     !stat_ok ? "UNK "
                              : (st.type == EntryType::DIR
                                     ? "DIR "
-                                    : (st.type == EntryType::SYMLINK
-                                           ? "LNK "
-                                           : "FILE"));
+                                    : (st.type == EntryType::SYMLINK ? "LNK "
+                                                                     : "FILE"));
                 char link_target[256]{};
                 bool has_link_target = false;
                 if (stat_ok && st.type == EntryType::SYMLINK) {
-                    size_t got =
-                        sys_vfs_readlink(dir_cap, name, link_target,
-                                         sizeof(link_target) - 1);
+                    size_t got = sys_vfs_readlink(dir_cap, name, link_target,
+                                                  sizeof(link_target) - 1);
                     if (got < sizeof(link_target)) {
                         link_target[got] = '\0';
-                        has_link_target = true;
+                        has_link_target  = true;
                     }
                 }
                 print_indent(depth);
@@ -291,7 +289,8 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     //     kmod_fclose(fd);
     // }
     // else {
-    //     printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
+    //     printf("init: /initrd/test_fork.mod not found, skipping fork
+    //     test\n");
     // }
 
     // fd = kmod_fopen("/initrd/test_thread.mod", "x");
@@ -330,7 +329,8 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     //     kmod_fclose(fd);
     // }
     // else {
-    //     printf("init: /initrd/test_fork.mod not found, skipping fork test\n");
+    //     printf("init: /initrd/test_fork.mod not found, skipping fork
+    //     test\n");
     // }
 
     // fd = kmod_fopen("/initrd/test_rpc_server.mod", "x");
@@ -357,13 +357,23 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     //     kmod_fclose(fd);
     // }
 
-    if (kmod_symlink("/lib", "/initrd/tmp/lib/") < 0) {
+#if defined(__ARCH_riscv64__)
+
+#define LIB_PATH "/lib"
+
+#elif defined(__ARCH_loongarch64__)
+
+#define LIB_PATH "/lib64"
+
+#endif
+
+    if (kmod_symlink(LIB_PATH, "/initrd/tmp/lib") < 0) {
         printf("init: create /lib symlink failed\n");
+    } else {
+        printf(
+            "init: unable to create /lib symlink, maybe it already exists\n");
     }
-    else {
-        printf("init: unable to create /lib symlink, maybe it already exists\n");
-    }
-    printf ("link /lib/ -> /initrd/tmp/lib/ created\n");
+    printf("link " LIB_PATH " -> /initrd/tmp/lib created\n");
 
     // fd = kmod_fopen("/initrd/test-linux.mod", "x");
     // if (fd >= 0) {
@@ -378,7 +388,8 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     //     kmod_fclose(fd);
     // }
     // else {
-    //     printf("init: /initrd/test-linux.mod not found, skipping linux test\n");
+    //     printf("init: /initrd/test-linux.mod not found, skipping linux
+    //     test\n");
     // }
 
     fd = kmod_fopen("/initrd/tmp/write", "x");
@@ -392,8 +403,7 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
                    static_cast<unsigned long>(pid));
         }
         kmod_fclose(fd);
-    }
-    else {
+    } else {
         printf("init: /initrd/tmp/write not found, skipping write test\n");
     }
 

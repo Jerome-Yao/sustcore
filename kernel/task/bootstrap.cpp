@@ -10,12 +10,13 @@
  */
 
 #include <cap/permission.h>
+#include <device/model.h>
+#include <elf.h>
 #include <exe/elfloader.h>
-#include <sustcore/bootstrap.h>
 #include <logger.h>
 #include <mem/alloc.h>
+#include <sustcore/bootstrap.h>
 #include <task/task.h>
-#include <device/model.h>
 #include <vfs/vfs.h>
 
 #include <cstring>
@@ -23,7 +24,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <elf.h>
 
 namespace task {
     namespace {
@@ -37,10 +37,10 @@ namespace task {
                 delete heap_mem;
                 propagate_return(heap_cap_res);
             }
-            auto heap_res = spec.tmm->add_vma(
-                VMA::Type::HEAP, VMA::Growth::FLEXUP,
-                VirArea(heap_start, heap_start), heap_mem,
-                VMA::PROT_R | VMA::PROT_W);
+            auto heap_res =
+                spec.tmm->add_vma(VMA::Type::HEAP, VMA::Growth::FLEXUP,
+                                  VirArea(heap_start, heap_start), heap_mem,
+                                  VMA::PROT_R | VMA::PROT_W);
             if (!heap_res.has_value()) {
                 loggers::SUSTCORE::ERROR("无法初始化 POSIX 子系统堆VMA: %d",
                                          heap_res.error());
@@ -131,8 +131,8 @@ namespace task {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
-        spec.holder = holder;
-        spec.tmm    = tmm;
+        spec.holder        = holder;
+        spec.tmm           = tmm;
         prm.src_path       = "<cap>";
         prm.image_file_cap = image_cap;
         return image_cap;
@@ -190,9 +190,8 @@ namespace task {
         std::vector<char> payload(sizeof(head) + strlen(cap_desc) + 1);
         memcpy(payload.data(), &head, sizeof(head));
         memcpy(payload.data() + sizeof(head), cap_desc, strlen(cap_desc) + 1);
-        spec.bsargv.push_back(make_bootstrap_record(boot::TYPE_CAPEXP,
-                                                    payload.data(),
-                                                    payload.size()));
+        spec.bsargv.push_back(make_bootstrap_record(
+            boot::TYPE_CAPEXP, payload.data(), payload.size()));
         void_return();
     }
 
@@ -209,9 +208,8 @@ namespace task {
         memcpy(payload.data(), &head, sizeof(head));
         memcpy(payload.data() + sizeof(head), vaddr_desc,
                strlen(vaddr_desc) + 1);
-        spec.bsargv.push_back(
-            make_bootstrap_record(boot::TYPE_VADDREXP, payload.data(),
-                                  payload.size()));
+        spec.bsargv.push_back(make_bootstrap_record(
+            boot::TYPE_VADDREXP, payload.data(), payload.size()));
         void_return();
     }
 
@@ -267,23 +265,21 @@ namespace task {
         }
 
         std::string interp_path{};
-        auto load_linux_res =
-            loader::elf::load_segments(spec, prm, true,
-                                       task::GENERIC_PROCESS_BASE, true,
-                                       &interp_path);
+        auto load_linux_res = loader::elf::load_segments(
+            spec, prm, true, task::GENERIC_PROCESS_BASE, true, &interp_path);
         if (!load_linux_res.has_value()) {
             loggers::SUSTCORE::ERROR("加载POSIX程序失败! 错误码: %s",
                                      to_cstring(load_linux_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
 
-        const bool user_program_dyn           = spec.dyn;
-        const bool user_program_has_interp    = spec.has_interp;
-        const VirAddr user_program_load_base  = spec.load_base;
+        const bool user_program_dyn            = spec.dyn;
+        const bool user_program_has_interp     = spec.has_interp;
+        const VirAddr user_program_load_base   = spec.load_base;
         const VirAddr user_program_interp_base = spec.interp_base;
-        const VirAddr user_program_entrypoint = spec.program_entrypoint;
-        const VirAddr user_program_phdr_vaddr = spec.phdr_vaddr;
-        const size_t user_program_phdr_num    = spec.phdr_num;
+        const VirAddr user_program_entrypoint  = spec.program_entrypoint;
+        const VirAddr user_program_phdr_vaddr  = spec.phdr_vaddr;
+        const size_t user_program_phdr_num     = spec.phdr_num;
         const size_t user_program_phdr_entsize = spec.phdr_entsize;
 
         VirAddr runtime_entry = user_program_entrypoint;
@@ -291,14 +287,20 @@ namespace task {
             if (interp_path.empty()) {
                 unexpect_return(ErrCode::NOT_SUPPORTED);
             }
-            auto interp_cap_res = VFS::inst().open(interp_path.c_str(), *holder);
-            propagate(interp_cap_res);
+            auto interp_cap_res =
+                VFS::inst().open(interp_path.c_str(), *holder);
+            if (!interp_cap_res.has_value()) {
+                loggers::SUSTCORE::ERROR(
+                    "无法加载 POSIX 解释器! 路径: %s, 错误码 : %s",
+                    interp_path.c_str(), to_cstring(interp_cap_res.error()));
+                propagate_return(interp_cap_res);
+            }
             LoadPrm interp_prm{
                 .image_file_cap = interp_cap_res.value(),
                 .src_path       = interp_path,
             };
-            spec.has_interp = true;
-            spec.interp_base = task::GENERIC_INTERPRET_BASE;
+            spec.has_interp      = true;
+            spec.interp_base     = task::GENERIC_INTERPRET_BASE;
             auto interp_load_res = loader::elf::load_segments(
                 spec, interp_prm, false, task::GENERIC_INTERPRET_BASE, true,
                 nullptr);
@@ -334,15 +336,15 @@ namespace task {
             create_linux_subsystem_heap(spec, linuxss_heap_start);
         propagate(linuxss_heap_res);
 
-        spec.dyn               = user_program_dyn;
-        spec.has_interp        = user_program_has_interp;
-        spec.load_base         = user_program_load_base;
-        spec.interp_base       = user_program_interp_base;
-        spec.interp_entrypoint = user_program_interp_entrypoint;
+        spec.dyn                = user_program_dyn;
+        spec.has_interp         = user_program_has_interp;
+        spec.load_base          = user_program_load_base;
+        spec.interp_base        = user_program_interp_base;
+        spec.interp_entrypoint  = user_program_interp_entrypoint;
         spec.program_entrypoint = user_program_entrypoint;
-        spec.phdr_vaddr        = user_program_phdr_vaddr;
-        spec.phdr_num          = user_program_phdr_num;
-        spec.phdr_entsize      = user_program_phdr_entsize;
+        spec.phdr_vaddr         = user_program_phdr_vaddr;
+        spec.phdr_num           = user_program_phdr_num;
+        spec.phdr_entsize       = user_program_phdr_entsize;
 
         spec.argv = argv;
         spec.envp = envp;
@@ -366,32 +368,19 @@ namespace task {
         spec.linux_execfn =
             prm.src_path.empty() ? std::string{} : std::string(prm.src_path);
         spec.auxv = {
-            AT_PHDR,
-            spec.phdr_vaddr.arith(),
-            AT_PHNUM,
-            spec.phdr_num,
-            AT_PHENT,
-            spec.phdr_entsize,
-            AT_PAGESZ,
-            PAGESIZE,
-            AT_CLKTCK,
-            platform->clock_source()->frequency().to_hz(),
-            AT_ENTRY,
-            spec.program_entrypoint.arith(),
-            AT_BASE,
-            task::GENERIC_INTERPRET_BASE.arith(),
-            AT_UID,
-            0,
-            AT_EUID,
-            0,
-            AT_GID,
-            0,
-            AT_EGID,
-            0,
-            AT_SECURE,
-            0,
-            AT_FLAGS,
-            0,
+            AT_PHDR,   spec.phdr_vaddr.arith(),
+            AT_PHNUM,  spec.phdr_num,
+            AT_PHENT,  spec.phdr_entsize,
+            AT_PAGESZ, PAGESIZE,
+            AT_CLKTCK, platform->clock_source()->frequency().to_hz(),
+            AT_ENTRY,  spec.program_entrypoint.arith(),
+            AT_BASE,   task::GENERIC_INTERPRET_BASE.arith(),
+            AT_UID,    0,
+            AT_EUID,   0,
+            AT_GID,    0,
+            AT_EGID,   0,
+            AT_SECURE, 0,
+            AT_FLAGS,  0,
         };
         spec.linuxproc_entrypoint = runtime_entry;
         void_return();
