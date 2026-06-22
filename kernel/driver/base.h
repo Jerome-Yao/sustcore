@@ -18,6 +18,13 @@
 #include <string_view>
 
 namespace driver {
+    class IShutdownDriver {
+    public:
+        virtual ~IShutdownDriver() = default;
+
+        virtual void shutdown() noexcept = 0;
+    };
+
     /**
      * @brief 驱动对象基本类
      *

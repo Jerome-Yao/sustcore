@@ -213,7 +213,7 @@ size_t linux_sys_clone(size_t flags, addr_t newsp, int *parent_tid,
     if (thread_like_clone(flags)) {
         printf("linux-subsystem: clone dispatch => clone_thread\n");
         printf("linux-subsystem: TODO thread-like clone is not implemented\n");
-        linux_sys_exit(-1);
+        return -ENOSYS;
     } else {
         printf("linux-subsystem: clone dispatch => clone_process\n");
         if (newsp != 0) {

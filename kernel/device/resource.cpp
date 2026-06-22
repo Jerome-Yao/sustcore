@@ -143,23 +143,23 @@ namespace device {
             loggers::DEVICE::ERROR("MMIO 映射失败: MMIOManager 未初始化");
             unexpect_return(ErrCode::FAILURE);
         }
-        if (mmio.region().nullable()) {
+        auto region = mmio.region();
+        if (region.nullable()) {
             loggers::DEVICE::ERROR("MMIO 映射失败: 目标区间为空");
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        const PhyArea aligned = page_align_area(mmio.region());
         PageMan kernelman(env::inst().main_kernel_pgd());
-        VirAddr kva_start = from_mmio_addr(aligned.begin);
+        VirAddr kva_start = from_mmio_addr(mmio.aligned_base());
         kernelman.map_range<false>(
-            kva_start, aligned.begin, aligned.end - aligned.begin,
+            kva_start, mmio.aligned_base(), page_align_up(mmio.area().end.arith()),
             PageMan::page_flags(PageMan::rwx(true, true, false), false, false));
         PageMan::flush_tlb();
 
-        auto mapped = KvaAddr(kva_start.arith());
+        auto mapped = KvaAddr(kva_start.arith() + mmio.area().begin.arith());
         loggers::DEVICE::DEBUG("建立 MMIO 映射: pa=[%p,%p) kva=%p",
-                               mmio.region().begin.addr(),
-                               mmio.region().end.addr(), mapped.addr());
+                               region.begin.addr(), region.end.addr(),
+                               mapped.addr());
         mmio._mapped = true;
         return mapped;
     }
@@ -173,12 +173,15 @@ namespace device {
             loggers::DEVICE::ERROR("MMIO 解除映射失败: MMIOManager 未初始化");
             unexpect_return(ErrCode::FAILURE);
         }
-        if (mmio.region().nullable()) {
+        auto region = mmio.region();
+        if (region.nullable()) {
             loggers::DEVICE::ERROR("MMIO 解除映射失败: 目标区间为空");
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        const VirArea aligned = from_mmio_area(page_align_area(mmio.region()));
+        const VirArea aligned = from_mmio_area(PhyArea(
+            mmio.aligned_base(),
+            mmio.aligned_base() + page_align_up(mmio.area().end.arith())));
         PageMan kernelman(env::inst().main_kernel_pgd());
         kernelman.unmap_range(aligned.begin, aligned.end - aligned.begin);
         PageMan::flush_tlb();

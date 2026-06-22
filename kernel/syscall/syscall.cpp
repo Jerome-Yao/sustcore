@@ -22,6 +22,7 @@
 #include <syscall/endpoint.h>
 #include <syscall/memory.h>
 #include <syscall/notif.h>
+#include <syscall/shutdown.h>
 #include <syscall/syscall.h>
 #include <syscall/task.h>
 #include <syscall/uaccess.h>
@@ -227,6 +228,7 @@ namespace syscall {
             case SYS_WRITE_SERIAL:        return "SYS_WRITE_SERIAL";
             case SYS_CREATE_PROCESS:      return "SYS_CREATE_PROCESS";
             case SYS_CREATE_POSIX_PROCESS:return "SYS_CREATE_POSIX_PROCESS";
+            case SYS_SHUTDOWN:            return "SYS_SHUTDOWN";
             case SYS_PCB_KILL:            return "SYS_PCB_KILL";
             case SYS_YIELD:               return "SYS_YIELD";
             case SYS_LOG:                 return "SYS_LOG";
@@ -325,6 +327,10 @@ namespace syscall {
                 str.sync_from_user();
                 write_serial(str, arg1);
                 break;
+            }
+            case SYS_SHUTDOWN: {
+                sys_shutdown();
+                __builtin_unreachable();
             }
             case SYS_CREATE_PROCESS: {
                 StartupArguments startup{};

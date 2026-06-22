@@ -180,5 +180,6 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
            static_cast<unsigned long>(total.total),
            static_cast<unsigned long>(total.passed),
            static_cast<unsigned long>(total.failed));
+    sys_shutdown();
     return total.failed == 0 ? 0 : 1;
 }

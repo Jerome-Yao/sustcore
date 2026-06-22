@@ -14,6 +14,13 @@ sys_write_serial:
     li.d $a7, SYS_WRITE_SERIAL
     do_syscall
 
+    .global sys_shutdown
+    .type sys_shutdown, @function
+sys_shutdown:
+    move $a0, $zero
+    li.d $a7, SYS_SHUTDOWN
+    do_syscall
+
     .global sys_pcb_kill
     .type sys_pcb_kill, @function
 sys_pcb_kill:

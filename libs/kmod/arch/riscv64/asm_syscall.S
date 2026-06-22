@@ -9,6 +9,14 @@ sys_write_serial:
     ecall
     ret
 
+    .global sys_shutdown
+    .type   sys_shutdown, @function
+sys_shutdown:
+    li a0, 0
+    li a7, SYS_SHUTDOWN
+    ecall
+    ret
+
     .global sys_pcb_kill
     .type sys_pcb_kill, @function
 sys_pcb_kill:

@@ -407,7 +407,6 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                 reinterpret_cast<void *>(a4), reinterpret_cast<void *>(a5),
                 reinterpret_cast<void *>(a6));
             // 直接退出
-            linux_sys_exit(-1);
-            return INVALID_VALUE;
+            return -ENOSYS;
     }
 }

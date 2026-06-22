@@ -6,4 +6,4 @@ namespace basic {
         "munmap", "openat",  "open",         "pipe",   "read",   "sleep",
         "times",  "umount",  "uname",        "unlink", "wait",   "waitpid",
         "write",  "yield",   nullptr};
-}
+}  // namespace basic
