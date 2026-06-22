@@ -1,6 +1,6 @@
 /**
  * @file prog.h
- * @author OpenAI
+ * @author theflysong
  * @brief linux subsystem 中用户程序相关运行时数据声明
  * @version alpha-1.0.0
  * @date 2026-06-22
@@ -27,3 +27,5 @@ size_t linux_sys_brk(size_t newbrk);
 [[noreturn]]
 void linux_sys_exit(int exitcode);
 size_t linux_sys_uname(void *buf);
+size_t linux_sys_clone(size_t flags, addr_t newsp, int *parent_tid,
+                       int *child_tid, addr_t tls);

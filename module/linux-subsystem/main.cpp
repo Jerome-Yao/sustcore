@@ -369,6 +369,9 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                   a5);
         case __NR_munmap:
             return linux_sys_munmap(reinterpret_cast<void *>(a0), a1);
+        case __NR_clone:
+            return linux_sys_clone(a0, a1, reinterpret_cast<int *>(a2),
+                                   reinterpret_cast<int *>(a3), a4);
         case __NR_brk:   return linux_sys_brk(a0);
         case __NR_uname: return linux_sys_uname(reinterpret_cast<void *>(a0));
         case __NR_faccessat:

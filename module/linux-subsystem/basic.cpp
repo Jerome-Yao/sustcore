@@ -1,6 +1,6 @@
 /**
  * @file basic.cpp
- * @author OpenAI
+ * @author theflysong
  * @brief linux subsystem 中用户程序基础运行时逻辑
  * @version alpha-1.0.0
  * @date 2026-06-22

@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @author OpenAI
+ * @author theflysong
  * @brief contest runner 主文件
  * @version alpha-1.0.0
  * @date 2026-06-23

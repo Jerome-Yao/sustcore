@@ -1,6 +1,6 @@
 /**
  * @file setup.cpp
- * @author OpenAI
+ * @author theflysong
  * @brief linux subsystem libc runtime bootstrap restore
  * @version alpha-1.0.0
  * @date 2026-06-22
