@@ -131,30 +131,6 @@ namespace wait {
         }
     }  // namespace
 
-    Result<void> wait_event(wd_t wd,
-                            WaitReadyPredicate ready_predicate) noexcept {
-        if (wd == 0 || !ready_predicate) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-        if (ready_predicate()) {
-            void_return();
-        }
-
-        auto current_res = check_blockable_thread();
-        propagate(current_res);
-
-        while (!ready_predicate()) {
-            auto wait_res = schd::Scheduler::inst().block_current(
-                wd,
-                [ready_predicate = ready_predicate](task::TCB *tcb [[maybe_unused]]) {
-                    return ready_predicate();
-                });
-            propagate(wait_res);
-        }
-
-        void_return();
-    }
-
     Result<void> future_begin_update() noexcept {
         InterruptGuard guard;
         guard.enter();

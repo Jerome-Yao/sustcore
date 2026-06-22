@@ -2,7 +2,7 @@
  * @file main.cpp
  * @brief Combined fs_score tests: basic → rw → dir → names → holes → errors → stress
  */
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
 
 #include <cstdio>
@@ -17,14 +17,18 @@ namespace {
         CapIdx cap = cap::null;
         bool found = false;
         bool ok = bootstrap_foreach_record(
-            __startup_data, __startup_size,
+            __bsargv, __bsargc,
             [&](const BootstrapRecordView &view) {
-                if (found || view.header->type != BOOTSTRAP_TYPE_DIRCAPEXPLAIN)
+                if (found || view.header->type != boot::TYPE_CAPEXP)
                     return;
-                BootstrapCapPathView cap_path {};
-                if (!bootstrap_parse_cap_path(view, cap_path)) return;
-                if (strcmp(cap_path.path, "/") != 0) return;
-                cap = cap_path.cap;
+                BootstrapCapExplainView cap_explain{};
+                if (!bootstrap_parse_cap_explain(view, cap_explain) ||
+                    cap_explain.cap_type != PayloadType::VDIR ||
+                    cap_explain.cap_desc == nullptr ||
+                    cap_explain.cap_desc[0] != '#')
+                    return;
+                if (strcmp(cap_explain.cap_desc + 1, "/") != 0) return;
+                cap = cap_explain.cap_idx;
                 found = true;
             });
         return ok && found ? cap : cap::null;
@@ -134,7 +138,9 @@ namespace {
                 if (nm[0] == 't' && nm[1] == '_' && nm[2] == 'd' &&
                     nm[3] == 'i' && nm[4] == 'r' && nl == 5) {
                     found = true;
-                    check(N, !h->is_file, "t_dir should be dir");
+                    NodeMeta st {};
+                    check(N, sys_vfs_stat(dir, nm, &st), "stat t_dir failed");
+                    check(N, st.type == EntryType::DIR, "t_dir should be dir");
                     break;
                 }
                 off += h->next_offset;
@@ -393,7 +399,12 @@ namespace {
     }
 }  // namespace
 
-int kmod_main() {
+extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
+              const bsheader *bsargv[]) {
+    (void)argc;
+    (void)argv;
+    (void)envp;
+    (void)bsargv;
     printf("test_fs_score: start pid=%u\n", sys_getpid(__pcb_cap));
 
     CapIdx root_cap = bootstrap_root_dir();

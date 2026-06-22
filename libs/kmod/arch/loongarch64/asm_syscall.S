@@ -10,10 +10,15 @@
     .global sys_write_serial
     .type sys_write_serial, @function
 sys_write_serial:
-    move $a2, $a1
-    move $a1, $a0
-    move $a0, $zero
+    /* $a0 = __always_zero, $a1 = str, $a2 = len */
     li.d $a7, SYS_WRITE_SERIAL
+    do_syscall
+
+    .global sys_shutdown
+    .type sys_shutdown, @function
+sys_shutdown:
+    move $a0, $zero
+    li.d $a7, SYS_SHUTDOWN
     do_syscall
 
     .global sys_pcb_kill
@@ -28,10 +33,23 @@ sys_pcb_create_process:
     li.d $a7, SYS_CREATE_PROCESS
     do_syscall
 
+    .global sys_pcb_create_linux_process
+    .type sys_pcb_create_linux_process, @function
+sys_pcb_create_linux_process:
+    li.d $a7, SYS_CREATE_POSIX_PROCESS
+    do_syscall
+
     .global sys_pcb_create_thread
     .type sys_pcb_create_thread, @function
 sys_pcb_create_thread:
     li.d $a7, SYS_CREATE_THREAD
+    do_syscall
+
+    .global sys_tcb_wait
+    .type sys_tcb_wait, @function
+sys_tcb_wait:
+    /* $a0 = tcb cap slot, $a1 = pcb cap array, $a2 = status out ptr, $a3 = options */
+    li.d $a7, SYS_TCB_WAIT
     do_syscall
 
     .global sys_pcb_fork
@@ -166,11 +184,7 @@ endpoint_reply:
     .global sys_mem_create
     .type sys_mem_create, @function
 sys_mem_create:
-    move $a4, $a3
-    move $a3, $a2
-    move $a2, $a1
-    move $a1, $a0
-    move $a0, $zero
+    /* $a0 = __always_zero, $a1 = memsz, $a2 = shared, $a3 = continuity, $a4 = growth */
     li.d $a7, SYS_MEM_CREATE
     do_syscall
 
@@ -286,4 +300,28 @@ sys_vfs_symlink:
     .type sys_vfs_link, @function
 sys_vfs_link:
     li.d $a7, SYS_VFS_LINK
+    do_syscall
+
+    .global sys_vfs_stat
+    .type sys_vfs_stat, @function
+sys_vfs_stat:
+    li.d $a7, SYS_VFS_STAT
+    do_syscall
+
+    .global sys_vfs_lstat
+    .type sys_vfs_lstat, @function
+sys_vfs_lstat:
+    li.d $a7, SYS_VFS_LSTAT
+    do_syscall
+
+    .global sys_vfs_readlink
+    .type sys_vfs_readlink, @function
+sys_vfs_readlink:
+    li.d $a7, SYS_VFS_READLINK
+    do_syscall
+
+    .global sys_vfs_mount
+    .type sys_vfs_mount, @function
+sys_vfs_mount:
+    li.d $a7, SYS_VFS_MOUNT
     do_syscall

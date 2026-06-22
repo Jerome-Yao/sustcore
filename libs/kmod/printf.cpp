@@ -16,7 +16,7 @@
 
 namespace {
     int serial_write_chunk(const char *data, size_t len, void *) {
-        sys_write_serial(data, len);
+        sys_write_serial(0, data, len);
         return len;
     }
 }  // namespace
@@ -24,7 +24,7 @@ namespace {
 extern "C" {
 int kputs(const char *str) {
     size_t len = strlen(str);
-    sys_write_serial(str, len);
+    sys_write_serial(0, str, len);
     return len;
 }
 

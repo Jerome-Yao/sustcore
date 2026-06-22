@@ -9,10 +9,21 @@
 #include <arch/description.h>
 #include <cap/capability.h>
 #include <cap/cholder.h>
+#include <mem/vma.h>
 #include <object/memory.h>
 #include <sustcore/capability.h>
 
+#include <vector>
+
 namespace cap {
+    struct VMAInfo {
+        b64 vma_type;
+        b64 vma_prot;
+        void *vma_start;
+        size_t vma_size;
+        CapIdx mem_cap;
+    };
+
     /**
      * @brief PCB Capability 的 payload. 
      *
@@ -94,8 +105,12 @@ namespace cap {
          * @param rwx 页权限. 
          * @param growth VMA 请求的增长方式. 
          */
-        Result<void> map(MemoryObject &memory, VirAddr vaddr, PageMan::RWX rwx,
-                         MemoryGrowth growth) const;
+        Result<void> map(MemoryObject &memory, size_t offset, VirAddr vaddr,
+                         size_t sz, VMA::Prot protflg) const;
+        Result<void> unmap(VirAddr vaddr, size_t sz) const;
+        Result<cap::VMAInfo> query_vaddr(VirAddr vaddr, CapIdx mem_cap) const;
+        Result<std::vector<cap::VMAInfo>> query_vspace(
+            size_t offset, size_t max_entries, bool expose_mem_cap) const;
         Result<task::PCB *> require_new_thread() const;
         Result<task::PCB *> require_new_process() const;
         Result<task::PCB *> require_execute() const;
@@ -114,5 +129,8 @@ namespace cap {
          */
         explicit TCBObject(util::nonnull<Capability *> cap)
             : CapObj<TCBPayload>(cap) {}
+
+        [[nodiscard]]
+        Result<task::TCB *> require_current() const;
     };
 }  // namespace cap

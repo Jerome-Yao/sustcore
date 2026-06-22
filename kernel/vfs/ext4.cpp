@@ -28,44 +28,45 @@ namespace ext4 {
         constexpr uint16_t EXT4_S_IFDIR = 0x4000;
         constexpr uint16_t EXT4_S_IFLNK = 0xA000;
 
-        constexpr uint32_t EXT4_EXTENTS_FL = 0x00080000;
-        constexpr uint32_t EXT4_INDEX_FL   = 0x00001000;
-        constexpr uint16_t EXT4_LINK_MAX   = 65000;
-        constexpr uint16_t EXT4_MAX_EXTENT_DEPTH = 5;
-        constexpr uint16_t EXT4_DEFAULT_FILE_MODE =
-            EXT4_S_IFREG | 0644U;
+        constexpr uint32_t EXT4_EXTENTS_FL        = 0x00080000;
+        constexpr uint32_t EXT4_INDEX_FL          = 0x00001000;
+        constexpr uint16_t EXT4_LINK_MAX          = 65000;
+        constexpr uint16_t EXT4_MAX_EXTENT_DEPTH  = 5;
+        constexpr uint16_t EXT4_DEFAULT_FILE_MODE = EXT4_S_IFREG | 0644U;
 
-        constexpr uint32_t EXT4_FEATURE_INCOMPAT_FILETYPE = 0x0002;
-        constexpr uint32_t EXT4_FEATURE_INCOMPAT_EXTENTS  = 0x0040;
-        constexpr uint32_t EXT4_FEATURE_INCOMPAT_64BIT    = 0x0080;
-        constexpr uint32_t EXT4_FEATURE_INCOMPAT_FLEX_BG  = 0x0200;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_FILETYPE    = 0x0002;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_RECOVER     = 0x0004;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_JOURNAL_DEV = 0x0008;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_META_BG     = 0x0010;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_EXTENTS     = 0x0040;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_64BIT       = 0x0080;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_MMP         = 0x0100;
+        constexpr uint32_t EXT4_FEATURE_INCOMPAT_FLEX_BG     = 0x0200;
         constexpr uint32_t EXT4_SUPPORTED_INCOMPAT =
             EXT4_FEATURE_INCOMPAT_FILETYPE | EXT4_FEATURE_INCOMPAT_EXTENTS |
             EXT4_FEATURE_INCOMPAT_64BIT | EXT4_FEATURE_INCOMPAT_FLEX_BG;
 
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER = 0x0001;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_LARGE_FILE   = 0x0002;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_BTREE_DIR    = 0x0004;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_HUGE_FILE    = 0x0008;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_GDT_CSUM     = 0x0010;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_DIR_NLINK    = 0x0020;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE  = 0x0040;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_BIGALLOC     = 0x0200;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER  = 0x0001;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_LARGE_FILE    = 0x0002;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_BTREE_DIR     = 0x0004;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_HUGE_FILE     = 0x0008;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_GDT_CSUM      = 0x0010;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_DIR_NLINK     = 0x0020;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE   = 0x0040;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_BIGALLOC      = 0x0200;
         constexpr uint32_t EXT4_FEATURE_RO_COMPAT_METADATA_CSUM = 0x0400;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_READONLY     = 0x1000;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_PROJECT      = 0x2000;
-        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_VERITY       = 0x8000;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_READONLY      = 0x1000;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_PROJECT       = 0x2000;
+        constexpr uint32_t EXT4_FEATURE_RO_COMPAT_VERITY        = 0x8000;
         constexpr uint32_t EXT4_SUPPORTED_RO_COMPAT =
             EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER |
             EXT4_FEATURE_RO_COMPAT_LARGE_FILE |
             EXT4_FEATURE_RO_COMPAT_BTREE_DIR |
-            EXT4_FEATURE_RO_COMPAT_HUGE_FILE |
-            EXT4_FEATURE_RO_COMPAT_GDT_CSUM |
+            EXT4_FEATURE_RO_COMPAT_HUGE_FILE | EXT4_FEATURE_RO_COMPAT_GDT_CSUM |
             EXT4_FEATURE_RO_COMPAT_DIR_NLINK |
             EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE |
             EXT4_FEATURE_RO_COMPAT_METADATA_CSUM |
-            EXT4_FEATURE_RO_COMPAT_READONLY |
-            EXT4_FEATURE_RO_COMPAT_PROJECT |
+            EXT4_FEATURE_RO_COMPAT_READONLY | EXT4_FEATURE_RO_COMPAT_PROJECT |
             EXT4_FEATURE_RO_COMPAT_VERITY;
 
         constexpr uint8_t EXT4_FT_UNKNOWN  = 0;
@@ -76,7 +77,7 @@ namespace ext4 {
         template <typename T>
         [[nodiscard]]
         T read_le(const void *ptr) {
-            T value {};
+            T value{};
             memcpy(&value, ptr, sizeof(T));
             return value;
         }
@@ -85,7 +86,7 @@ namespace ext4 {
         [[nodiscard]]
         T read_le_at(const std::vector<byte> &buf, size_t offset) {
             if (offset + sizeof(T) > buf.size()) {
-                return T {};
+                return T{};
             }
             return read_le<T>(buf.data() + offset);
         }
@@ -112,8 +113,8 @@ namespace ext4 {
         [[nodiscard]]
         uint16_t min_dir_rec_len(size_t name_len) {
             return static_cast<uint16_t>(
-                align4(sizeof(uint32_t) + sizeof(uint16_t) +
-                       sizeof(uint8_t) + sizeof(uint8_t) + name_len));
+                align4(sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t) +
+                       sizeof(uint8_t) + name_len));
         }
 
         struct PACKED Ext4ExtentHeader {
@@ -177,6 +178,49 @@ namespace ext4 {
         bool extent_unwritten(uint16_t len_raw) {
             return len_raw > 0x8000U;
         }
+
+        // 放在代码文件的前部（或类内部）
+        void diagnose_unsupported_features(uint32_t unsupported_bits) {
+            // 如果没有任何不支持的位，直接返回
+            if (unsupported_bits == 0) {
+                return;
+            }
+            // 定义常见的不兼容特性映射表（按位值从低到高排列）
+            struct FeatureMap {
+                uint32_t msk;
+                const char *name;
+            };
+
+            const FeatureMap incompat_map[] = {
+                {.msk = EXT4_FEATURE_INCOMPAT_FILETYPE, .name = "FILETYPE"},
+                {.msk = EXT4_FEATURE_INCOMPAT_RECOVER, .name = "RECOVER"},
+                {.msk  = EXT4_FEATURE_INCOMPAT_JOURNAL_DEV,
+                 .name = "JOURNAL_DEV"},
+                {.msk = EXT4_FEATURE_INCOMPAT_META_BG, .name = "META_BG"},
+                {.msk = EXT4_FEATURE_INCOMPAT_EXTENTS, .name = "EXTENTS"},
+                {.msk = EXT4_FEATURE_INCOMPAT_64BIT, .name = "64BIT"},
+                {.msk = EXT4_FEATURE_INCOMPAT_MMP, .name = "MMP"},
+                {.msk = EXT4_FEATURE_INCOMPAT_FLEX_BG, .name = "FLEX_BG"}};
+
+            std::string errinfo = "";
+            bool first          = true;
+            for (const auto &[msk, name] : incompat_map) {
+                if (unsupported_bits & msk) {
+                    if (!first) {
+                        errinfo += " | ";
+                    }
+                    errinfo          += name;
+                    first             = false;
+                    // 清除已匹配的位，以便最后打印未识别的未知位
+                    unsupported_bits &= msk;
+                }
+            }
+
+            // 打印错误
+            loggers::SUSTCORE::ERROR(
+                "Unsupported incompatible feature bits detected: (%s)%#016X",
+                errinfo.empty() ? "None" : errinfo.c_str(), unsupported_bits);
+        }
     }  // namespace
 
     Ext4File::Ext4File(Ext4Superblock &sb, inode_t inode_id) noexcept
@@ -212,7 +256,6 @@ namespace ext4 {
         return _sb->truncate(_inode_id, static_cast<uint64_t>(new_size));
     }
 
-
     IMetadata &Ext4File::metadata() {
         return _metadata;
     }
@@ -229,8 +272,7 @@ namespace ext4 {
         return FileCachePolicy::SHARED;
     }
 
-    Ext4Directory::Ext4Directory(Ext4Superblock &sb,
-                                 inode_t inode_id) noexcept
+    Ext4Directory::Ext4Directory(Ext4Superblock &sb, inode_t inode_id) noexcept
         : _sb(&sb), _inode_id(inode_id) {}
 
     Result<std::vector<Ext4DirEntry>> Ext4Directory::collect_entries() {
@@ -268,7 +310,7 @@ namespace ext4 {
     }
 
     Result<inode_t> Ext4Directory::mkdir(std::string_view name,
-                                          const char *options) {
+                                         const char *options) {
         (void)options;
         _entries_cached = false;
         return _sb->create_directory(_inode_id, name);
@@ -288,8 +330,7 @@ namespace ext4 {
         }
         const auto &entry = entries_res.value()[index];
         return DirectoryEntryInfo{
-            .is_file = entry.is_file,
-            .name    = entry.name,
+            .name = entry.name,
         };
     }
 
@@ -332,7 +373,7 @@ namespace ext4 {
         propagate(lookup_res);
         const inode_t target = lookup_res.value();
         // verify target is a directory
-        auto mode_res = _sb->inode_mode(target);
+        auto mode_res        = _sb->inode_mode(target);
         propagate(mode_res);
         if ((mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFDIR) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
@@ -345,8 +386,7 @@ namespace ext4 {
         void_return();
     }
 
-    Result<void> Ext4Directory::link(std::string_view name,
-                                     inode_t target) {
+    Result<void> Ext4Directory::link(std::string_view name, inode_t target) {
         _entries_cached = false;
         return _sb->create_link(_inode_id, name, target);
     }
@@ -355,9 +395,9 @@ namespace ext4 {
                                        IDirectory &new_parent,
                                        std::string_view new_name) {
         auto &ext4_new = static_cast<Ext4Directory &>(new_parent);
-        auto res = _sb->rename(_inode_id, old_name,
-                               ext4_new._inode_id, new_name);
-        _entries_cached = false;
+        auto res =
+            _sb->rename(_inode_id, old_name, ext4_new._inode_id, new_name);
+        _entries_cached          = false;
         ext4_new._entries_cached = false;
         return res;
     }
@@ -394,9 +434,10 @@ namespace ext4 {
         }
         if (buf == nullptr || _cache == nullptr || _dev_block_size == 0) {
             loggers::VFS::ERROR(
-                "Ext4 read_device_bytes 参数非法: offset=%u len=%u buf=%p cache=%p dev_block_size=%u dev_block_count=%u",
-                static_cast<unsigned>(offset), static_cast<unsigned>(len),
-                buf, _cache, static_cast<unsigned>(_dev_block_size),
+                "Ext4 read_device_bytes 参数非法: offset=%u len=%u buf=%p "
+                "cache=%p dev_block_size=%u dev_block_count=%u",
+                static_cast<unsigned>(offset), static_cast<unsigned>(len), buf,
+                _cache, static_cast<unsigned>(_dev_block_size),
                 static_cast<unsigned>(_dev_block_count));
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -406,7 +447,7 @@ namespace ext4 {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
 
-        auto *out = static_cast<byte *>(buf);
+        auto *out   = static_cast<byte *>(buf);
         size_t done = 0;
         while (done < len) {
             const uint64_t abs = offset + done;
@@ -417,8 +458,8 @@ namespace ext4 {
             auto future      = _cache->get_buffer_async(lba);
             auto handler_res = wait::blocking_wait_for(future);
             propagate(handler_res);
-            const size_t read = handler_res.value().read(off, out + done,
-                                                         chunk);
+            const size_t read =
+                handler_res.value().read(off, out + done, chunk);
             if (read != chunk) {
                 unexpect_return(ErrCode::IO_ERROR);
             }
@@ -471,8 +512,8 @@ namespace ext4 {
         return read_device_bytes(block * _block_size, buf, len);
     }
 
-    Result<void> Ext4Superblock::write_fs_block(uint64_t block,
-                                                const void *buf, size_t len) {
+    Result<void> Ext4Superblock::write_fs_block(uint64_t block, const void *buf,
+                                                size_t len) {
         if (len > _block_size) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -481,8 +522,8 @@ namespace ext4 {
 
     Result<void> Ext4Superblock::load() {
         _superblock.resize(1024);
-        auto super_res = read_device_bytes(1024, _superblock.data(),
-                                           _superblock.size());
+        auto super_res =
+            read_device_bytes(1024, _superblock.data(), _superblock.size());
         propagate(super_res);
 
         const auto magic = read_le_at<uint16_t>(_superblock, 56);
@@ -518,8 +559,28 @@ namespace ext4 {
         if ((_feature_incompat & EXT4_FEATURE_INCOMPAT_EXTENTS) == 0) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
+        // TODO: 不知怎得, 这个地方炸了
         if ((_feature_incompat & ~EXT4_SUPPORTED_INCOMPAT) != 0) {
-            unexpect_return(ErrCode::NOT_SUPPORTED);
+            auto unsupported_bits =
+                _feature_incompat & ~EXT4_SUPPORTED_INCOMPAT;
+            // 1. 调用诊断函数，打印具体哪个特性导致失败
+            diagnose_unsupported_features(unsupported_bits);
+
+            // 2. 这里还可以额外打印超级块中的原始值，方便核对
+            loggers::VFS::ERROR(
+                "Full _feature_incompat = 0x%X (dec: %u), Supported "
+                "mask = 0x%X (dec: %u)",
+                _feature_incompat, _feature_incompat, EXT4_SUPPORTED_INCOMPAT,
+                EXT4_SUPPORTED_INCOMPAT);
+
+            // TODO: 为 RECOVER 添加支持, 目前如果只有 RECOVER 则先放行,
+            // 后续再完善
+            if (unsupported_bits != EXT4_FEATURE_INCOMPAT_RECOVER) {
+                unexpect_return(ErrCode::NOT_SUPPORTED);
+            }
+            else {
+                loggers::VFS::ERROR("只有 RECOVER, 先放行");
+            }
         }
         if ((_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_BIGALLOC) != 0) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
@@ -530,15 +591,14 @@ namespace ext4 {
             unsupported_ro != 0 ||
             (_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_READONLY) != 0;
         if (_blocks_per_group == 0 || _inodes_per_group == 0 ||
-            _inode_count == 0 ||
-            _inode_size < 128 || _group_desc_size < 32)
+            _inode_count == 0 || _inode_size < 128 || _group_desc_size < 32)
         {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
         const uint32_t blocks_lo = read_le_at<uint32_t>(_superblock, 4);
         const uint32_t blocks_hi = read_le_at<uint32_t>(_superblock, 336);
-        _block_count = join_u64(blocks_lo, blocks_hi);
+        _block_count             = join_u64(blocks_lo, blocks_hi);
         if (_block_count == 0) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -576,9 +636,9 @@ namespace ext4 {
         const size_t base = static_cast<size_t>(group) * _group_desc_size;
         if (base + 44 > _group_desc.size()) {
             loggers::VFS::ERROR(
-                "Ext4 inode table desc 越界: group=%u base=%u desc_size=%u total=%u",
-                static_cast<unsigned>(group),
-                static_cast<unsigned>(base),
+                "Ext4 inode table desc 越界: group=%u base=%u desc_size=%u "
+                "total=%u",
+                static_cast<unsigned>(group), static_cast<unsigned>(base),
                 static_cast<unsigned>(_group_desc_size),
                 static_cast<unsigned>(_group_desc.size()));
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
@@ -684,31 +744,30 @@ namespace ext4 {
                                           bitmap.data(), bitmap.size());
             propagate(read_res);
 
-            const uint32_t blocks_in_group =
-                std::min<uint32_t>(blocks_per_group,
-                                   static_cast<uint32_t>(
-                                       _block_count - static_cast<uint64_t>(group) * blocks_per_group));
+            const uint32_t blocks_in_group = std::min<uint32_t>(
+                blocks_per_group,
+                static_cast<uint32_t>(_block_count -
+                                      static_cast<uint64_t>(group) *
+                                          blocks_per_group));
             for (uint32_t idx = 0; idx < blocks_in_group; ++idx) {
                 const size_t byte_index = idx / 8U;
                 if (byte_index >= bitmap.size()) {
                     unexpect_return(ErrCode::INVALID_PARAM);
                 }
-                const uint8_t mask =
-                    static_cast<uint8_t>(1U << (idx % 8U));
+                const uint8_t mask = static_cast<uint8_t>(1U << (idx % 8U));
                 if ((bitmap[byte_index] & mask) != 0) {
                     continue;
                 }
 
-                bitmap[byte_index] |= mask;
-                auto write_bitmap_res = write_fs_block(
+                bitmap[byte_index]    |= mask;
+                auto write_bitmap_res  = write_fs_block(
                     bitmap_block_res.value(), bitmap.data(), bitmap.size());
                 propagate(write_bitmap_res);
 
                 auto set_group_res =
                     set_group_free_blocks(group, free_res.value() - 1);
                 propagate(set_group_res);
-                const uint32_t sb_free =
-                    read_le_at<uint32_t>(_superblock, 12);
+                const uint32_t sb_free = read_le_at<uint32_t>(_superblock, 12);
                 if (sb_free == 0) {
                     unexpect_return(ErrCode::INVALID_PARAM);
                 }
@@ -730,11 +789,11 @@ namespace ext4 {
         if (block_no < _first_data_block || block_no >= _block_count) {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
-        const uint64_t data_block  = block_no - _first_data_block;
-        const uint32_t group       = static_cast<uint32_t>(
-            data_block / _blocks_per_group);
-        const uint32_t idx         = static_cast<uint32_t>(
-            data_block % _blocks_per_group);
+        const uint64_t data_block = block_no - _first_data_block;
+        const uint32_t group =
+            static_cast<uint32_t>(data_block / _blocks_per_group);
+        const uint32_t idx =
+            static_cast<uint32_t>(data_block % _blocks_per_group);
         if (group >= _group_count) {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
@@ -754,15 +813,14 @@ namespace ext4 {
         if ((bitmap[byte_index] & mask) == 0) {
             void_return();
         }
-        bitmap[byte_index] &= static_cast<uint8_t>(~mask);
-        auto write_bitmap_res = write_fs_block(
-            bitmap_block_res.value(), bitmap.data(), bitmap.size());
+        bitmap[byte_index]    &= static_cast<uint8_t>(~mask);
+        auto write_bitmap_res  = write_fs_block(bitmap_block_res.value(),
+                                                bitmap.data(), bitmap.size());
         propagate(write_bitmap_res);
 
         auto free_res = group_free_blocks(group);
         propagate(free_res);
-        auto set_group_res =
-            set_group_free_blocks(group, free_res.value() + 1);
+        auto set_group_res = set_group_free_blocks(group, free_res.value() + 1);
         propagate(set_group_res);
         const uint32_t sb_free = read_le_at<uint32_t>(_superblock, 12);
         write_le_at<uint32_t>(_superblock, 12, sb_free + 1);
@@ -817,8 +875,7 @@ namespace ext4 {
         if (_superblock.empty()) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
-        return write_device_bytes(1024, _superblock.data(),
-                                  _superblock.size());
+        return write_device_bytes(1024, _superblock.data(), _superblock.size());
     }
 
     Result<void> Ext4Superblock::sync_group_descriptors() {
@@ -829,8 +886,7 @@ namespace ext4 {
                                   _group_desc.size());
     }
 
-    Result<std::vector<byte>> Ext4Superblock::read_inode_raw(
-        inode_t inode_id) {
+    Result<std::vector<byte>> Ext4Superblock::read_inode_raw(inode_t inode_id) {
         if (!valid_inode_id(inode_id)) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -846,9 +902,8 @@ namespace ext4 {
         if (!table_res.has_value()) {
             loggers::VFS::ERROR(
                 "Ext4 read inode table 失败: inode=%u group=%u index=%u err=%s",
-                static_cast<unsigned>(inode_id),
-                static_cast<unsigned>(group), static_cast<unsigned>(index),
-                to_cstring(table_res.error()));
+                static_cast<unsigned>(inode_id), static_cast<unsigned>(group),
+                static_cast<unsigned>(index), to_cstring(table_res.error()));
             propagate_return(table_res);
         }
 
@@ -859,9 +914,10 @@ namespace ext4 {
         auto read_res = read_device_bytes(inode_offset, raw.data(), raw.size());
         if (!read_res.has_value()) {
             loggers::VFS::ERROR(
-                "Ext4 read inode raw 失败: inode=%u group=%u index=%u table=%u offset=%u size=%u err=%s",
-                static_cast<unsigned>(inode_id),
-                static_cast<unsigned>(group), static_cast<unsigned>(index),
+                "Ext4 read inode raw 失败: inode=%u group=%u index=%u table=%u "
+                "offset=%u size=%u err=%s",
+                static_cast<unsigned>(inode_id), static_cast<unsigned>(group),
+                static_cast<unsigned>(index),
                 static_cast<unsigned>(table_res.value()),
                 static_cast<unsigned>(inode_offset),
                 static_cast<unsigned>(raw.size()),
@@ -871,8 +927,8 @@ namespace ext4 {
         return raw;
     }
 
-    Result<void> Ext4Superblock::write_inode_raw(
-        inode_t inode_id, const std::vector<byte> &raw) {
+    Result<void> Ext4Superblock::write_inode_raw(inode_t inode_id,
+                                                 const std::vector<byte> &raw) {
         if (!valid_inode_id(inode_id) || raw.size() != _inode_size) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -906,8 +962,7 @@ namespace ext4 {
         if (mode == 0 || delete_time != 0 || link_count == 0) {
             loggers::VFS::ERROR(
                 "Ext4 inode 不存在: mode=0x%x delete_time=%u link_count=%u",
-                static_cast<unsigned>(mode),
-                static_cast<unsigned>(delete_time),
+                static_cast<unsigned>(mode), static_cast<unsigned>(delete_time),
                 static_cast<unsigned>(link_count));
             unexpect_return(ErrCode::ENTRY_NOT_FOUND);
         }
@@ -915,9 +970,9 @@ namespace ext4 {
             (_feature_ro_compat & EXT4_FEATURE_RO_COMPAT_DIR_NLINK) == 0)
         {
             loggers::VFS::ERROR(
-                "Ext4 inode link_count 非法: mode=0x%x delete_time=%u link_count=%u ro_compat=0x%x",
-                static_cast<unsigned>(mode),
-                static_cast<unsigned>(delete_time),
+                "Ext4 inode link_count 非法: mode=0x%x delete_time=%u "
+                "link_count=%u ro_compat=0x%x",
+                static_cast<unsigned>(mode), static_cast<unsigned>(delete_time),
                 static_cast<unsigned>(link_count),
                 static_cast<unsigned>(_feature_ro_compat));
             unexpect_return(ErrCode::INVALID_PARAM);
@@ -979,22 +1034,20 @@ namespace ext4 {
                 if (byte_index >= bitmap.size()) {
                     unexpect_return(ErrCode::INVALID_PARAM);
                 }
-                const uint8_t mask =
-                    static_cast<uint8_t>(1U << (idx % 8U));
+                const uint8_t mask = static_cast<uint8_t>(1U << (idx % 8U));
                 if ((bitmap[byte_index] & mask) != 0) {
                     continue;
                 }
 
-                bitmap[byte_index] |= mask;
-                auto write_bitmap_res = write_fs_block(
+                bitmap[byte_index]    |= mask;
+                auto write_bitmap_res  = write_fs_block(
                     bitmap_block_res.value(), bitmap.data(), bitmap.size());
                 propagate(write_bitmap_res);
 
                 auto set_group_res =
                     set_group_free_inodes(group, free_res.value() - 1);
                 propagate(set_group_res);
-                const uint32_t sb_free =
-                    read_le_at<uint32_t>(_superblock, 16);
+                const uint32_t sb_free = read_le_at<uint32_t>(_superblock, 16);
                 if (sb_free == 0) {
                     unexpect_return(ErrCode::INVALID_PARAM);
                 }
@@ -1048,14 +1101,14 @@ namespace ext4 {
         if (byte_index >= bitmap.size()) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
-        const uint8_t mask      = static_cast<uint8_t>(1U << (idx % 8U));
+        const uint8_t mask = static_cast<uint8_t>(1U << (idx % 8U));
         if ((bitmap[byte_index] & mask) == 0) {
             void_return();
         }
 
-        bitmap[byte_index] &= static_cast<uint8_t>(~mask);
-        auto write_bitmap_res = write_fs_block(bitmap_block_res.value(),
-                                               bitmap.data(), bitmap.size());
+        bitmap[byte_index]    &= static_cast<uint8_t>(~mask);
+        auto write_bitmap_res  = write_fs_block(bitmap_block_res.value(),
+                                                bitmap.data(), bitmap.size());
         propagate(write_bitmap_res);
 
         std::vector<byte> raw(_inode_size, 0);
@@ -1096,7 +1149,7 @@ namespace ext4 {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
         if (entries == 0) {
-            return Ext4ExtentMapping {};
+            return Ext4ExtentMapping{};
         }
 
         if (depth == 0) {
@@ -1109,9 +1162,8 @@ namespace ext4 {
                 node + sizeof(Ext4ExtentHeader));
             for (uint16_t i = 0; i < entries; ++i) {
                 const uint32_t first = read_le<uint32_t>(&extents[i].ee_block);
-                const uint16_t len_raw =
-                    read_le<uint16_t>(&extents[i].ee_len);
-                const uint32_t len = extent_len(len_raw);
+                const uint16_t len_raw = read_le<uint16_t>(&extents[i].ee_len);
+                const uint32_t len     = extent_len(len_raw);
                 if (len == 0) {
                     unexpect_return(ErrCode::INVALID_PARAM);
                 }
@@ -1133,7 +1185,7 @@ namespace ext4 {
                     .unwritten      = extent_unwritten(len_raw),
                 };
             }
-            return Ext4ExtentMapping {};
+            return Ext4ExtentMapping{};
         }
 
         const size_t index_bytes =
@@ -1152,7 +1204,7 @@ namespace ext4 {
             chosen = &indexes[i];
         }
         if (chosen == nullptr) {
-            return Ext4ExtentMapping {};
+            return Ext4ExtentMapping{};
         }
 
         const uint64_t leaf =
@@ -1182,7 +1234,7 @@ namespace ext4 {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
         return extent_lookup_from_node(raw_res.value().data() + 40, 60,
-                                        logical);
+                                       logical);
     }
 
     Result<void> Ext4Superblock::insert_extent(inode_t inode_id,
@@ -1197,15 +1249,15 @@ namespace ext4 {
         }
 
         byte *const i_block  = raw.data() + 40;
-        auto *eh = reinterpret_cast<Ext4ExtentHeader *>(i_block);
+        auto *eh             = reinterpret_cast<Ext4ExtentHeader *>(i_block);
         const uint16_t magic = read_le<uint16_t>(&eh->eh_magic);
         if (magic != EXT4_EXT_MAGIC) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        const uint16_t depth      = read_le<uint16_t>(&eh->eh_depth);
-        uint16_t entries          = read_le<uint16_t>(&eh->eh_entries);
-        const uint16_t max_entries = read_le<uint16_t>(&eh->eh_max);
+        const uint16_t depth           = read_le<uint16_t>(&eh->eh_depth);
+        uint16_t entries               = read_le<uint16_t>(&eh->eh_entries);
+        const uint16_t max_entries     = read_le<uint16_t>(&eh->eh_max);
         const uint16_t blk_max_entries = static_cast<uint16_t>(
             (_block_size - sizeof(Ext4ExtentHeader)) / sizeof(Ext4Extent));
 
@@ -1220,19 +1272,22 @@ namespace ext4 {
             for (uint16_t i = 0; i < entries; ++i) {
                 const uint32_t first = read_le<uint32_t>(&extents[i].ee_block);
                 const uint16_t len_raw = read_le<uint16_t>(&extents[i].ee_len);
-                const uint32_t elen = extent_len(len_raw);
+                const uint32_t elen    = extent_len(len_raw);
 
                 if (logical + len == first &&
                     physical + static_cast<uint64_t>(len) * _block_size ==
                         ((static_cast<uint64_t>(
                               read_le<uint16_t>(&extents[i].ee_start_hi))
                           << 32) |
-                         read_le<uint32_t>(&extents[i].ee_start_lo))) {
-                    write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                                                 i * sizeof(Ext4Extent),
-                                          logical);
-                    write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                                                 i * sizeof(Ext4Extent) + 4,
+                         read_le<uint32_t>(&extents[i].ee_start_lo)))
+                {
+                    write_le_at<uint32_t>(
+                        raw,
+                        40 + sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
+                        logical);
+                    write_le_at<uint16_t>(raw,
+                                          40 + sizeof(Ext4ExtentHeader) +
+                                              i * sizeof(Ext4Extent) + 4,
                                           static_cast<uint16_t>(len + elen));
                     return write_inode_raw(inode_id, raw);
                 }
@@ -1242,9 +1297,11 @@ namespace ext4 {
                           read_le<uint16_t>(&extents[i].ee_start_hi))
                       << 32) |
                      read_le<uint32_t>(&extents[i].ee_start_lo)) ==
-                        physical + static_cast<uint64_t>(len) * _block_size) {
-                    write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                                                 i * sizeof(Ext4Extent) + 4,
+                        physical + static_cast<uint64_t>(len) * _block_size)
+                {
+                    write_le_at<uint16_t>(raw,
+                                          40 + sizeof(Ext4ExtentHeader) +
+                                              i * sizeof(Ext4Extent) + 4,
                                           static_cast<uint16_t>(len + elen));
                     return write_inode_raw(inode_id, raw);
                 }
@@ -1259,19 +1316,21 @@ namespace ext4 {
                     }
                 }
                 for (uint16_t i = entries; i > insert_pos; --i) {
-                    const size_t dst = 40 + sizeof(Ext4ExtentHeader) +
-                                       i * sizeof(Ext4Extent);
-                    memcpy(raw.data() + dst, raw.data() + dst - sizeof(Ext4Extent),
+                    const size_t dst =
+                        40 + sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent);
+                    memcpy(raw.data() + dst,
+                           raw.data() + dst - sizeof(Ext4Extent),
                            sizeof(Ext4Extent));
                 }
-                const size_t off =
-                    40 + sizeof(Ext4ExtentHeader) + insert_pos * sizeof(Ext4Extent);
+                const size_t off = 40 + sizeof(Ext4ExtentHeader) +
+                                   insert_pos * sizeof(Ext4Extent);
                 write_le_at<uint32_t>(raw, off, logical);
                 write_le_at<uint16_t>(raw, off + 4, static_cast<uint16_t>(len));
                 write_le_at<uint16_t>(raw, off + 6,
                                       static_cast<uint16_t>(physical >> 32));
-                write_le_at<uint32_t>(raw, off + 8,
-                                      static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
+                write_le_at<uint32_t>(
+                    raw, off + 8,
+                    static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
                 write_le_at<uint16_t>(raw, 42,
                                       static_cast<uint16_t>(entries + 1));
                 return write_inode_raw(inode_id, raw);
@@ -1281,7 +1340,11 @@ namespace ext4 {
             const uint16_t total = static_cast<uint16_t>(entries + 1);
             const uint16_t half  = total / 2;
 
-            struct NewEntry { uint32_t block; uint32_t len; uint64_t phys; };
+            struct NewEntry {
+                uint32_t block;
+                uint32_t len;
+                uint64_t phys;
+            };
             std::vector<NewEntry> sorted;
             bool inserted = false;
             for (uint16_t i = 0; i < entries; ++i) {
@@ -1290,9 +1353,12 @@ namespace ext4 {
                     sorted.push_back({logical, len, physical});
                     inserted = true;
                 }
-                sorted.push_back({eb, extent_len(read_le<uint16_t>(&extents[i].ee_len)),
-                                  (static_cast<uint64_t>(read_le<uint16_t>(&extents[i].ee_start_hi)) << 32) |
-                                      read_le<uint32_t>(&extents[i].ee_start_lo)});
+                sorted.push_back(
+                    {eb, extent_len(read_le<uint16_t>(&extents[i].ee_len)),
+                     (static_cast<uint64_t>(
+                          read_le<uint16_t>(&extents[i].ee_start_hi))
+                      << 32) |
+                         read_le<uint32_t>(&extents[i].ee_start_lo)});
             }
             if (!inserted) {
                 sorted.push_back({logical, len, physical});
@@ -1317,39 +1383,56 @@ namespace ext4 {
             write_le_at<uint16_t>(leaf_b, 4, max_entries);
             write_le_at<uint16_t>(leaf_b, 6, 0);
 
-            auto *ea = reinterpret_cast<Ext4Extent *>(
-                leaf_a.data() + sizeof(Ext4ExtentHeader));
-            auto *eb = reinterpret_cast<Ext4Extent *>(
-                leaf_b.data() + sizeof(Ext4ExtentHeader));
+            auto *ea = reinterpret_cast<Ext4Extent *>(leaf_a.data() +
+                                                      sizeof(Ext4ExtentHeader));
+            auto *eb = reinterpret_cast<Ext4Extent *>(leaf_b.data() +
+                                                      sizeof(Ext4ExtentHeader));
 
             for (uint16_t i = 0; i < half; ++i) {
-                write_le_at<uint32_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
-                                      sorted[i].block);
-                write_le_at<uint16_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
-                                      static_cast<uint16_t>(sorted[i].len));
-                write_le_at<uint16_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 6,
-                                      static_cast<uint16_t>(sorted[i].phys >> 32));
-                write_le_at<uint32_t>(leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 8,
-                                      static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
+                write_le_at<uint32_t>(
+                    leaf_a, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
+                    sorted[i].block);
+                write_le_at<uint16_t>(
+                    leaf_a,
+                    sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
+                    static_cast<uint16_t>(sorted[i].len));
+                write_le_at<uint16_t>(
+                    leaf_a,
+                    sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 6,
+                    static_cast<uint16_t>(sorted[i].phys >> 32));
+                write_le_at<uint32_t>(
+                    leaf_a,
+                    sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 8,
+                    static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
             }
             write_le_at<uint16_t>(leaf_a, 2, half);
 
             for (uint16_t i = half; i < total; ++i) {
                 const uint16_t j = i - half;
-                write_le_at<uint32_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent),
-                                      sorted[i].block);
-                write_le_at<uint16_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 4,
-                                      static_cast<uint16_t>(sorted[i].len));
-                write_le_at<uint16_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 6,
-                                      static_cast<uint16_t>(sorted[i].phys >> 32));
-                write_le_at<uint32_t>(leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 8,
-                                      static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
+                write_le_at<uint32_t>(
+                    leaf_b, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent),
+                    sorted[i].block);
+                write_le_at<uint16_t>(
+                    leaf_b,
+                    sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 4,
+                    static_cast<uint16_t>(sorted[i].len));
+                write_le_at<uint16_t>(
+                    leaf_b,
+                    sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 6,
+                    static_cast<uint16_t>(sorted[i].phys >> 32));
+                write_le_at<uint32_t>(
+                    leaf_b,
+                    sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 8,
+                    static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
             }
-            write_le_at<uint16_t>(leaf_b, 2, static_cast<uint16_t>(total - half));
+            write_le_at<uint16_t>(leaf_b, 2,
+                                  static_cast<uint16_t>(total - half));
 
-            auto wa = write_fs_block(blk_a.value(), leaf_a.data(), leaf_a.size());
+            auto wa =
+                write_fs_block(blk_a.value(), leaf_a.data(), leaf_a.size());
             propagate(wa);
-            auto wb = write_fs_block(blk_b.value(), leaf_b.data(), leaf_b.size());
+            auto wb =
+                write_fs_block(blk_b.value(), leaf_b.data(), leaf_b.size());
             if (!wb.has_value()) {
                 free_block(blk_b.value());
                 propagate_return(wb);
@@ -1358,28 +1441,34 @@ namespace ext4 {
             // convert inode's i_block to root index node
             write_le_at<uint16_t>(raw, 42, 2);
             write_le_at<uint16_t>(raw, 46, 1);
-            auto *idx = reinterpret_cast<Ext4ExtentIdx *>(i_block + sizeof(Ext4ExtentHeader));
-            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader), sorted[0].block);
-            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 4,
-                                  static_cast<uint32_t>(blk_a.value() & 0xFFFFFFFFULL));
+            auto *idx = reinterpret_cast<Ext4ExtentIdx *>(
+                i_block + sizeof(Ext4ExtentHeader));
+            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader),
+                                  sorted[0].block);
+            write_le_at<uint32_t>(
+                raw, 40 + sizeof(Ext4ExtentHeader) + 4,
+                static_cast<uint32_t>(blk_a.value() & 0xFFFFFFFFULL));
             write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 8,
                                   static_cast<uint16_t>(blk_a.value() >> 32));
             memset(raw.data() + 40 + sizeof(Ext4ExtentHeader) + 12, 0, 12);
-            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 12, sorted[half].block);
-            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 16,
-                                  static_cast<uint32_t>(blk_b.value() & 0xFFFFFFFFULL));
+            write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 12,
+                                  sorted[half].block);
+            write_le_at<uint32_t>(
+                raw, 40 + sizeof(Ext4ExtentHeader) + 16,
+                static_cast<uint32_t>(blk_b.value() & 0xFFFFFFFFULL));
             write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) + 20,
                                   static_cast<uint16_t>(blk_b.value() >> 32));
             return write_inode_raw(inode_id, raw);
         }
 
         const uint16_t idx_entries = read_le<uint16_t>(i_block + 2);
-        auto *idxs = reinterpret_cast<Ext4ExtentIdx *>(
+        auto *idxs                 = reinterpret_cast<Ext4ExtentIdx *>(
             i_block + sizeof(Ext4ExtentHeader));
 
         const Ext4ExtentIdx *target_idx = nullptr;
         for (uint16_t i = 0; i < idx_entries; ++i) {
-            if (read_le<uint32_t>(&idxs[i].ei_block) > logical) break;
+            if (read_le<uint32_t>(&idxs[i].ei_block) > logical)
+                break;
             target_idx = &idxs[i];
         }
         if (target_idx == nullptr) {
@@ -1394,7 +1483,8 @@ namespace ext4 {
         auto read_lf = read_fs_block(leaf_blk, leaf.data(), leaf.size());
         propagate(read_lf);
 
-        // collect intermediate nodes on the path (root→leaf) for split propagation
+        // collect intermediate nodes on the path (root→leaf) for split
+        // propagation
         struct PathNode {
             uint64_t block;
             std::vector<byte> buf;
@@ -1409,21 +1499,25 @@ namespace ext4 {
         while (true) {
             auto *cur_eh = reinterpret_cast<Ext4ExtentHeader *>(leaf.data());
             uint16_t cur_depth = read_le<uint16_t>(&cur_eh->eh_depth);
-            if (cur_depth == 0) break;
+            if (cur_depth == 0)
+                break;
 
             uint16_t cur_entries = read_le<uint16_t>(&cur_eh->eh_entries);
-            auto *cur_idxs = reinterpret_cast<Ext4ExtentIdx *>(
+            auto *cur_idxs       = reinterpret_cast<Ext4ExtentIdx *>(
                 leaf.data() + sizeof(Ext4ExtentHeader));
             const Ext4ExtentIdx *chosen = nullptr;
             for (uint16_t j = 0; j < cur_entries; ++j) {
-                if (read_le<uint32_t>(&cur_idxs[j].ei_block) > logical) break;
+                if (read_le<uint32_t>(&cur_idxs[j].ei_block) > logical)
+                    break;
                 chosen = &cur_idxs[j];
             }
             if (chosen == nullptr) {
                 unexpect_return(ErrCode::ENTRY_NOT_FOUND);
             }
-            cur_blk = (static_cast<uint64_t>(read_le<uint16_t>(&chosen->ei_leaf_hi)) << 32) |
-                      read_le<uint32_t>(&chosen->ei_leaf_lo);
+            cur_blk =
+                (static_cast<uint64_t>(read_le<uint16_t>(&chosen->ei_leaf_hi))
+                 << 32) |
+                read_le<uint32_t>(&chosen->ei_leaf_lo);
             auto rd = read_fs_block(cur_blk, leaf.data(), leaf.size());
             propagate(rd);
             if (read_le<uint16_t>(leaf.data() + 6) > 0) {
@@ -1431,36 +1525,38 @@ namespace ext4 {
             }
         }
 
-        auto *lf_eh =
-            reinterpret_cast<Ext4ExtentHeader *>(leaf.data());
-        const uint16_t lf_entries =
-            read_le<uint16_t>(&lf_eh->eh_entries);
-        const uint16_t lf_max = read_le<uint16_t>(&lf_eh->eh_max);
-        auto *lf_exts = reinterpret_cast<Ext4Extent *>(
+        auto *lf_eh = reinterpret_cast<Ext4ExtentHeader *>(leaf.data());
+        const uint16_t lf_entries = read_le<uint16_t>(&lf_eh->eh_entries);
+        const uint16_t lf_max     = read_le<uint16_t>(&lf_eh->eh_max);
+        auto *lf_exts             = reinterpret_cast<Ext4Extent *>(
             leaf.data() + sizeof(Ext4ExtentHeader));
 
         for (uint16_t i = 0; i < lf_entries; ++i) {
             const uint32_t first = read_le<uint32_t>(&lf_exts[i].ee_block);
-            const uint16_t lr = read_le<uint16_t>(&lf_exts[i].ee_len);
-            const uint32_t elen = extent_len(lr);
-            const uint64_t start =
-                (static_cast<uint64_t>(read_le<uint16_t>(&lf_exts[i].ee_start_hi)) << 32) |
-                read_le<uint32_t>(&lf_exts[i].ee_start_lo);
+            const uint16_t lr    = read_le<uint16_t>(&lf_exts[i].ee_len);
+            const uint32_t elen  = extent_len(lr);
+            const uint64_t start = (static_cast<uint64_t>(read_le<uint16_t>(
+                                        &lf_exts[i].ee_start_hi))
+                                    << 32) |
+                                   read_le<uint32_t>(&lf_exts[i].ee_start_lo);
 
             if (logical + len == first &&
-                physical + static_cast<uint64_t>(len) * _block_size == start) {
-                write_le_at<uint32_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                              i * sizeof(Ext4Extent), logical);
-                write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                              i * sizeof(Ext4Extent) + 4,
-                                      static_cast<uint16_t>(len + elen));
+                physical + static_cast<uint64_t>(len) * _block_size == start)
+            {
+                write_le_at<uint32_t>(
+                    leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
+                    logical);
+                write_le_at<uint16_t>(
+                    leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
+                    static_cast<uint16_t>(len + elen));
                 return write_fs_block(cur_blk, leaf.data(), leaf.size());
             }
             if (first == logical + len &&
-                start == physical + static_cast<uint64_t>(len) * _block_size) {
-                write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                              i * sizeof(Ext4Extent) + 4,
-                                      static_cast<uint16_t>(len + elen));
+                start == physical + static_cast<uint64_t>(len) * _block_size)
+            {
+                write_le_at<uint16_t>(
+                    leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
+                    static_cast<uint16_t>(len + elen));
                 return write_fs_block(cur_blk, leaf.data(), leaf.size());
             }
         }
@@ -1474,7 +1570,8 @@ namespace ext4 {
                 }
             }
             for (uint16_t i = lf_entries; i > ipos; --i) {
-                const size_t d = sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent);
+                const size_t d =
+                    sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent);
                 memcpy(leaf.data() + d, leaf.data() + d - sizeof(Ext4Extent),
                        sizeof(Ext4Extent));
             }
@@ -1482,16 +1579,23 @@ namespace ext4 {
                 sizeof(Ext4ExtentHeader) + ipos * sizeof(Ext4Extent);
             write_le_at<uint32_t>(leaf, off, logical);
             write_le_at<uint16_t>(leaf, off + 4, static_cast<uint16_t>(len));
-            write_le_at<uint16_t>(leaf, off + 6, static_cast<uint16_t>(physical >> 32));
-            write_le_at<uint32_t>(leaf, off + 8, static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
-            write_le_at<uint16_t>(leaf, 2, static_cast<uint16_t>(lf_entries + 1));
+            write_le_at<uint16_t>(leaf, off + 6,
+                                  static_cast<uint16_t>(physical >> 32));
+            write_le_at<uint32_t>(
+                leaf, off + 8, static_cast<uint32_t>(physical & 0xFFFFFFFFULL));
+            write_le_at<uint16_t>(leaf, 2,
+                                  static_cast<uint16_t>(lf_entries + 1));
             return write_fs_block(cur_blk, leaf.data(), leaf.size());
         }
 
         // leaf full — prepare sorted extents and split
         const uint16_t total_lf = static_cast<uint16_t>(lf_entries + 1);
         const uint16_t half     = total_lf / 2;
-        struct LfEntry { uint32_t block; uint32_t len; uint64_t phys; };
+        struct LfEntry {
+            uint32_t block;
+            uint32_t len;
+            uint64_t phys;
+        };
         std::vector<LfEntry> sorted;
         bool done = false;
         for (uint16_t i = 0; i < lf_entries; ++i) {
@@ -1507,7 +1611,8 @@ namespace ext4 {
                          << 32) |
                             read_le<uint32_t>(&lf_exts[i].ee_start_lo)});
         }
-        if (!done) sorted.push_back(LfEntry{logical, len, physical});
+        if (!done)
+            sorted.push_back(LfEntry{logical, len, physical});
 
         auto new_block = alloc_block();
         propagate(new_block);
@@ -1515,44 +1620,42 @@ namespace ext4 {
         write_le_at<uint16_t>(new_leaf, 0, EXT4_EXT_MAGIC);
         write_le_at<uint16_t>(new_leaf, 4, lf_max);
         for (uint16_t i = 0; i < half; ++i) {
-            write_le_at<uint32_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                             i * sizeof(Ext4Extent),
-                                  sorted[i].block);
-            write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                            i * sizeof(Ext4Extent) + 4,
-                                  static_cast<uint16_t>(sorted[i].len));
-            write_le_at<uint16_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                            i * sizeof(Ext4Extent) + 6,
-                                  static_cast<uint16_t>(sorted[i].phys >> 32));
-            write_le_at<uint32_t>(leaf, sizeof(Ext4ExtentHeader) +
-                                            i * sizeof(Ext4Extent) + 8,
-                                  static_cast<uint32_t>(sorted[i].phys &
-                                                        0xFFFFFFFFULL));
+            write_le_at<uint32_t>(
+                leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent),
+                sorted[i].block);
+            write_le_at<uint16_t>(
+                leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 4,
+                static_cast<uint16_t>(sorted[i].len));
+            write_le_at<uint16_t>(
+                leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 6,
+                static_cast<uint16_t>(sorted[i].phys >> 32));
+            write_le_at<uint32_t>(
+                leaf, sizeof(Ext4ExtentHeader) + i * sizeof(Ext4Extent) + 8,
+                static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
         }
         write_le_at<uint16_t>(leaf, 2, half);
         for (uint16_t i = half; i < total_lf; ++i) {
             const uint16_t j = i - half;
-            write_le_at<uint32_t>(new_leaf, sizeof(Ext4ExtentHeader) +
-                                                j * sizeof(Ext4Extent),
-                                  sorted[i].block);
-            write_le_at<uint16_t>(new_leaf, sizeof(Ext4ExtentHeader) +
-                                                j * sizeof(Ext4Extent) + 4,
-                                  static_cast<uint16_t>(sorted[i].len));
-            write_le_at<uint16_t>(new_leaf, sizeof(Ext4ExtentHeader) +
-                                                j * sizeof(Ext4Extent) + 6,
-                                  static_cast<uint16_t>(sorted[i].phys >> 32));
-            write_le_at<uint32_t>(new_leaf, sizeof(Ext4ExtentHeader) +
-                                                j * sizeof(Ext4Extent) + 8,
-                                  static_cast<uint32_t>(sorted[i].phys &
-                                                        0xFFFFFFFFULL));
+            write_le_at<uint32_t>(
+                new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent),
+                sorted[i].block);
+            write_le_at<uint16_t>(
+                new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 4,
+                static_cast<uint16_t>(sorted[i].len));
+            write_le_at<uint16_t>(
+                new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 6,
+                static_cast<uint16_t>(sorted[i].phys >> 32));
+            write_le_at<uint32_t>(
+                new_leaf, sizeof(Ext4ExtentHeader) + j * sizeof(Ext4Extent) + 8,
+                static_cast<uint32_t>(sorted[i].phys & 0xFFFFFFFFULL));
         }
         write_le_at<uint16_t>(new_leaf, 2,
                               static_cast<uint16_t>(total_lf - half));
 
         auto w_old = write_fs_block(cur_blk, leaf.data(), leaf.size());
         propagate(w_old);
-        auto w_new = write_fs_block(new_block.value(), new_leaf.data(),
-                                    new_leaf.size());
+        auto w_new =
+            write_fs_block(new_block.value(), new_leaf.data(), new_leaf.size());
         if (!w_new.has_value()) {
             free_block(new_block.value());
             propagate_return(w_new);
@@ -1563,61 +1666,80 @@ namespace ext4 {
         uint64_t ins_phys  = new_block.value();
 
         while (!path.empty()) {
-            PathNode pn    = path.back();
+            PathNode pn = path.back();
             path.pop_back();
             uint64_t pn_blk = pn.block;
 
             auto *pn_eh = reinterpret_cast<Ext4ExtentHeader *>(pn.buf.data());
             uint16_t pn_entries = read_le<uint16_t>(&pn_eh->eh_entries);
             uint16_t pn_max     = read_le<uint16_t>(&pn_eh->eh_max);
-            auto *pn_idxs = reinterpret_cast<Ext4ExtentIdx *>(
+            auto *pn_idxs       = reinterpret_cast<Ext4ExtentIdx *>(
                 pn.buf.data() + sizeof(Ext4ExtentHeader));
 
             if (pn_entries < pn_max) {
                 // room in this node — insert and done
                 uint16_t ip = pn_entries;
                 for (uint16_t i = 0; i < pn_entries; ++i) {
-                    if (ins_first < read_le<uint32_t>(&pn_idxs[i].ei_block))
-                    { ip = i; break; }
+                    if (ins_first < read_le<uint32_t>(&pn_idxs[i].ei_block)) {
+                        ip = i;
+                        break;
+                    }
                 }
                 for (uint16_t i = pn_entries; i > ip; --i) {
-                    size_t d = sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
-                    memcpy(pn.buf.data() + d, pn.buf.data() + d - sizeof(Ext4ExtentIdx),
+                    size_t d =
+                        sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
+                    memcpy(pn.buf.data() + d,
+                           pn.buf.data() + d - sizeof(Ext4ExtentIdx),
                            sizeof(Ext4ExtentIdx));
                 }
-                size_t o = sizeof(Ext4ExtentHeader) + ip * sizeof(Ext4ExtentIdx);
+                size_t o =
+                    sizeof(Ext4ExtentHeader) + ip * sizeof(Ext4ExtentIdx);
                 write_le_at<uint32_t>(pn.buf, o, ins_first);
-                write_le_at<uint32_t>(pn.buf, o + 4,
+                write_le_at<uint32_t>(
+                    pn.buf, o + 4,
                     static_cast<uint32_t>(ins_phys & 0xFFFFFFFFULL));
                 write_le_at<uint16_t>(pn.buf, o + 8,
-                    static_cast<uint16_t>(ins_phys >> 32));
+                                      static_cast<uint16_t>(ins_phys >> 32));
                 write_le_at<uint16_t>(pn.buf, 2,
-                    static_cast<uint16_t>(pn_entries + 1));
+                                      static_cast<uint16_t>(pn_entries + 1));
                 return write_fs_block(pn_blk, pn.buf.data(), pn.buf.size());
             }
 
             // node full — split it
-            struct IdxEntry { uint32_t first_block; uint64_t leaf_phys; };
+            struct IdxEntry {
+                uint32_t first_block;
+                uint64_t leaf_phys;
+            };
             std::vector<IdxEntry> all;
             for (uint16_t i = 0; i < pn_entries; ++i) {
-                all.push_back(IdxEntry{
-                    read_le<uint32_t>(&pn_idxs[i].ei_block),
-                    (static_cast<uint64_t>(read_le<uint16_t>(&pn_idxs[i].ei_leaf_hi)) << 32) |
-                        read_le<uint32_t>(&pn_idxs[i].ei_leaf_lo)});
+                all.push_back(
+                    IdxEntry{read_le<uint32_t>(&pn_idxs[i].ei_block),
+                             (static_cast<uint64_t>(
+                                  read_le<uint16_t>(&pn_idxs[i].ei_leaf_hi))
+                              << 32) |
+                                 read_le<uint32_t>(&pn_idxs[i].ei_leaf_lo)});
             }
-            { bool f = false;
-              for (size_t i = 0; i < all.size(); ++i)
-                if (ins_first < all[i].first_block) {
-                    all.insert(all.begin() + static_cast<long>(i),
-                               IdxEntry{ins_first, ins_phys});
-                    f = true; break;
-                }
-              if (!f) all.push_back(IdxEntry{ins_first, ins_phys}); }
+            {
+                bool f = false;
+                for (size_t i = 0; i < all.size(); ++i)
+                    if (ins_first < all[i].first_block) {
+                        all.insert(all.begin() + static_cast<long>(i),
+                                   IdxEntry{ins_first, ins_phys});
+                        f = true;
+                        break;
+                    }
+                if (!f)
+                    all.push_back(IdxEntry{ins_first, ins_phys});
+            }
             size_t tot = all.size(), sp = (tot + 1) / 2;
 
-            auto na = alloc_block(); propagate(na);
+            auto na = alloc_block();
+            propagate(na);
             auto nb = alloc_block();
-            if (!nb.has_value()) { free_block(na.value()); propagate_return(nb); }
+            if (!nb.has_value()) {
+                free_block(na.value());
+                propagate_return(nb);
+            }
 
             auto write_ix_node = [&](uint64_t blk, size_t start, size_t cnt) {
                 std::vector<byte> b(_block_size, 0);
@@ -1626,11 +1748,15 @@ namespace ext4 {
                 write_le_at<uint16_t>(b, 4, blk_max_entries);
                 write_le_at<uint16_t>(b, 6, 1);
                 for (size_t i = 0; i < cnt; ++i) {
-                    size_t o = sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
+                    size_t o =
+                        sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
                     write_le_at<uint32_t>(b, o, all[start + i].first_block);
-                    write_le_at<uint32_t>(b, o + 4,
-                        static_cast<uint32_t>(all[start + i].leaf_phys & 0xFFFFFFFFULL));
-                    write_le_at<uint16_t>(b, o + 8,
+                    write_le_at<uint32_t>(
+                        b, o + 4,
+                        static_cast<uint32_t>(all[start + i].leaf_phys &
+                                              0xFFFFFFFFULL));
+                    write_le_at<uint16_t>(
+                        b, o + 8,
                         static_cast<uint16_t>(all[start + i].leaf_phys >> 32));
                 }
                 auto wr = write_fs_block(blk, b.data(), b.size());
@@ -1643,31 +1769,45 @@ namespace ext4 {
             if (path.empty()) {
                 // parent is root i_block
                 for (uint16_t i = 0; i < idx_entries; ++i) {
-                    if (read_le<uint32_t>(&idxs[i].ei_leaf_lo) == (pn_blk & 0xFFFFFFFFULL) &&
-                        read_le<uint16_t>(&idxs[i].ei_leaf_hi) == (static_cast<uint16_t>(pn_blk >> 32))) {
-                        write_le_at<uint32_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                            i * sizeof(Ext4ExtentIdx) + 4,
+                    if (read_le<uint32_t>(&idxs[i].ei_leaf_lo) ==
+                            (pn_blk & 0xFFFFFFFFULL) &&
+                        read_le<uint16_t>(&idxs[i].ei_leaf_hi) ==
+                            (static_cast<uint16_t>(pn_blk >> 32)))
+                    {
+                        write_le_at<uint32_t>(
+                            raw,
+                            40 + sizeof(Ext4ExtentHeader) +
+                                i * sizeof(Ext4ExtentIdx) + 4,
                             static_cast<uint32_t>(na.value() & 0xFFFFFFFFULL));
-                        write_le_at<uint16_t>(raw, 40 + sizeof(Ext4ExtentHeader) +
-                            i * sizeof(Ext4ExtentIdx) + 8,
+                        write_le_at<uint16_t>(
+                            raw,
+                            40 + sizeof(Ext4ExtentHeader) +
+                                i * sizeof(Ext4ExtentIdx) + 8,
                             static_cast<uint16_t>(na.value() >> 32));
                         break;
                     }
                 }
             } else {
                 // parent is another path node
-                PathNode &pp = path.back();
+                PathNode &pp  = path.back();
                 auto *pp_idxs = reinterpret_cast<Ext4ExtentIdx *>(
                     pp.buf.data() + sizeof(Ext4ExtentHeader));
                 uint16_t pp_entries = read_le<uint16_t>(pp.buf.data() + 2);
                 for (uint16_t i = 0; i < pp_entries; ++i) {
-                    if (read_le<uint32_t>(&pp_idxs[i].ei_leaf_lo) == (pn_blk & 0xFFFFFFFFULL) &&
-                        read_le<uint16_t>(&pp_idxs[i].ei_leaf_hi) == (static_cast<uint16_t>(pn_blk >> 32))) {
-                        write_le_at<uint32_t>(pp.buf, sizeof(Ext4ExtentHeader) +
-                            i * sizeof(Ext4ExtentIdx) + 4,
+                    if (read_le<uint32_t>(&pp_idxs[i].ei_leaf_lo) ==
+                            (pn_blk & 0xFFFFFFFFULL) &&
+                        read_le<uint16_t>(&pp_idxs[i].ei_leaf_hi) ==
+                            (static_cast<uint16_t>(pn_blk >> 32)))
+                    {
+                        write_le_at<uint32_t>(
+                            pp.buf,
+                            sizeof(Ext4ExtentHeader) +
+                                i * sizeof(Ext4ExtentIdx) + 4,
                             static_cast<uint32_t>(na.value() & 0xFFFFFFFFULL));
-                        write_le_at<uint16_t>(pp.buf, sizeof(Ext4ExtentHeader) +
-                            i * sizeof(Ext4ExtentIdx) + 8,
+                        write_le_at<uint16_t>(
+                            pp.buf,
+                            sizeof(Ext4ExtentHeader) +
+                                i * sizeof(Ext4ExtentIdx) + 8,
                             static_cast<uint16_t>(na.value() >> 32));
                         break;
                     }
@@ -1681,7 +1821,10 @@ namespace ext4 {
 
         if (idx_entries >= max_entries) {
             // root index full — promote to depth=2
-            struct IdxEntry { uint32_t first_block; uint64_t leaf_phys; };
+            struct IdxEntry {
+                uint32_t first_block;
+                uint64_t leaf_phys;
+            };
             std::vector<IdxEntry> idx_all;
             for (uint16_t i = 0; i < idx_entries; ++i) {
                 idx_all.push_back(
@@ -1693,19 +1836,17 @@ namespace ext4 {
             }
             {
                 uint32_t nb = ins_first;
-                bool ins = false;
+                bool ins    = false;
                 for (size_t i = 0; i < idx_all.size(); ++i) {
                     if (nb < idx_all[i].first_block) {
-                        idx_all.insert(
-                            idx_all.begin() + static_cast<long>(i),
-                            IdxEntry{nb, ins_phys});
+                        idx_all.insert(idx_all.begin() + static_cast<long>(i),
+                                       IdxEntry{nb, ins_phys});
                         ins = true;
                         break;
                     }
                 }
                 if (!ins)
-                    idx_all.push_back(
-                        IdxEntry{nb, ins_phys});
+                    idx_all.push_back(IdxEntry{nb, ins_phys});
             }
 
             const size_t total_idx = idx_all.size();
@@ -1722,19 +1863,17 @@ namespace ext4 {
             std::vector<byte> ix_a_buf(_block_size, 0);
             std::vector<byte> ix_b_buf(_block_size, 0);
             write_le_at<uint16_t>(ix_a_buf, 0, EXT4_EXT_MAGIC);
-            write_le_at<uint16_t>(ix_a_buf, 2,
-                                  static_cast<uint16_t>(idx_half));
+            write_le_at<uint16_t>(ix_a_buf, 2, static_cast<uint16_t>(idx_half));
             write_le_at<uint16_t>(ix_a_buf, 4, blk_max_entries);
             write_le_at<uint16_t>(ix_a_buf, 6, 1);
             for (size_t i = 0; i < idx_half; ++i) {
                 size_t off =
                     sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
-                write_le_at<uint32_t>(ix_a_buf, off,
-                                      idx_all[i].first_block);
+                write_le_at<uint32_t>(ix_a_buf, off, idx_all[i].first_block);
                 write_le_at<uint32_t>(
                     ix_a_buf, off + 4,
-                    static_cast<uint32_t>(
-                        idx_all[i].leaf_phys & 0xFFFFFFFFULL));
+                    static_cast<uint32_t>(idx_all[i].leaf_phys &
+                                          0xFFFFFFFFULL));
                 write_le_at<uint16_t>(
                     ix_a_buf, off + 8,
                     static_cast<uint16_t>(idx_all[i].leaf_phys >> 32));
@@ -1742,8 +1881,7 @@ namespace ext4 {
 
             const size_t rem_b = total_idx - idx_half;
             write_le_at<uint16_t>(ix_b_buf, 0, EXT4_EXT_MAGIC);
-            write_le_at<uint16_t>(ix_b_buf, 2,
-                                  static_cast<uint16_t>(rem_b));
+            write_le_at<uint16_t>(ix_b_buf, 2, static_cast<uint16_t>(rem_b));
             write_le_at<uint16_t>(ix_b_buf, 4, blk_max_entries);
             write_le_at<uint16_t>(ix_b_buf, 6, 1);
             for (size_t i = 0; i < rem_b; ++i) {
@@ -1753,22 +1891,19 @@ namespace ext4 {
                                       idx_all[idx_half + i].first_block);
                 write_le_at<uint32_t>(
                     ix_b_buf, off + 4,
-                    static_cast<uint32_t>(
-                        idx_all[idx_half + i].leaf_phys &
-                        0xFFFFFFFFULL));
+                    static_cast<uint32_t>(idx_all[idx_half + i].leaf_phys &
+                                          0xFFFFFFFFULL));
                 write_le_at<uint16_t>(
                     ix_b_buf, off + 8,
-                    static_cast<uint16_t>(
-                        idx_all[idx_half + i].leaf_phys >> 32));
+                    static_cast<uint16_t>(idx_all[idx_half + i].leaf_phys >>
+                                          32));
             }
 
             auto w_ix_a =
-                write_fs_block(ix_a.value(), ix_a_buf.data(),
-                               ix_a_buf.size());
+                write_fs_block(ix_a.value(), ix_a_buf.data(), ix_a_buf.size());
             propagate(w_ix_a);
             auto w_ix_b =
-                write_fs_block(ix_b.value(), ix_b_buf.data(),
-                               ix_b_buf.size());
+                write_fs_block(ix_b.value(), ix_b_buf.data(), ix_b_buf.size());
             if (!w_ix_b.has_value()) {
                 free_block(ix_b.value());
                 propagate_return(w_ix_b);
@@ -1801,7 +1936,8 @@ namespace ext4 {
             }
         }
         for (uint16_t i = idx_entries; i > ins_pos; --i) {
-            const size_t d = 40 + sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
+            const size_t d =
+                40 + sizeof(Ext4ExtentHeader) + i * sizeof(Ext4ExtentIdx);
             memcpy(raw.data() + d, raw.data() + d - sizeof(Ext4ExtentIdx),
                    sizeof(Ext4ExtentIdx));
         }
@@ -1817,7 +1953,7 @@ namespace ext4 {
     }
 
     Result<void> Ext4Superblock::update_inode_size(inode_t inode_id,
-                                                    uint64_t new_size) {
+                                                   uint64_t new_size) {
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
         write_le_at<uint32_t>(raw_res.value(), 4,
@@ -1828,28 +1964,6 @@ namespace ext4 {
         write_le_at<uint32_t>(raw_res.value(), 12, now);
         write_le_at<uint32_t>(raw_res.value(), 16, now);
         return write_inode_raw(inode_id, raw_res.value());
-    }
-
-    Result<bool> Ext4Superblock::dir_entry_is_file(inode_t inode_id,
-                                                   uint8_t file_type) {
-        if ((_feature_incompat & EXT4_FEATURE_INCOMPAT_FILETYPE) != 0) {
-            if (file_type == EXT4_FT_DIR) {
-                return false;
-            }
-            if (file_type == EXT4_FT_REG_FILE ||
-                file_type == EXT4_FT_SYMLINK)
-            {
-                return true;
-            }
-            if (file_type != EXT4_FT_UNKNOWN) {
-                return true;
-            }
-        }
-
-        auto mode_res = inode_mode(inode_id);
-        propagate(mode_res);
-        const uint16_t type = mode_res.value() & EXT4_S_IFMT;
-        return type != EXT4_S_IFDIR;
     }
 
     Result<void> Ext4Superblock::insert_dir_entry(inode_t parent_inode,
@@ -1880,8 +1994,8 @@ namespace ext4 {
         std::vector<byte> block(_block_size);
 
         for (uint64_t logical = 0; logical < block_count; ++logical) {
-            auto phys_res = extent_lookup(parent_inode,
-                                          static_cast<uint32_t>(logical));
+            auto phys_res =
+                extent_lookup(parent_inode, static_cast<uint32_t>(logical));
             propagate(phys_res);
             if (!phys_res.value().mapped || phys_res.value().unwritten) {
                 continue;
@@ -1894,7 +2008,7 @@ namespace ext4 {
             while (off + sizeof(Ext4DirEntry2) <= block.size()) {
                 auto *dirent =
                     reinterpret_cast<Ext4DirEntry2 *>(block.data() + off);
-                const uint32_t ino = read_le<uint32_t>(&dirent->inode);
+                const uint32_t ino     = read_le<uint32_t>(&dirent->inode);
                 const uint16_t rec_len = read_le<uint16_t>(&dirent->rec_len);
                 const uint8_t name_len = dirent->name_len;
                 if (rec_len < sizeof(Ext4DirEntry2) ||
@@ -1912,9 +2026,9 @@ namespace ext4 {
                         block[off + 7] = file_type;
                         memcpy(block.data() + off + sizeof(Ext4DirEntry2),
                                name.data(), name.size());
-                        auto write_res = write_fs_block(
-                            phys_res.value().physical_block, block.data(),
-                            block.size());
+                        auto write_res =
+                            write_fs_block(phys_res.value().physical_block,
+                                           block.data(), block.size());
                         propagate(write_res);
                         void_return();
                     }
@@ -1924,7 +2038,7 @@ namespace ext4 {
 
                 const uint16_t actual_len = min_dir_rec_len(name_len);
                 if (rec_len >= actual_len + need_len) {
-                    const size_t new_off = off + actual_len;
+                    const size_t new_off   = off + actual_len;
                     const uint16_t new_len = rec_len - actual_len;
                     write_le_at<uint16_t>(block, off + 4, actual_len);
                     write_le_at<uint32_t>(block, new_off, child_inode);
@@ -1933,9 +2047,9 @@ namespace ext4 {
                     block[new_off + 7] = file_type;
                     memcpy(block.data() + new_off + sizeof(Ext4DirEntry2),
                            name.data(), name.size());
-                    auto write_res = write_fs_block(
-                        phys_res.value().physical_block, block.data(),
-                        block.size());
+                    auto write_res =
+                        write_fs_block(phys_res.value().physical_block,
+                                       block.data(), block.size());
                     propagate(write_res);
                     void_return();
                 }
@@ -1945,15 +2059,15 @@ namespace ext4 {
 
         auto new_block = alloc_block();
         propagate(new_block);
-        auto insert_ext = insert_extent(parent_inode,
-                                        static_cast<uint32_t>(block_count),
-                                        new_block.value(), 1);
+        auto insert_ext =
+            insert_extent(parent_inode, static_cast<uint32_t>(block_count),
+                          new_block.value(), 1);
         if (!insert_ext.has_value()) {
             free_block(new_block.value());
             propagate_return(insert_ext);
         }
-        auto update_sz = update_inode_size(
-            parent_inode, size_res.value() + _block_size);
+        auto update_sz =
+            update_inode_size(parent_inode, size_res.value() + _block_size);
         if (!update_sz.has_value()) {
             free_block(new_block.value());
             propagate_return(update_sz);
@@ -1968,7 +2082,7 @@ namespace ext4 {
         memcpy(new_dir_block.data() + sizeof(Ext4DirEntry2), name.data(),
                name.size());
         auto write_res = write_fs_block(new_block.value(), new_dir_block.data(),
-                              new_dir_block.size());
+                                        new_dir_block.size());
         if (!write_res.has_value()) {
             free_block(new_block.value());
             propagate_return(write_res);
@@ -1996,8 +2110,8 @@ namespace ext4 {
         propagate(inode_res);
         const inode_t inode_id = inode_res.value();
 
-        auto insert_res = insert_dir_entry(parent_inode, inode_id, name,
-                                           EXT4_FT_REG_FILE);
+        auto insert_res =
+            insert_dir_entry(parent_inode, inode_id, name, EXT4_FT_REG_FILE);
         if (!insert_res.has_value()) {
             auto release_res = release_file_inode(inode_id);
             if (!release_res.has_value()) {
@@ -2012,8 +2126,8 @@ namespace ext4 {
     }
 
     Result<void> Ext4Superblock::create_link(inode_t parent_inode,
-                                            std::string_view name,
-                                            inode_t target_inode) {
+                                             std::string_view name,
+                                             inode_t target_inode) {
         if (_read_only) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
@@ -2042,7 +2156,8 @@ namespace ext4 {
                               static_cast<uint16_t>(lc + 1));
         write_le_at<uint32_t>(raw_res.value(), 12, _next_time());
         auto w = write_inode_raw(target_inode, raw_res.value());
-        if (!w.has_value()) propagate_return(w);
+        if (!w.has_value())
+            propagate_return(w);
 
         auto ins = insert_dir_entry(parent_inode, target_inode, name,
                                     EXT4_FT_REG_FILE);
@@ -2082,9 +2197,10 @@ namespace ext4 {
         if (!write_inode_res.has_value()) {
             auto release_res = release_file_inode(inode_id);
             if (!release_res.has_value()) {
-                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
-                                    static_cast<unsigned>(inode_id),
-                                    to_cstring(release_res.error()));
+                loggers::VFS::WARN(
+                    "Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                    static_cast<unsigned>(inode_id),
+                    to_cstring(release_res.error()));
             }
             propagate_return(write_inode_res);
         }
@@ -2093,9 +2209,10 @@ namespace ext4 {
         if (!block_res.has_value()) {
             auto release_res = release_file_inode(inode_id);
             if (!release_res.has_value()) {
-                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
-                                    static_cast<unsigned>(inode_id),
-                                    to_cstring(release_res.error()));
+                loggers::VFS::WARN(
+                    "Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                    static_cast<unsigned>(inode_id),
+                    to_cstring(release_res.error()));
             }
             propagate_return(block_res);
         }
@@ -2106,9 +2223,10 @@ namespace ext4 {
             free_block(block_no);
             auto release_res = release_file_inode(inode_id);
             if (!release_res.has_value()) {
-                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
-                                    static_cast<unsigned>(inode_id),
-                                    to_cstring(release_res.error()));
+                loggers::VFS::WARN(
+                    "Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                    static_cast<unsigned>(inode_id),
+                    to_cstring(release_res.error()));
             }
             propagate_return(insert_ext_res);
         }
@@ -2136,21 +2254,23 @@ namespace ext4 {
         if (!write_dir_res.has_value()) {
             auto release_res = release_file_inode(inode_id);
             if (!release_res.has_value()) {
-                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
-                                    static_cast<unsigned>(inode_id),
-                                    to_cstring(release_res.error()));
+                loggers::VFS::WARN(
+                    "Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                    static_cast<unsigned>(inode_id),
+                    to_cstring(release_res.error()));
             }
             propagate_return(write_dir_res);
         }
 
-        auto insert_res = insert_dir_entry(parent_inode, inode_id, name,
-                                           EXT4_FT_DIR);
+        auto insert_res =
+            insert_dir_entry(parent_inode, inode_id, name, EXT4_FT_DIR);
         if (!insert_res.has_value()) {
             auto release_res = release_file_inode(inode_id);
             if (!release_res.has_value()) {
-                loggers::VFS::WARN("Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
-                                    static_cast<unsigned>(inode_id),
-                                    to_cstring(release_res.error()));
+                loggers::VFS::WARN(
+                    "Ext4 创建目录回滚 inode 失败: inode=%u err=%s",
+                    static_cast<unsigned>(inode_id),
+                    to_cstring(release_res.error()));
             }
             propagate_return(insert_res);
         }
@@ -2195,7 +2315,7 @@ namespace ext4 {
                 auto release_res = release_file_inode(inode_id);
                 if (!release_res.has_value()) {
                     loggers::VFS::WARN("Ext4 symlink rollback fail inode=%u",
-                                        static_cast<unsigned>(inode_id));
+                                       static_cast<unsigned>(inode_id));
                 }
                 propagate_return(write_res);
             }
@@ -2205,7 +2325,7 @@ namespace ext4 {
                 auto release_res = release_file_inode(inode_id);
                 if (!release_res.has_value()) {
                     loggers::VFS::WARN("Ext4 symlink rollback fail inode=%u",
-                                        static_cast<unsigned>(inode_id));
+                                       static_cast<unsigned>(inode_id));
                 }
                 propagate_return(write_res);
             }
@@ -2226,7 +2346,8 @@ namespace ext4 {
 
             std::vector<byte> blk(_block_size, 0);
             memcpy(blk.data(), target.data(), target.size());
-            auto write_blk_res = write_fs_block(block_no, blk.data(), blk.size());
+            auto write_blk_res =
+                write_fs_block(block_no, blk.data(), blk.size());
             if (!write_blk_res.has_value()) {
                 free_block(block_no);
                 auto release_res = release_file_inode(inode_id);
@@ -2234,8 +2355,8 @@ namespace ext4 {
             }
         }
 
-        auto insert_res = insert_dir_entry(parent_inode, inode_id, name,
-                                           EXT4_FT_SYMLINK);
+        auto insert_res =
+            insert_dir_entry(parent_inode, inode_id, name, EXT4_FT_SYMLINK);
         if (!insert_res.has_value()) {
             if (target.size() > 60) {
                 auto phys_res = extent_lookup(inode_id, 0);
@@ -2276,15 +2397,14 @@ namespace ext4 {
 
         const size_t readable = static_cast<size_t>(
             std::min<uint64_t>(len, size_res.value() - offset));
-        auto *out = static_cast<byte *>(buf);
+        auto *out   = static_cast<byte *>(buf);
         size_t done = 0;
         while (done < readable) {
-            const uint64_t abs      = offset + done;
-            const uint32_t logical  = static_cast<uint32_t>(abs / _block_size);
-            const size_t block_off  = static_cast<size_t>(abs % _block_size);
-            const size_t chunk =
-                std::min(readable - done, static_cast<size_t>(_block_size) -
-                                              block_off);
+            const uint64_t abs     = offset + done;
+            const uint32_t logical = static_cast<uint32_t>(abs / _block_size);
+            const size_t block_off = static_cast<size_t>(abs % _block_size);
+            const size_t chunk     = std::min(
+                readable - done, static_cast<size_t>(_block_size) - block_off);
             auto phys_res = extent_lookup(inode_id, logical);
             propagate(phys_res);
             if (!phys_res.value().mapped || phys_res.value().unwritten) {
@@ -2326,7 +2446,7 @@ namespace ext4 {
         // fast symlink: write directly into i_block
         if (type == EXT4_S_IFLNK && current_size <= 60) {
             uint64_t wlen = std::min<uint64_t>(len, 60 - offset);
-            auto raw_res = read_inode_raw(inode_id);
+            auto raw_res  = read_inode_raw(inode_id);
             propagate(raw_res);
             memcpy(raw_res.value().data() + 40 + offset, buf,
                    static_cast<size_t>(wlen));
@@ -2345,19 +2465,18 @@ namespace ext4 {
                 (current_size + _block_size - 1) / _block_size;
             const uint64_t grow_end =
                 (end_offset + _block_size - 1) / _block_size;
-            for (uint64_t logical = grow_start; logical < grow_end;
-                 ++logical) {
-                auto phys_res = extent_lookup(inode_id,
-                                              static_cast<uint32_t>(logical));
+            for (uint64_t logical = grow_start; logical < grow_end; ++logical) {
+                auto phys_res =
+                    extent_lookup(inode_id, static_cast<uint32_t>(logical));
                 propagate(phys_res);
                 if (phys_res.value().mapped) {
                     continue;
                 }
                 auto block_res = alloc_block();
                 propagate(block_res);
-                auto insert_res = insert_extent(inode_id,
-                                                static_cast<uint32_t>(logical),
-                                                block_res.value(), 1);
+                auto insert_res =
+                    insert_extent(inode_id, static_cast<uint32_t>(logical),
+                                  block_res.value(), 1);
                 propagate(insert_res);
             }
             auto update_res = update_inode_size(inode_id, end_offset);
@@ -2367,12 +2486,11 @@ namespace ext4 {
         const auto *in = static_cast<const byte *>(buf);
         size_t done    = 0;
         while (done < len) {
-            const uint64_t abs      = offset + done;
-            const uint32_t logical  = static_cast<uint32_t>(abs / _block_size);
-            const size_t block_off  = static_cast<size_t>(abs % _block_size);
-            const size_t chunk =
-                std::min(len - done, static_cast<size_t>(_block_size) -
-                                          block_off);
+            const uint64_t abs     = offset + done;
+            const uint32_t logical = static_cast<uint32_t>(abs / _block_size);
+            const size_t block_off = static_cast<size_t>(abs % _block_size);
+            const size_t chunk     = std::min(
+                len - done, static_cast<size_t>(_block_size) - block_off);
             auto phys_res = extent_lookup(inode_id, logical);
             propagate(phys_res);
             if (!phys_res.value().mapped || phys_res.value().unwritten) {
@@ -2397,13 +2515,13 @@ namespace ext4 {
         auto size_res = inode_size(inode_id);
         propagate(size_res);
 
-        std::vector<Ext4DirEntry> entries {};
+        std::vector<Ext4DirEntry> entries{};
         std::vector<byte> block(_block_size);
         const uint64_t block_count =
             (size_res.value() + _block_size - 1) / _block_size;
         for (uint64_t logical = 0; logical < block_count; ++logical) {
-            auto phys_res = extent_lookup(inode_id,
-                                          static_cast<uint32_t>(logical));
+            auto phys_res =
+                extent_lookup(inode_id, static_cast<uint32_t>(logical));
             propagate(phys_res);
             if (!phys_res.value().mapped || phys_res.value().unwritten) {
                 continue;
@@ -2414,11 +2532,11 @@ namespace ext4 {
 
             size_t off = 0;
             while (off + sizeof(Ext4DirEntry2) <= block.size()) {
-                auto *dirent = reinterpret_cast<const Ext4DirEntry2 *>(
-                    block.data() + off);
-                const uint32_t ino = read_le<uint32_t>(&dirent->inode);
-                const uint16_t rec_len = read_le<uint16_t>(&dirent->rec_len);
-                const uint8_t name_len = dirent->name_len;
+                auto *dirent =
+                    reinterpret_cast<const Ext4DirEntry2 *>(block.data() + off);
+                const uint32_t ino      = read_le<uint32_t>(&dirent->inode);
+                const uint16_t rec_len  = read_le<uint16_t>(&dirent->rec_len);
+                const uint8_t name_len  = dirent->name_len;
                 const uint8_t file_type = dirent->file_type;
                 if (rec_len < sizeof(Ext4DirEntry2) ||
                     off + rec_len > block.size() ||
@@ -2432,12 +2550,8 @@ namespace ext4 {
                         block.data() + off + sizeof(Ext4DirEntry2));
                     std::string entry_name(name, name_len);
                     if (entry_name != "." && entry_name != "..") {
-                        auto is_file_res = dir_entry_is_file(
-                            static_cast<inode_t>(ino), file_type);
-                        propagate(is_file_res);
                         entries.push_back(Ext4DirEntry{
                             .inode_id = static_cast<inode_t>(ino),
-                            .is_file  = is_file_res.value(),
                             .name     = entry_name,
                         });
                     }
@@ -2476,22 +2590,25 @@ namespace ext4 {
         for (uint64_t logical = 0; logical < block_count; ++logical) {
             auto phys_res =
                 extent_lookup(inode_id, static_cast<uint32_t>(logical));
-            if (!phys_res.has_value()) continue;
-            if (!phys_res.value().mapped) continue;
+            if (!phys_res.has_value())
+                continue;
+            if (!phys_res.value().mapped)
+                continue;
             auto free_res = free_block(phys_res.value().physical_block);
             if (!free_res.has_value()) {
-                loggers::VFS::WARN("Ext4 delete_file free block failed: block=%lu",
-                                    (unsigned long)phys_res.value().physical_block);
+                loggers::VFS::WARN(
+                    "Ext4 delete_file free block failed: block=%lu",
+                    (unsigned long)phys_res.value().physical_block);
             }
         }
 
         auto raw_res = read_inode_raw(inode_id);
         propagate(raw_res);
-        auto &raw = raw_res.value();
+        auto &raw            = raw_res.value();
         const uint16_t depth = read_le<uint16_t>(raw.data() + 46);
         if (depth > 0) {
             const uint16_t idx_entries = read_le<uint16_t>(raw.data() + 42);
-            const size_t idx_base = 40 + sizeof(Ext4ExtentHeader);
+            const size_t idx_base      = 40 + sizeof(Ext4ExtentHeader);
             for (uint16_t i = 0; i < idx_entries; ++i) {
                 const size_t off = idx_base + i * sizeof(Ext4ExtentIdx);
                 const uint64_t child_block =
@@ -2499,16 +2616,18 @@ namespace ext4 {
                          read_le<uint16_t>(raw.data() + off + 8))
                      << 32) |
                     read_le<uint32_t>(raw.data() + off + 4);
-                if (child_block == 0) continue;
+                if (child_block == 0)
+                    continue;
 
                 if (depth > 1) {
                     // child is intermediate index node; free its leaves first
                     std::vector<byte> cb(_block_size);
                     auto rd = read_fs_block(child_block, cb.data(), cb.size());
                     if (rd.has_value()) {
-                        auto *ch = reinterpret_cast<const Ext4ExtentHeader *>(cb.data());
+                        auto *ch = reinterpret_cast<const Ext4ExtentHeader *>(
+                            cb.data());
                         uint16_t ce = read_le<uint16_t>(&ch->eh_entries);
-                        auto *ci = reinterpret_cast<const Ext4ExtentIdx *>(
+                        auto *ci    = reinterpret_cast<const Ext4ExtentIdx *>(
                             cb.data() + sizeof(Ext4ExtentHeader));
                         for (uint16_t j = 0; j < ce; ++j) {
                             uint64_t leaf =
@@ -2516,7 +2635,8 @@ namespace ext4 {
                                      read_le<uint16_t>(&ci[j].ei_leaf_hi))
                                  << 32) |
                                 read_le<uint32_t>(&ci[j].ei_leaf_lo);
-                            if (leaf != 0) free_block(leaf);
+                            if (leaf != 0)
+                                free_block(leaf);
                         }
                     }
                 }
@@ -2557,33 +2677,35 @@ namespace ext4 {
         std::vector<byte> block(_block_size);
 
         for (uint64_t logical = 0; logical < block_count; ++logical) {
-            auto phys_res = extent_lookup(parent_inode,
-                                          static_cast<uint32_t>(logical));
+            auto phys_res =
+                extent_lookup(parent_inode, static_cast<uint32_t>(logical));
             propagate(phys_res);
-            if (!phys_res.value().mapped) continue;
+            if (!phys_res.value().mapped)
+                continue;
 
             auto read_res = read_fs_block(phys_res.value().physical_block,
                                           block.data(), block.size());
             propagate(read_res);
 
-            size_t off = 0;
+            size_t off                = 0;
             Ext4DirEntry2 *prev_entry = nullptr;
             while (off + sizeof(Ext4DirEntry2) <= block.size()) {
-                auto *dirent = reinterpret_cast<Ext4DirEntry2 *>(
-                    block.data() + off);
-                const uint32_t ino = read_le<uint32_t>(&dirent->inode);
-                const uint16_t rec_len =
-                    read_le<uint16_t>(&dirent->rec_len);
-                const uint8_t nlen = dirent->name_len;
+                auto *dirent =
+                    reinterpret_cast<Ext4DirEntry2 *>(block.data() + off);
+                const uint32_t ino     = read_le<uint32_t>(&dirent->inode);
+                const uint16_t rec_len = read_le<uint16_t>(&dirent->rec_len);
+                const uint8_t nlen     = dirent->name_len;
                 if (rec_len < sizeof(Ext4DirEntry2) ||
                     off + rec_len > block.size() ||
-                    nlen > rec_len - sizeof(Ext4DirEntry2)) {
+                    nlen > rec_len - sizeof(Ext4DirEntry2))
+                {
                     break;
                 }
 
                 if (ino != 0 && nlen == name.size() &&
                     memcmp(block.data() + off + sizeof(Ext4DirEntry2),
-                           name.data(), nlen) == 0) {
+                           name.data(), nlen) == 0)
+                {
                     write_le_at<uint32_t>(block, off, 0);
                     if (prev_entry != nullptr) {
                         const size_t prev_off =
@@ -2591,17 +2713,16 @@ namespace ext4 {
                             block.data();
                         const uint16_t prev_rec_len =
                             read_le<uint16_t>(block.data() + prev_off + 4);
-                        write_le_at<uint16_t>(block, prev_off + 4,
-                                              static_cast<uint16_t>(
-                                                  prev_rec_len + rec_len));
+                        write_le_at<uint16_t>(
+                            block, prev_off + 4,
+                            static_cast<uint16_t>(prev_rec_len + rec_len));
                     }
-                    return write_fs_block(
-                        phys_res.value().physical_block, block.data(),
-                        block.size());
+                    return write_fs_block(phys_res.value().physical_block,
+                                          block.data(), block.size());
                 }
 
-                prev_entry = dirent;
-                off += rec_len;
+                prev_entry  = dirent;
+                off        += rec_len;
             }
         }
         unexpect_return(ErrCode::ENTRY_NOT_FOUND);
@@ -2625,8 +2746,8 @@ namespace ext4 {
         const uint64_t new_blocks = (new_size + _block_size - 1) / _block_size;
 
         if (new_blocks < old_blocks) {
-            for (uint64_t logical = new_blocks; logical < old_blocks;
-                 ++logical) {
+            for (uint64_t logical = new_blocks; logical < old_blocks; ++logical)
+            {
                 auto phys_res =
                     extent_lookup(inode_id, static_cast<uint32_t>(logical));
                 if (phys_res.has_value() && phys_res.value().mapped) {
@@ -2634,8 +2755,8 @@ namespace ext4 {
                 }
             }
         } else if (new_blocks > old_blocks) {
-            for (uint64_t logical = old_blocks; logical < new_blocks;
-                 ++logical) {
+            for (uint64_t logical = old_blocks; logical < new_blocks; ++logical)
+            {
                 auto phys_res =
                     extent_lookup(inode_id, static_cast<uint32_t>(logical));
                 if (phys_res.has_value() && phys_res.value().mapped) {
@@ -2644,15 +2765,15 @@ namespace ext4 {
                 auto block_res = alloc_block();
                 propagate(block_res);
                 std::vector<byte> zero(_block_size, 0);
-                auto write_res = write_fs_block(block_res.value(), zero.data(),
-                                                zero.size());
+                auto write_res =
+                    write_fs_block(block_res.value(), zero.data(), zero.size());
                 if (!write_res.has_value()) {
                     free_block(block_res.value());
                     propagate_return(write_res);
                 }
-                auto insert_res = insert_extent(
-                    inode_id, static_cast<uint32_t>(logical),
-                    block_res.value(), 1);
+                auto insert_res =
+                    insert_extent(inode_id, static_cast<uint32_t>(logical),
+                                  block_res.value(), 1);
                 if (!insert_res.has_value()) {
                     free_block(block_res.value());
                     propagate_return(insert_res);
@@ -2687,31 +2808,37 @@ namespace ext4 {
 
         auto mode_res = inode_mode(target);
         propagate(mode_res);
-        const bool is_file =
-            (mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFDIR;
+        const bool is_file = (mode_res.value() & EXT4_S_IFMT) != EXT4_S_IFDIR;
 
         if (old_parent == new_parent) {
             auto sz = inode_size(old_parent);
             propagate(sz);
-            const uint64_t blk_cnt = (sz.value() + _block_size - 1) / _block_size;
+            const uint64_t blk_cnt =
+                (sz.value() + _block_size - 1) / _block_size;
             std::vector<byte> blk(_block_size);
             for (uint64_t lg = 0; lg < blk_cnt; ++lg) {
-                auto phys = extent_lookup(old_parent, static_cast<uint32_t>(lg));
+                auto phys =
+                    extent_lookup(old_parent, static_cast<uint32_t>(lg));
                 propagate(phys);
-                if (!phys.value().mapped) continue;
-                auto rd = read_fs_block(phys.value().physical_block, blk.data(), _block_size);
+                if (!phys.value().mapped)
+                    continue;
+                auto rd = read_fs_block(phys.value().physical_block, blk.data(),
+                                        _block_size);
                 propagate(rd);
                 size_t off = 0;
                 while (off + sizeof(Ext4DirEntry2) <= _block_size) {
-                    auto *de = reinterpret_cast<Ext4DirEntry2 *>(blk.data() + off);
+                    auto *de =
+                        reinterpret_cast<Ext4DirEntry2 *>(blk.data() + off);
                     const uint32_t ino = read_le<uint32_t>(&de->inode);
-                    const uint16_t rl = read_le<uint16_t>(&de->rec_len);
-                    const uint8_t nl = de->name_len;
+                    const uint16_t rl  = read_le<uint16_t>(&de->rec_len);
+                    const uint8_t nl   = de->name_len;
                     if (rl < sizeof(Ext4DirEntry2) || off + rl > _block_size ||
-                        nl > rl - sizeof(Ext4DirEntry2)) break;
+                        nl > rl - sizeof(Ext4DirEntry2))
+                        break;
                     if (ino != 0 && nl == old_name.size() &&
                         memcmp(blk.data() + off + sizeof(Ext4DirEntry2),
-                               old_name.data(), nl) == 0) {
+                               old_name.data(), nl) == 0)
+                    {
                         const uint16_t need = min_dir_rec_len(new_name.size());
                         if (need > rl) {
                             unexpect_return(ErrCode::NOT_SUPPORTED);
@@ -2788,6 +2915,34 @@ namespace ext4 {
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }
 
+    Result<bool> Ext4Superblock::is_symlink(inode_t inode_id) {
+        auto mode_res = inode_mode(inode_id);
+        propagate(mode_res);
+        return (mode_res.value() & EXT4_S_IFMT) == EXT4_S_IFLNK;
+    }
+
+    Result<std::string> Ext4Superblock::readlink(inode_t inode_id) {
+        auto symlink_res = is_symlink(inode_id);
+        propagate(symlink_res);
+        if (!symlink_res.value()) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+
+        auto size_res = inode_size(inode_id);
+        propagate(size_res);
+        std::string target;
+        target.resize(static_cast<size_t>(size_res.value()));
+        if (target.empty()) {
+            return target;
+        }
+
+        auto read_res =
+            read_inode_data(inode_id, 0, target.data(), target.size());
+        propagate(read_res);
+        target.resize(read_res.value());
+        return target;
+    }
+
     Result<inode_t> Ext4Superblock::alloc_inode(INodeType type) {
         (void)type;
         unexpect_return(ErrCode::NOT_SUPPORTED);
@@ -2819,8 +2974,8 @@ namespace ext4 {
         void_return();
     }
 
-    Result<util::owner<ISuperblock *>> Ext4Driver::mount(
-        size_t devno, const char *options) {
+    Result<util::owner<ISuperblock *>> Ext4Driver::mount(size_t devno,
+                                                         const char *options) {
         (void)options;
         auto device_res = blk::BlkManager::inst().lookup(devno);
         propagate(device_res);

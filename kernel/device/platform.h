@@ -12,6 +12,7 @@
 #pragma once
 
 #include <driver/clock.h>
+#include <driver/base.h>
 #include <sus/rtti.h>
 
 namespace device {
@@ -26,5 +27,29 @@ namespace device {
 
         [[nodiscard]]
         virtual driver::ClockSource *clock_source() noexcept = 0;
+
+        [[nodiscard]]
+        driver::IShutdownDriver *shutdown_driver() noexcept {
+            return _shutdown_driver;
+        }
+
+        [[nodiscard]]
+        const driver::IShutdownDriver *shutdown_driver() const noexcept {
+            return _shutdown_driver;
+        }
+
+        void set_shutdown_driver(driver::IShutdownDriver *driver) noexcept {
+            _shutdown_driver = driver;
+        }
+
+        void clear_shutdown_driver(
+            const driver::IShutdownDriver *driver) noexcept {
+            if (_shutdown_driver == driver) {
+                _shutdown_driver = nullptr;
+            }
+        }
+
+    private:
+        driver::IShutdownDriver *_shutdown_driver = nullptr;
     };
 }  // namespace device

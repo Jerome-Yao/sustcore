@@ -9,7 +9,7 @@
  *
  */
 
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
 
 #include <cstdio>
@@ -26,20 +26,24 @@ namespace {
         CapIdx cap = cap::null;
         bool found = false;
         bool ok    = bootstrap_foreach_record(
-            __startup_data, __startup_size,
+            __bsargv, __bsargc,
             [&](const BootstrapRecordView &view) {
-                if (found || view.header->type != BOOTSTRAP_TYPE_DIRCAPEXPLAIN)
+                if (found || view.header->type != boot::TYPE_CAPEXP)
                 {
                     return;
                 }
-                BootstrapCapPathView cap_path {};
-                if (!bootstrap_parse_cap_path(view, cap_path)) {
+                BootstrapCapExplainView cap_explain{};
+                if (!bootstrap_parse_cap_explain(view, cap_explain) ||
+                    cap_explain.cap_type != PayloadType::VDIR ||
+                    cap_explain.cap_desc == nullptr ||
+                    cap_explain.cap_desc[0] != '#')
+                {
                     return;
                 }
-                if (strcmp(cap_path.path, "/") != 0) {
+                if (strcmp(cap_explain.cap_desc + 1, "/") != 0) {
                     return;
                 }
-                cap   = cap_path.cap;
+                cap   = cap_explain.cap_idx;
                 found = true;
             });
         return ok && found ? cap : cap::null;
@@ -94,10 +98,14 @@ namespace {
 
                 const size_t name_len = strlen(name);
                 if (name_len == entry_name_len &&
-                    memcmp(name, g_entry_name_buffer, entry_name_len) == 0 &&
-                    header->is_file == expect_file)
+                    memcmp(name, g_entry_name_buffer, entry_name_len) == 0)
                 {
-                    return true;
+                    NodeMeta st {};
+                    if (!sys_vfs_stat(dir_cap, name, &st)) {
+                        return false;
+                    }
+                    return expect_file ? st.type == EntryType::FILE
+                                       : st.type == EntryType::DIR;
                 }
                 ++parsed;
 
@@ -120,7 +128,12 @@ namespace {
     }
 }  // namespace
 
-int kmod_main() {
+extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
+              const bsheader *bsargv[]) {
+    (void)argc;
+    (void)argv;
+    (void)envp;
+    (void)bsargv;
     printf("test_ext4_create: start pid=%u\n", sys_getpid(__pcb_cap));
 
     CapIdx root_cap = bootstrap_root_dir();

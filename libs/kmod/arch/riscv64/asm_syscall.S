@@ -4,13 +4,16 @@
     .global sys_write_serial
     .type   sys_write_serial, @function
 sys_write_serial:
-    /* a0 = str, a1 = len */
-    /* 将字符串写入串口 */
-    /* 我们调用系统调用 sys_write_serial */
-    mv a2, a1
-    mv a1, a0
-    li a0, 0
+    /* a0 = __always_zero, a1 = str, a2 = len */
     li a7, SYS_WRITE_SERIAL
+    ecall
+    ret
+
+    .global sys_shutdown
+    .type   sys_shutdown, @function
+sys_shutdown:
+    li a0, 0
+    li a7, SYS_SHUTDOWN
     ecall
     ret
 
@@ -31,11 +34,28 @@ sys_pcb_create_process:
     ecall
     ret
 
+    .global sys_pcb_create_linux_process
+    .type   sys_pcb_create_linux_process, @function
+sys_pcb_create_linux_process:
+    /* a0 = pcb cap slot, a1 = image cap, a2 = initial caps, a3 = size, a4 = sched,
+       a5 = startup blob ptr, a6 = startup blob size */
+    li a7, SYS_CREATE_POSIX_PROCESS
+    ecall
+    ret
+
     .global sys_pcb_create_thread
     .type   sys_pcb_create_thread, @function
 sys_pcb_create_thread:
     /* a0 = pcb cap slot, a1 = entry, a2 = stack_addr, a3 = stack_size */
     li a7, SYS_CREATE_THREAD
+    ecall
+    ret
+
+    .global sys_tcb_wait
+    .type   sys_tcb_wait, @function
+sys_tcb_wait:
+    /* a0 = tcb cap slot, a1 = pcb cap array, a2 = status out ptr, a3 = options */
+    li a7, SYS_TCB_WAIT
     ecall
     ret
 
@@ -211,12 +231,7 @@ endpoint_reply:
     .global sys_mem_create
     .type sys_mem_create, @function
 sys_mem_create:
-    /* a0 = memsz, a1 = shared, a2 = continuity, a3 = growth */
-    mv a4, a3
-    mv a3, a2
-    mv a2, a1
-    mv a1, a0
-    li a0, 0
+    /* a0 = __always_zero, a1 = memsz, a2 = shared, a3 = continuity, a4 = growth */
     li a7, SYS_MEM_CREATE
     ecall
     ret
@@ -330,6 +345,38 @@ sys_vfs_symlink:
 sys_vfs_link:
     /* a0 = parent_dir_cap, a1 = name, a2 = target_inode */
     li a7, SYS_VFS_LINK
+    ecall
+    ret
+
+    .global sys_vfs_stat
+    .type sys_vfs_stat, @function
+sys_vfs_stat:
+    /* a0 = parent_dir_cap, a1 = name, a2 = stat* */
+    li a7, SYS_VFS_STAT
+    ecall
+    ret
+
+    .global sys_vfs_lstat
+    .type sys_vfs_lstat, @function
+sys_vfs_lstat:
+    /* a0 = parent_dir_cap, a1 = name, a2 = stat* */
+    li a7, SYS_VFS_LSTAT
+    ecall
+    ret
+
+    .global sys_vfs_readlink
+    .type sys_vfs_readlink, @function
+sys_vfs_readlink:
+    /* a0 = parent_dir_cap, a1 = name, a2 = buf, a3 = bufsiz */
+    li a7, SYS_VFS_READLINK
+    ecall
+    ret
+
+    .global sys_vfs_mount
+    .type sys_vfs_mount, @function
+sys_vfs_mount:
+    /* a0 = parent_dir_cap, a1 = fs_name, a2 = devfile_cap, a3 = mountpoint, a4 = flags, a5 = options */
+    li a7, SYS_VFS_MOUNT
     ecall
     ret
 

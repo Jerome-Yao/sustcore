@@ -10,7 +10,7 @@
  */
 
 #include <sustcore/capability.h>
-
+#include <sustcore/bootstrap.h>
 #include <cstddef>
 
 extern size_t __heap_base;
@@ -19,5 +19,8 @@ extern CapIdx __pcb_cap;
 extern CapIdx __main_tcb_cap;
 extern CapIdx __heap_mem_cap;
 extern CapIdx __stack_mem_cap;
-extern void *__startup_data;
-extern size_t __startup_size;
+extern size_t __argc;
+extern const char **__argv;
+extern const char **__envp;
+extern size_t __bsargc;
+extern const bsheader **__bsargv;

@@ -85,21 +85,66 @@ PCB 和 TCB 都使用 KOP 对象池，`task::init_kop()` 会初始化 `kop::pcb`
 
 1. 设置 `pcb->tmm`、`pcb->cholder`、`pcb->entrypoint`。
 2. 若尚无 `pcb_cap`，在自身 holder 中插入 `cap::PCBPayload`。
-3. 构造 `StartupInfo`。
+3. 构造 Linux 风格用户栈启动布局以及 Bootstrap 解释记录。
 4. 创建主线程或复用当前主线程。
 5. 创建用户栈 `MemoryPayload` 和 `STACK` VMA。
 6. 创建 `cap::TCBPayload` 并记录 `main_tcb_cap`。
 7. 将启动信息写入用户栈。
 
-启动信息包含:
+启动信息按 Linux 风格主栈布局写入，低地址在上，高地址在下:
 
-- heap 起始地址
-- stack 起始地址
-- entrypoint
-- PCB capability
-- 主 TCB capability
-- heap memory capability
-- stack memory capability
+```text
+低地址
++---------------------------+
+| argc                      |
++---------------------------+
+| argv[0]                   |
+| ...                       |
+| argv[argc - 1]            |
+| nullptr                   |
++---------------------------+
+| envp[0]                   |
+| ...                       |
+| envp[n - 1]               |
+| nullptr                   |
++---------------------------+
+| auxv[0].a_type            |
+| auxv[0].a_val             |
+| ...                       |
+| AT_NULL                   |
+| 0                         |
++---------------------------+
+| bsargc                    |
++---------------------------+
+| bsargv[0]                 |
+| ...                       |
+| bsargv[bsargc - 1]        |
+| nullptr                   |
++---------------------------+
+| bootstrap record bytes    |
+| ...                       |
++---------------------------+
+| envp string bytes         |
+| ...                       |
++---------------------------+
+| argv string bytes         |
+| ...                       |
++---------------------------+
+高地址
+```
+
+其中 `bsargv` 指向的记录目前由内核自动注入和调用方显式提供两部分组成，系统保留记录使用 `CAP_EXPLAIN` / `VADDR_EXPLAIN` 描述:
+
+- `CAP_EXPLAIN`
+  - `#self:<pcb_idx>` 表示当前进程自身的 PCB capability
+  - `#main:<tcb_idx>` 表示当前进程主线程 TCB capability
+  - `#heap:[begin,end)` / `#stack:[begin,end)` 表示关键 Memory capability
+  - `#<path>` 表示文件或目录 capability 的语义路径
+- `VADDR_EXPLAIN`
+  - `#heap`
+  - `#stack`
+  - `#entrypoint`
+  - Linux process 额外可带 `#ss-entrypoint`
 
 ## 创建入口
 
@@ -123,7 +168,7 @@ PCB 和 TCB 都使用 KOP 对象池，`task::init_kop()` 会初始化 `kop::pcb`
 
 `load_elf(image_cap, schd_class)` 会创建新的 holder、预加载、加载 ELF，再创建进程。
 
-`load_elf_into(image_cap, holder, schd_class, startup_blob, startup_blob_size)` 使用调用方已经配置好的 holder。该接口主要用于 syscall 创建子进程时先复制初始 capability，再加载新镜像。
+`load_elf_into(image_cap, holder, schd_class, argv, envp, bsargv)` 使用调用方已经配置好的 holder。该接口主要用于 syscall 创建子进程时先复制初始 capability，再按 Linux 风格用户栈布局准备启动参数并加载新镜像。
 
 ## fork
 

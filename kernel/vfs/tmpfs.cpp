@@ -121,6 +121,62 @@ namespace tmpfs {
         return _sb->create_entry(*_node, name, INodeType::DIRECTORY);
     }
 
+    Result<inode_t> TmpFSDirectory::symlink(std::string_view name,
+                                            std::string_view target) {
+        if (target.empty()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto inode_res = _sb->create_entry(*_node, name, INodeType::SYMLINK);
+        propagate(inode_res);
+        auto node_res = _sb->lookup_node(inode_res.value());
+        propagate(node_res);
+        node_res.value()->symlink_target.assign(target.data(), target.size());
+        return inode_res.value();
+    }
+
+    Result<void> TmpFSDirectory::unlink(std::string_view name) {
+        auto lookup_res = lookup(name);
+        propagate(lookup_res);
+
+        auto node_res = _sb->lookup_node(lookup_res.value());
+        propagate(node_res);
+        auto *target = node_res.value();
+        if (target->type == INodeType::DIRECTORY) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+
+        auto erase_count = _node->entries.erase(std::string(name));
+        if (erase_count == 0) {
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+        auto free_res = _sb->free_inode(target->inode_id);
+        propagate(free_res);
+        void_return();
+    }
+
+    Result<void> TmpFSDirectory::rmdir(std::string_view name) {
+        auto lookup_res = lookup(name);
+        propagate(lookup_res);
+
+        auto node_res = _sb->lookup_node(lookup_res.value());
+        propagate(node_res);
+        auto *target = node_res.value();
+        if (target->type != INodeType::DIRECTORY) {
+            unexpect_return(ErrCode::NOT_SUPPORTED);
+        }
+        if (!target->entries.empty()) {
+            unexpect_return(ErrCode::BUSY);
+        }
+
+        auto erase_count = _node->entries.erase(std::string(name));
+        if (erase_count == 0) {
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+        auto free_res = _sb->free_inode(target->inode_id);
+        propagate(free_res);
+        void_return();
+    }
+
     Result<size_t> TmpFSDirectory::entry_count() {
         return _node->entries.size();
     }
@@ -135,11 +191,8 @@ namespace tmpfs {
             ++it;
         }
 
-        auto node_res = _sb->lookup_node(it->second);
-        propagate(node_res);
         return DirectoryEntryInfo{
-            .is_file = node_res.value()->type == INodeType::FILE,
-            .name    = it->first,
+            .name = it->first,
         };
     }
 
@@ -167,6 +220,7 @@ namespace tmpfs {
                                        .metadata = {},
                                        .entries  = {},
                                        .content  = {},
+                                       .symlink_target = {},
                                    });
     }
 
@@ -235,11 +289,59 @@ namespace tmpfs {
             return util::owner<IINode *>(dir);
         }
 
+        if (node->type == INodeType::SYMLINK) {
+            class TmpFSSymlink final : public ISymlink {
+            private:
+                TmpFSNode *_node;
+
+            public:
+                explicit TmpFSSymlink(TmpFSNode &node) noexcept : _node(&node) {}
+
+                [[nodiscard]]
+                Result<std::string> target() override {
+                    return _node->symlink_target;
+                }
+                [[nodiscard]]
+                IMetadata &metadata() override {
+                    return _node->metadata;
+                }
+                [[nodiscard]]
+                inode_t inode_id() const override {
+                    return _node->inode_id;
+                }
+                [[nodiscard]]
+                INodeCachePolicy inode_cache() const override {
+                    return INodeCachePolicy::SHARED;
+                }
+            };
+
+            auto *symlink = new TmpFSSymlink(*node);
+            if (symlink == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            return util::owner<IINode *>(symlink);
+        }
+
         auto *file = new TmpFSFile(*this, *node);
         if (file == nullptr) {
             unexpect_return(ErrCode::OUT_OF_MEMORY);
         }
         return util::owner<IINode *>(file);
+    }
+
+    Result<bool> TmpFSSuperblock::is_symlink(inode_t inode_id) {
+        auto node_res = lookup_node(inode_id);
+        propagate(node_res);
+        return node_res.value()->type == INodeType::SYMLINK;
+    }
+
+    Result<std::string> TmpFSSuperblock::readlink(inode_t inode_id) {
+        auto node_res = lookup_node(inode_id);
+        propagate(node_res);
+        if (node_res.value()->type != INodeType::SYMLINK) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return node_res.value()->symlink_target;
     }
 
     Result<inode_t> TmpFSSuperblock::alloc_inode(INodeType type) {
@@ -250,6 +352,7 @@ namespace tmpfs {
                                               .metadata = {},
                                               .entries  = {},
                                               .content  = {},
+                                              .symlink_target = {},
                                           });
         return inode_id;
     }

@@ -71,6 +71,8 @@ typedef uint16_t sus_u16;
 typedef uint32_t sus_u32;
 typedef uint64_t sus_u64;
 
+typedef smb_t ssize_t;
+
 // 逻辑运算符 a=>b 的实现
 // a=>b 即为 (!a | b) 相当于 (a & b) == b
 #define BOOL_IMPLIES(a, b) ((!(a)) | (b))

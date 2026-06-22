@@ -12,22 +12,34 @@
 #pragma once
 
 #include <arch/description.h>
+#include <exe/task.h>
 #include <object/memory.h>
 #include <sustcore/capability.h>
 #include <syscall/uaccess.h>
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
 namespace syscall {
+    struct StartupArguments {
+        std::vector<CapIdx> caps{};
+        std::vector<std::string> argv{};
+        std::vector<std::string> envp{};
+        std::vector<TaskSpec::BootstrapRecordData> bsargv{};
+    };
+
     /**
      * @brief 创建进程, 用户路径与 capability 列表已由 dispatcher 预处理.
      */
     [[nodiscard]]
     Result<CapIdx> pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
-                                      UBuffer &&caps_buf, size_t caps_sz,
                                       size_t sched_class,
-                                      UBuffer *startup_buf = nullptr,
-                                      size_t startup_buf_sz = 0);
+                                      const StartupArguments &startup);
+    [[nodiscard]]
+    Result<CapIdx> pcb_create_linux_process(CapIdx pcb_cap, CapIdx image_cap,
+                                            size_t sched_class,
+                                            const StartupArguments &startup);
 
     /**
      * @brief 创建线程.
@@ -35,6 +47,9 @@ namespace syscall {
     [[nodiscard]]
     Result<CapIdx> pcb_create_thread(CapIdx pcb_cap, VirAddr entry,
                                      VirAddr stack_addr, size_t stack_size);
+    [[nodiscard]]
+    Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
+                            UBuffer *status_buf, size_t options);
 
     /**
      * @brief fork 当前进程, 子 PCB capability 输出缓冲区已由 dispatcher 预处理.
@@ -59,23 +74,31 @@ namespace syscall {
      *
      * @param pcb_cap 目标 PCB capability. 
      * @param mem_cap Memory capability. 
+     * @param offset Memory 内偏移. 
      * @param vaddr 目标虚拟地址. 
-     * @param rwx 页权限. 
-     * @param growth VMA 增长方式. 
+     * @param sz 映射大小. 
+     * @param protflg VMA 权限位掩码. 
      * @return true 成功; false 失败. 
      */
     [[nodiscard]]
-    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
-                         PageMan::RWX rwx, cap::MemoryGrowth growth);
+    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset,
+                         VirAddr vaddr, size_t sz, b64 protflg);
+    [[nodiscard]]
+    Result<bool> pcb_unmap(CapIdx pcb_cap, VirAddr vaddr, size_t sz);
+    [[nodiscard]]
+    Result<void> pcb_query_vaddr(CapIdx pcb_cap, VirAddr vaddr,
+                                 UBuffer &&info_buf, bool expose_mem_cap);
+    [[nodiscard]]
+    Result<size_t> pcb_query_vspace(CapIdx pcb_cap, size_t offset,
+                                    UBuffer &&info_buf, size_t max_entries,
+                                    bool expose_mem_cap);
 
     /**
      * @brief execve, 预留 capability 列表已由 dispatcher 预处理.
      */
     [[nodiscard]]
     Result<bool> pcb_execve(CapIdx pcb_cap, CapIdx image_cap,
-                            UBuffer &&reserved_buf, size_t reserved_sz,
-                            UBuffer *startup_buf = nullptr,
-                            size_t startup_buf_sz = 0);
+                            const StartupArguments &startup);
 
     /**
      * @brief 判断目标 PCB 是否为当前进程.

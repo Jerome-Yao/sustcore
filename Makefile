@@ -47,8 +47,8 @@ arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 
 -include $(path-script)/config.mk
 
-library-components := sbi basecpp kmod rpc libfdt
-module-components := default init test_endpoint_master test_endpoint_slave test_call_service test_call_user \
+library-components := sbi basecpp kmod linuxss-libc rpc libfdt
+module-components := default init contest-runner linux-subsystem test-linux test_endpoint_master test_endpoint_slave test_call_service test_call_user \
 	test_fork test_execve test_thread test_rpc_server test_rpc_client \
 	test_file_rw_a test_file_rw_b test_ext4_read test_ext4_create test_ext4_rw \
 	test_fs_score
@@ -56,11 +56,15 @@ module-components := default init test_endpoint_master test_endpoint_slave test_
 library-component-makefile.sbi := $(path-e)/libs/sbi/Makefile
 library-component-makefile.basecpp := $(path-e)/libs/basecpp/Makefile
 library-component-makefile.kmod := $(path-e)/libs/kmod/Makefile
+library-component-makefile.linuxss-libc := $(path-e)/libs/linuxss-libc/Makefile
 library-component-makefile.rpc := $(path-e)/libs/rpc/Makefile
 library-component-makefile.libfdt := $(path-e)/third_party/libs/libfdt/Makefile
 
 module-component-makefile.default := $(path-e)/module/default/Makefile
 module-component-makefile.init := $(path-e)/module/init/Makefile
+module-component-makefile.contest-runner := $(path-e)/module/contest-runner/Makefile
+module-component-makefile.linux-subsystem := $(path-e)/module/linux-subsystem/Makefile
+module-component-makefile.test-linux := $(path-e)/module/test-linux/Makefile
 module-component-makefile.test_endpoint_master := $(path-e)/module/test_endpoint_master/Makefile
 module-component-makefile.test_endpoint_slave := $(path-e)/module/test_endpoint_slave/Makefile
 module-component-makefile.test_call_service := $(path-e)/module/test_call_service/Makefile
@@ -84,6 +88,7 @@ endif
 	$(q)$(MAKE) -f $(library-component-makefile.basecpp) $(arg-basic) build
 	$(q)$(MAKE) -f $(library-component-makefile.basecpp) $(arg-basic) build-basecpp-kernel
 	$(q)$(MAKE) -f $(library-component-makefile.kmod) $(arg-basic) build
+	$(q)$(MAKE) -f $(library-component-makefile.linuxss-libc) $(arg-basic) build
 # 	$(q)$(MAKE) -f $(library-component-makefile.rpc) $(arg-basic) build
 	$(q)$(MAKE) -f $(library-component-makefile.libfdt) $(arg-basic) build
 	$(q)echo "All libraries built successfully."
@@ -100,6 +105,9 @@ kernel/feature.mk: FORCE $(config-json) kernel/feature.json tools/feature_gen/fe
 build-mods: make-initrd build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.default) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.init) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.contest-runner) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.linux-subsystem) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test-linux) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_master) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_slave) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_call_service) $(arg-basic) build
@@ -119,14 +127,9 @@ build-mods: make-initrd build-libs
 
 make-initrd:
 	$(call if_mkdir, $(path-initrd))
-	$(q)$(rm) -rf $(path-initrd)/src
-	$(call if_mkdir, $(path-initrd)/src)
-	cp -r ./include/ $(path-initrd)/src/include/
-	cp -r ./kernel/ $(path-initrd)/src/kernel/
-	cp -r ./libs/ $(path-initrd)/src/libs/
-	cp -r ./module/ $(path-initrd)/src/module/
-	cp -r ./script/ $(path-initrd)/src/script/
-	cp -r ./tools/ $(path-initrd)/src/tools/
+	$(q)$(rm) -rf $(path-initrd)/tmp
+	$(call if_mkdir, $(path-initrd)/tmp)
+	cp -r ./tmp/$(architecture)/* $(path-initrd)/tmp/
 	$(q)echo "initrd path created"
 
 build-kernel: build-mods

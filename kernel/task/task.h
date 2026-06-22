@@ -13,7 +13,7 @@
 
 #include <arch/description.h>
 #include <exe/task.h>
-#include <kmod/bootstrap.h>
+#include <sustcore/bootstrap.h>
 #include <schd/schdbase.h>
 #include <sus/list.h>
 #include <sus/map.h>
@@ -21,6 +21,7 @@
 #include <task/task_struct.h>
 
 #include <atomic>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -29,6 +30,17 @@ namespace task {
         CapIdx child_pcb_cap;
         pid_t child_pid;
     };
+
+    struct UserInitLayout {
+        VirAddr sp;
+        size_t argc;
+        VirAddr argv;
+        VirAddr envp;
+        VirAddr auxv;
+    };
+
+    [[nodiscard]]
+    wait::wd_t task_exit_wait_wd() noexcept;
 
     class TaskManager {
     private:
@@ -100,6 +112,13 @@ namespace task {
                               util::nonnull<PCB *> task /* ... args*/);
         Result<void> recycle_tcb(util::nonnull<TCB *> tcb);
         /**
+         * @brief 分配一个新的 TCB 并完成与所属 PCB 的基础绑定.
+         *
+         * @param pcb 所属 PCB.
+         * @return 成功返回已完成基础初始化的 TCB.
+         */
+        Result<util::nonnull<TCB *>> create_bound_tcb(util::nonnull<PCB *> pcb);
+        /**
          * @brief 初始化一个空 PCB, 只填入生命周期与进程基础状态.
          *
          * @param pcb 要初始化的 PCB, 必须为非空指针.
@@ -124,19 +143,19 @@ namespace task {
             util::nonnull<PCB *> pcb, void *entrypoint, void *stack_top,
             schd::ClassType schd_class, bool kernel_thread = false);
         /**
-         * @brief 将启动参数块写入用户主栈并返回新的初始栈顶.
+         * @brief 将 Linux 风格启动布局写入用户主栈并返回新的初始栈顶.
          *
          * @param stack_mem 主栈对应的 MemoryPayload.
          * @param stack_top 用户栈顶虚拟地址.
-         * @param startup_info 需要写入主栈的启动参数块.
+         * @param spec 包含 argv/envp/auxv/bsargv 的启动信息.
          * @return 成功返回新的用户态初始栈顶地址.
          */
         [[nodiscard]]
-        Result<VirAddr> build_user_stack(cap::MemoryPayload &stack_mem,
-                                         VirAddr stack_top,
-                                         const task::StartupInfo &startup_info,
-                                         const void *startup_blob,
-                                         size_t startup_blob_size);
+        Result<UserInitLayout> build_user_stack(cap::MemoryPayload &stack_mem,
+                                                VirAddr stack_top,
+                                                TaskSpec &spec, CapIdx pcb_cap,
+                                                CapIdx main_tcb_cap,
+                                                CapIdx stack_mem_cap);
 
         /**
          * @brief 根据 TaskSpec 填充 PCB 并构造主线程.
@@ -156,12 +175,21 @@ namespace task {
          */
         Result<util::nonnull<TCB *>> setup_user_main_thread(
             util::nonnull<PCB *> pcb, util::nonnull<TCB *> tcb, TaskSpec &spec,
-            task::StartupInfo startup_info, bool link_into_pcb,
-            const char *log_tag);
+            bool link_into_pcb, const char *log_tag);
         /**
          * @brief 创建一个已完成装载的用户进程, 可选择是否立即唤醒主线程.
          */
         Result<util::nonnull<PCB *>> create_loaded_user_task(
+            TaskSpec spec, schd::ClassType schd_class, bool wakeup);
+        /**
+         * @brief 将已装载好的 TaskSpec 提交为正式用户进程.
+         *
+         * @param spec 已完成装载但尚未移交所有权的任务规格.
+         * @param schd_class 主线程调度类别.
+         * @param wakeup 是否立即唤醒主线程.
+         * @return 创建成功的 PCB.
+         */
+        Result<util::nonnull<PCB *>> commit_loaded_task(
             TaskSpec spec, schd::ClassType schd_class, bool wakeup);
 
         /**
@@ -183,15 +211,6 @@ namespace task {
          */
         Result<util::nonnull<PCB *>> kernel_pcb();
 
-        /**
-         * @brief 终止并清理指定的 TCB, 包括释放与其相关的内核资源.
-         *
-         * @param tcb 要终止的 TCB, 必须为非空指针.
-         * @return Result<void> 成功返回 SUCCESS, 失败返回相应错误码.
-         * @note 调用方需保证该 TCB 当前未被运行或已从调度器中移除,
-         * 并处理并发访问场景.
-         */
-        Result<void> terminate_tcb(util::nonnull<TCB *> tcb);
         /**
          * @brief 终止并清理指定的 PCB, 包括其所有线程和占用的资源.
          *
@@ -224,35 +243,48 @@ namespace task {
          */
         Result<CapIdx> preload_into(CapIdx image_cap, cap::CHolder *holder,
                                     TaskSpec &spec, LoadPrm &prm);
-        /**
-         * @brief 校验 bootstrap 记录链是否合法.
-         */
         [[nodiscard]]
-        Result<void> validate_bootstrap_blob(const void *startup_blob,
-                                             size_t startup_blob_size);
-        /**
-         * @brief 合并调用方 bootstrap 链与系统注入记录.
-         */
+        Result<void> validate_bootstrap_record(
+            const TaskSpec::BootstrapRecordData &record) noexcept;
         [[nodiscard]]
-        Result<void> build_bootstrap_blob(
-            const void *startup_blob, size_t startup_blob_size,
-            const std::vector<BootstrapCapPathView> &dir_records,
-            const std::vector<BootstrapCapPathView> &file_records,
-            TaskSpec &spec);
+        Result<void> append_bootstrap_cap_explain_record(
+            TaskSpec &spec, CapIdx cap_idx, PayloadType cap_type, b64 cap_perm,
+            const char *cap_desc);
+        [[nodiscard]]
+        Result<void> append_bootstrap_vaddr_explain_record(
+            TaskSpec &spec, VirAddr vaddr, const char *vaddr_desc);
         /**
          * @brief 复制启动缓冲区、预加载并装载 ELF 到 TaskSpec.
          */
         Result<void> load_task_spec(CapIdx image_cap, cap::CHolder *holder,
-                                    const void *startup_blob,
-                                    size_t startup_blob_size, TaskSpec &spec,
-                                    LoadPrm &prm);
+                                    const std::vector<std::string> &argv,
+                                    const std::vector<std::string> &envp,
+                                    const std::vector<
+                                        TaskSpec::BootstrapRecordData> &bsargv,
+                                    TaskSpec &spec, LoadPrm &prm);
+        Result<void> load_linux_task_spec(CapIdx image_cap,
+                                          cap::CHolder *holder,
+                                          CapIdx subsystem_image_cap,
+                                          const std::vector<std::string> &argv,
+                                          const std::vector<std::string> &envp,
+                                          const std::vector<
+                                              TaskSpec::BootstrapRecordData>
+                                              &bsargv,
+                                          TaskSpec &spec, LoadPrm &prm);
         /**
          * @brief 装载 ELF 并直接构造对应的用户进程.
          */
         Result<util::nonnull<PCB *>> load_task_image(
             CapIdx image_cap, cap::CHolder *holder, schd::ClassType schd_class,
-            bool wakeup, const void *startup_blob = nullptr,
-            size_t startup_blob_size = 0);
+            bool wakeup, const std::vector<std::string> &argv = {},
+            const std::vector<std::string> &envp = {},
+            const std::vector<TaskSpec::BootstrapRecordData> &bsargv = {});
+        Result<util::nonnull<PCB *>> load_linux_task_image(
+            CapIdx image_cap, cap::CHolder *holder, CapIdx subsystem_image_cap,
+            schd::ClassType schd_class, bool wakeup,
+            const std::vector<std::string> &argv = {},
+            const std::vector<std::string> &envp = {},
+            const std::vector<TaskSpec::BootstrapRecordData> &bsargv = {});
 
     public:
         /**
@@ -360,8 +392,10 @@ namespace task {
         Result<void> exec_pcb(util::nonnull<PCB *> pcb, CapIdx image_cap,
                               const CapIdx *reserved_caps,
                               size_t reserved_count,
-                              const void *startup_blob = nullptr,
-                              size_t startup_blob_size = 0);
+                              const std::vector<std::string> &argv = {},
+                              const std::vector<std::string> &envp = {},
+                              const std::vector<TaskSpec::BootstrapRecordData>
+                                  &bsargv = {});
         /**
          * @brief 将已完成的 PCB 加入回收队列, 以便稍后统一回收.
          *
@@ -402,7 +436,14 @@ namespace task {
          */
         Result<util::nonnull<PCB *>> load_elf_into(
             CapIdx image_cap, cap::CHolder *holder, schd::ClassType schd_class,
-            const void *startup_blob = nullptr, size_t startup_blob_size = 0);
+            const std::vector<std::string> &argv = {},
+            const std::vector<std::string> &envp = {},
+            const std::vector<TaskSpec::BootstrapRecordData> &bsargv = {});
+        Result<util::nonnull<PCB *>> load_linux_elf_into(
+            CapIdx image_cap, cap::CHolder *holder, CapIdx subsystem_image_cap,
+            schd::ClassType schd_class, const std::vector<std::string> &argv = {},
+            const std::vector<std::string> &envp = {},
+            const std::vector<TaskSpec::BootstrapRecordData> &bsargv = {});
         /**
          * @brief 加载并创建 init 进程的 PCB, 路径通常指向系统初始化程序.
          *

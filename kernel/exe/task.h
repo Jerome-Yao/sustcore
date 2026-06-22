@@ -12,11 +12,15 @@
 #pragma once
 
 #include <cap/cholder.h>
+#include <sustcore/bootstrap.h>
 #include <mem/vma.h>
 #include <sustcore/addr.h>
+#include <sustcore/capability.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 /**
  * @brief Load Parameter
@@ -42,6 +46,11 @@ struct LoadPrm {
  *
  */
 struct TaskSpec {
+    struct BootstrapRecordData {
+        uint32_t type = 0;
+        std::vector<char> bytes{};
+    };
+
     // 进程内存管理
     util::owner<TaskMemoryManager *> tmm;
     // 进程Capability Holder
@@ -49,10 +58,28 @@ struct TaskSpec {
     cap::CHolder *holder;
     // 入口点
     VirAddr entrypoint;
+    // 可选的 POSIX 程序真实入口地址, 供 subsystem 返回时使用.
+    VirAddr linuxproc_entrypoint;
+    // DYN/解释器装载相关元信息
+    bool dyn                     = false;
+    bool has_interp              = false;
+    VirAddr load_base            = VirAddr(static_cast<addr_t>(0));
+    VirAddr interp_base          = VirAddr(static_cast<addr_t>(0));
+    VirAddr interp_entrypoint    = VirAddr(static_cast<addr_t>(0));
+    VirAddr program_entrypoint   = VirAddr(static_cast<addr_t>(0));
+    VirAddr phdr_vaddr           = VirAddr(static_cast<addr_t>(0));
+    size_t phdr_num              = 0;
+    size_t phdr_entsize          = 0;
     // 堆的起始地址
     VirAddr heap_vaddr;
     CapIdx heap_mem_cap = cap::null;
-    // 传递给新镜像的启动缓冲区副本.
-    util::owner<char *> startup_blob = util::owner<char *>(nullptr);
-    size_t startup_blob_size         = 0;
+    VirAddr linuxss_heap_vaddr = VirAddr(static_cast<addr_t>(0));
+    CapIdx linuxss_heap_mem_cap = cap::null;
+    VirAddr linuxss_image_end = VirAddr(static_cast<addr_t>(0));
+    // 传递给新镜像的参数与 bootstrap 记录.
+    std::vector<std::string> argv{};
+    std::vector<std::string> envp{};
+    std::vector<uint64_t> auxv{};
+    std::string linux_execfn{};
+    std::vector<BootstrapRecordData> bsargv{};
 };

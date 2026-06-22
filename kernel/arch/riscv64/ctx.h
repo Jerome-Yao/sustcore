@@ -22,7 +22,7 @@
 
 namespace rv64 {
     struct Context {
-        umb_t ra;
+        umb_t _ra;
         umb_t _sp;
         umb_t gp;
         umb_t tp;
@@ -58,6 +58,33 @@ namespace rv64 {
         umb_t kstack_sp;
 
         [[nodiscard]]
+        constexpr umb_t &ra() {
+            return _ra;
+        }
+        [[nodiscard]]
+        constexpr const umb_t &ra() const {
+            return _ra;
+        }
+
+        [[nodiscard]]
+        constexpr umb_t &linux_ra() {
+            return t0;
+        }
+        [[nodiscard]]
+        constexpr const umb_t &linux_ra() const {
+            return t0;
+        }
+
+        [[nodiscard]]
+        constexpr umb_t &kthread_arg0() {
+            return s0;
+        }
+        [[nodiscard]]
+        constexpr const umb_t &kthread_arg0() const {
+            return s0;
+        }
+
+        [[nodiscard]]
         constexpr umb_t &pc() {
             return sepc;
         }
@@ -76,6 +103,12 @@ namespace rv64 {
             return _sp;
         }
 
+        constexpr void set_init_regs(umb_t arg0, umb_t arg1, umb_t arg2) noexcept {
+            a0 = arg0;
+            a1 = arg1;
+            a2 = arg2;
+        }
+
         [[nodiscard]]
         constexpr umb_t &kstack_top() {
             return kstack_sp;
@@ -91,7 +124,7 @@ namespace rv64 {
         }
 
         constexpr void setup_regs(bool smode, bool sie, bool spie) {
-            ra           = 0;
+            _ra          = 0;
             
             sstatus.spp  = smode;
             sstatus.sie  = sie;
@@ -115,7 +148,7 @@ namespace rv64 {
     static_assert(ContextTrait<Context>);
     static_assert(sizeof(Context) == Context::size_bytes(),
                   "rv64::Context layout must match ctxlayout slots");
-    static_assert(offsetof(Context, ra) == CTX_SLOT_OFFSET(CTX_RA_SLOT));
+    static_assert(offsetof(Context, _ra) == CTX_SLOT_OFFSET(CTX_RA_SLOT));
     static_assert(offsetof(Context, _sp) == CTX_SLOT_OFFSET(CTX_SP_SLOT));
     static_assert(offsetof(Context, gp) == CTX_SLOT_OFFSET(CTX_GP_SLOT));
     static_assert(offsetof(Context, tp) == CTX_SLOT_OFFSET(CTX_TP_SLOT));

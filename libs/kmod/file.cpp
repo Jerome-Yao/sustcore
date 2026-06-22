@@ -9,12 +9,12 @@
  *
  */
 
+#include <sustcore/bootstrap.h>
 #include <kmod/syscall.h>
 #include <prm.h>
 
 #include <cstdio>
 #include <cstring>
-#include <kmod/bootstrap.h>
 
 namespace {
     struct FileStructure {
@@ -80,28 +80,32 @@ namespace {
         g_dir_bindings_loaded = true;
         int binding_count     = 0;
         (void)bootstrap_foreach_record(
-            __startup_data, __startup_size, [&](const BootstrapRecordView &view) {
-                if (view.header->type != BOOTSTRAP_TYPE_DIRCAPEXPLAIN ||
+            __bsargv, __bsargc, [&](const BootstrapRecordView &view) {
+                if (view.header->type != boot::TYPE_CAPEXP ||
                     binding_count >= MAX_DIR_BINDINGS)
                 {
                     return;
                 }
-                BootstrapCapPathView cap_path{};
-                if (!bootstrap_parse_cap_path(view, cap_path) ||
-                    cap_path.cap == cap::null || cap_path.cap == cap::error ||
-                    cap_path.path == nullptr || cap_path.path[0] != '/')
+                BootstrapCapExplainView cap_explain{};
+                if (!bootstrap_parse_cap_explain(view, cap_explain) ||
+                    cap_explain.cap_type != PayloadType::VDIR ||
+                    cap_explain.cap_idx == cap::null ||
+                    cap_explain.cap_idx == cap::error ||
+                    cap_explain.cap_desc == nullptr ||
+                    cap_explain.cap_desc[0] != '#')
                 {
                     return;
                 }
+                const char *path = cap_explain.cap_desc + 1;
                 for (int i = 0; i < binding_count; ++i) {
-                    if (strcmp(g_dir_bindings[i].path, cap_path.path) == 0) {
+                    if (strcmp(g_dir_bindings[i].path, path) == 0) {
                         return;
                     }
                 }
                 g_dir_bindings[binding_count++] = DirBinding{
-                    .cap          = cap_path.cap,
-                    .path         = cap_path.path,
-                    .path_len     = strlen(cap_path.path),
+                    .cap            = cap_explain.cap_idx,
+                    .path           = path,
+                    .path_len       = static_cast<size_t>(strlen(path)),
                     .from_bootstrap = true,
                 };
             });
@@ -140,7 +144,8 @@ namespace {
         }
 
         auto bootstrap_base = resolve_via_bindings(path);
-        if (bootstrap_base.cap != cap::null && bootstrap_base.relpath != nullptr)
+        if (bootstrap_base.cap != cap::null &&
+            bootstrap_base.relpath != nullptr)
         {
             return bootstrap_base;
         }
@@ -203,9 +208,8 @@ int kmod_fopen(const char *path, const char *options) {
     flags::oflg_t oflags = 0;
     bool append          = false;
     auto base            = resolve_open_base(path);
-    if (!parse_open_options(options, oflags, append) ||
-        base.cap == cap::null || base.relpath == nullptr ||
-        *base.relpath == '\0')
+    if (!parse_open_options(options, oflags, append) || base.cap == cap::null ||
+        base.relpath == nullptr || *base.relpath == '\0')
     {
         return -1;
     }
@@ -264,9 +268,9 @@ int kmod_mkdir(const char *path) {
         return -1;
     }
 
-    CapIdx cap = sys_vfs_mkdir(base.cap, base.relpath,
-                               flags::O_READ | flags::O_WRITE |
-                                   flags::O_EXECUTE);
+    CapIdx cap =
+        sys_vfs_mkdir(base.cap, base.relpath,
+                      flags::O_READ | flags::O_WRITE | flags::O_EXECUTE);
     if (cap == cap::error || cap == cap::null) {
         return -1;
     }
@@ -302,7 +306,8 @@ int kmod_truncate(const char *path, size_t new_size) {
         return -1;
     }
     CapIdx cap = sys_vfs_open(base.cap, base.relpath, flags::O_WRITE);
-    if (cap == cap::error || cap == cap::null) return -1;
+    if (cap == cap::error || cap == cap::null)
+        return -1;
     bool ok = sys_vfs_truncate(cap, new_size);
     sys_cap_remove(cap);
     return ok ? 0 : -1;
@@ -312,14 +317,15 @@ int kmod_rename(const char *old_path, const char *new_path) {
     auto old_base = resolve_open_base(old_path);
     auto new_base = resolve_open_base(new_path);
     if (old_base.cap == cap::null || old_base.relpath == nullptr ||
-        *old_base.relpath == '\0' ||
-        new_base.cap == cap::null || new_base.relpath == nullptr ||
-        *new_base.relpath == '\0')
+        *old_base.relpath == '\0' || new_base.cap == cap::null ||
+        new_base.relpath == nullptr || *new_base.relpath == '\0')
     {
         return -1;
     }
-    return sys_vfs_rename(old_base.cap, old_base.relpath,
-                          new_base.cap, new_base.relpath) ? 0 : -1;
+    return sys_vfs_rename(old_base.cap, old_base.relpath, new_base.cap,
+                          new_base.relpath)
+               ? 0
+               : -1;
 }
 
 int kmod_symlink(const char *path, const char *target) {
@@ -329,12 +335,7 @@ int kmod_symlink(const char *path, const char *target) {
     {
         return -1;
     }
-    CapIdx cap = sys_vfs_symlink(base.cap, base.relpath, target);
-    if (cap == cap::error || cap == cap::null) {
-        return -1;
-    }
-    sys_cap_remove(cap);
-    return 0;
+    return sys_vfs_symlink(base.cap, base.relpath, target) ? 0 : -1;
 }
 
 int kmod_link(const char *path, const char *target_path) {
@@ -350,9 +351,10 @@ int kmod_link(const char *path, const char *target_path) {
     {
         return -1;
     }
-    CapIdx target = sys_vfs_open(target_base.cap, target_base.relpath,
-                                 flags::O_READ);
-    if (target == cap::error || target == cap::null) return -1;
+    CapIdx target =
+        sys_vfs_open(target_base.cap, target_base.relpath, flags::O_READ);
+    if (target == cap::error || target == cap::null)
+        return -1;
     bool ok = sys_vfs_link(base.cap, base.relpath, target);
     sys_cap_remove(target);
     return ok ? 0 : -1;
@@ -362,9 +364,8 @@ int kmod_mkfile(const char *path, const char *options) {
     flags::oflg_t oflags = 0;
     bool append          = false;
     auto base            = resolve_open_base(path);
-    if (!parse_open_options(options, oflags, append) ||
-        base.cap == cap::null || base.relpath == nullptr ||
-        *base.relpath == '\0')
+    if (!parse_open_options(options, oflags, append) || base.cap == cap::null ||
+        base.relpath == nullptr || *base.relpath == '\0')
     {
         return -1;
     }

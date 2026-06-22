@@ -164,7 +164,7 @@ namespace exception {
         }
 
         loggers::INTERRUPT::ERROR("regs: ra=0x%lx sp=0x%lx tp=0x%lx fp=0x%lx",
-                                  ctx->ra, ctx->sp(), ctx->tp, ctx->fp);
+                                  ctx->ra(), ctx->sp(), ctx->tp, ctx->fp);
         loggers::INTERRUPT::ERROR("regs: a0=0x%lx a1=0x%lx a2=0x%lx a3=0x%lx",
                                   ctx->a0, ctx->a1, ctx->a2, ctx->a3);
         loggers::INTERRUPT::ERROR("regs: a4=0x%lx a5=0x%lx a6=0x%lx a7=0x%lx",
@@ -490,9 +490,26 @@ namespace exception {
         loggers::SYSCALL::DEBUG(
             "系统调用参数: arg3=0x%016lx, arg4=0x%016lx, arg5=0x%016lx, "
             "era=0x%016lx",
-            args.args[4], args.args[5], args.args[6], ctx->era);
+            args.args[4], args.args[5], args.args[6], ctx->pc());
 
-        ctx->era += 4;
+        if (current_tcb->task != nullptr &&
+            current_tcb->task->is_linux_process &&
+            current_tcb->task->linux_subsystem_entry.nonnull() &&
+            syscall::is_linux_syscall_number(args.syscall_number))
+        {
+            ctx->linux_ra() = ctx->pc() + 4;
+            ctx->pc() =
+                current_tcb->task->linux_subsystem_entry.arith();
+            loggers::SYSCALL::DEBUG(
+                "POSIX Linux syscall 重定向: pid=%lu sysno=%lu entry=%p ret=%p",
+                current_tcb->task->pid, args.syscall_number,
+                current_tcb->task->linux_subsystem_entry.addr(),
+                reinterpret_cast<void *>(ctx->linux_ra()));
+            env::inst().trap_context(env::key::trap_context()) = nullptr;
+            return true;
+        }
+
+        ctx->pc() += 4;
         syscall::handle_user_ecall(util::nnullforce(current_tcb),
                                    util::nnullforce(ctx), args);
         env::inst().trap_context(env::key::trap_context()) = nullptr;
@@ -583,9 +600,6 @@ extern "C" void handle_trap(umb_t era, csr_estat_t estat, Context *ctx) {
                               static_cast<unsigned long long>(estat.ecode),
                               (void *)era, ctx,
                               exception::from_umode() ? "umode" : "smode");
-    if (task::TaskManager::initialized()) {
-        task::TaskManager::inst().reap_recycled();
-    }
     if (estat.ecode == ECODE_INT) {
         interrupt::dispatch(estat, ctx);
     } else {

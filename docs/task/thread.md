@@ -80,7 +80,7 @@
 2. 把用户栈映射为 `STACK` VMA，范围是 `[USER_STACK_BOTTOM, USER_STACK_TOP)`。
 3. 调用 `construct_thread()` 创建 TCB。
 4. 创建 TCB capability。
-5. 将 `StartupInfo` 和可选 startup blob 写入用户栈。
+5. 将 Linux 风格 `argc/argv/envp/auxv/bsargv` 布局写入用户栈。
 6. 调整初始 SP。
 
 默认初始用户栈:

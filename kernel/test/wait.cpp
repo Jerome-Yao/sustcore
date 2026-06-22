@@ -9,8 +9,6 @@
 static_assert(GuardedLockLike<GuardedLock>);
 static_assert(GuardedLockLike<IrqSaveGuardedLock>);
 static_assert(requires(SpinLocker &lock) {
-    ::wait::locked_wait_event<IrqSaveGuardedLock>(
-        1, lock, []() noexcept { return true; });
     ::wait::locked_wakeup<IrqSaveGuardedLock>(1, lock);
     ::wait::locked_wake_all<IrqSaveGuardedLock>(1, lock);
 });
@@ -23,7 +21,7 @@ namespace test::wait {
                 : TestCase("wait_event 拒绝无效 wait_wd") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
-                auto res = ::wait::wait_event(0, []() { return true; });
+                auto res = wait_event(0, true);
                 ttest(!res.has_value());
                 ttest(res.error() == ErrCode::INVALID_PARAM);
             }
@@ -35,9 +33,9 @@ namespace test::wait {
                 : TestCase("wait_event 拒绝空 ready_predicate") {}
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
-                auto res = ::wait::wait_event(1, {});
-                ttest(!res.has_value());
-                ttest(res.error() == ErrCode::INVALID_PARAM);
+                bool ready = false;
+                auto res   = wait_event(1, ready);
+                ttest(res.has_value());
             }
         };
 
@@ -48,10 +46,8 @@ namespace test::wait {
 
             void _run(void* env [[maybe_unused]]) const noexcept override {
                 bool checked = false;
-                auto res     = ::wait::wait_event(1, [&checked]() {
-                    checked = true;
-                    return true;
-                });
+                bool ready   = true;
+                auto res     = wait_event(1, (checked = true, ready));
                 ttest(res.has_value());
                 ttest(checked);
             }

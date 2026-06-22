@@ -15,6 +15,7 @@
 #include <driver/virtio/virtio-blk.h>
 #include <logger.h>
 #include <sus/raii.h>
+#include <vfs/vfs.h>
 
 #include <algorithm>
 #include <array>
@@ -232,11 +233,38 @@ namespace virtio {
             }
 
             auto *req = req_res.value();
+            loggers::DEVICE::DEBUG("virtio-blk worker got req: lba=%lu cnt=%lu",
+                                  static_cast<unsigned long>(req->lba),
+                                  static_cast<unsigned long>(req->block_count));
             auto mark_res = _queue->mark_processing(util::nnullforce(req));
             propagate(mark_res);
             auto process_res = process_request(*req);
             propagate(process_res);
         }
+        void_return();
+    }
+
+    Result<void> VirtioBlkDriver::mount(CapIdx devdir) noexcept {
+        auto devno_res = blk::BlkManager::inst().find_device_id(this);
+        propagate(devno_res);
+
+        auto &vfs = VFS::inst();
+        auto devfs_res = vfs.devfs();
+        propagate(devfs_res);
+        auto &devfs = *devfs_res.value();
+
+        auto lookup_res = holder().lookup(devdir);
+        propagate(lookup_res);
+        auto &dircap = *lookup_res.value();
+
+        auto mkres = vfs.mkfile(dircap, "blk", flags::O_READ, holder());
+        propagate(mkres);
+
+        lookup_res = holder().lookup(mkres.value());
+        propagate(lookup_res);
+        auto &filecap = *lookup_res.value();
+        auto link_res = devfs.link_block(filecap, devno_res.value());
+        propagate(link_res);
         void_return();
     }
 
@@ -418,7 +446,7 @@ namespace virtio {
 
         const size_t window_offset = DEBUG_DUMP_OFFSET - first_block * _block_size;
         const u8 *window           = blocks.data() + window_offset;
-        loggers::DEVICE::INFO(
+        loggers::DEVICE::DEBUG(
             "virtio-blk 调试窗口: node=%s image_offset=[0x%llx,0x%llx)",
             name(), static_cast<unsigned long long>(DEBUG_DUMP_OFFSET),
             static_cast<unsigned long long>(DEBUG_DUMP_OFFSET + DEBUG_DUMP_SIZE));
@@ -447,7 +475,7 @@ namespace virtio {
             line[static_cast<size_t>(pos)] = '|';
             ++pos;
             line[static_cast<size_t>(pos)]   = '\0';
-            loggers::DEVICE::INFO("%s", line.data());
+            loggers::DEVICE::DEBUG("%s", line.data());
         }
         void_return();
     }

@@ -179,7 +179,7 @@ namespace exception {
         }
 
         loggers::EXCEPTION::ERROR(
-            "regs: ra=0x%016lx  sp=0x%016lx  gp=0x%016lx tp=0x%016lx", ctx->ra,
+            "regs: ra=0x%016lx  sp=0x%016lx  gp=0x%016lx tp=0x%016lx", ctx->ra(),
             ctx->sp(), ctx->gp, ctx->tp);
         loggers::EXCEPTION::ERROR(
             "regs: t0=0x%016lx  t1=0x%016lx  t2=0x%016lx s0=0x%016lx", ctx->t0,
@@ -270,7 +270,8 @@ namespace exception {
         }
         loggers::EXCEPTION::ERROR(
             "ctx: ptr=%p, mode=%s, sstatus=0x%016lx, sp=0x%016lx, ra=0x%016lx",
-            ctx, privilege_name(ctx), ctx->sstatus.value, ctx->sp(), ctx->ra);
+            ctx, privilege_name(ctx), ctx->sstatus.value, ctx->sp(),
+            ctx->ra());
         loggers::EXCEPTION::ERROR(
             "args: a0=0x%016lx, a1=0x%016lx, a2=0x%016lx, a3=0x%016lx", ctx->a0,
             ctx->a1, ctx->a2, ctx->a3);
@@ -555,7 +556,7 @@ namespace exception {
             switch (cause) {
                 case FaultCause::NO_PRESENT: {
                     // 如果是内核地址, 则尝试复制主内核页表的映射
-                    if (is_kernel_vaddr(fault_addr)) {
+                    if (is_kernel_vaddr(fault_addr) && fault_addr.nonnull()) {
                         auto kernel_pgd = e.main_kernel_pgd();
                         if (!kernel_pgd.nonnull()) {
                             loggers::EXCEPTION::ERROR(
@@ -750,7 +751,24 @@ namespace exception {
             "sepc=0x%016lx",
             args.args[4], args.args[5], args.args[6], sepc);
 
-        ctx->sepc += 4;
+        if (current_tcb->task != nullptr &&
+            current_tcb->task->is_linux_process &&
+            current_tcb->task->linux_subsystem_entry.nonnull() &&
+            syscall::is_linux_syscall_number(args.syscall_number))
+        {
+            ctx->linux_ra() = sepc + 4;
+            ctx->pc()       =
+                current_tcb->task->linux_subsystem_entry.arith();
+            loggers::SYSCALL::DEBUG(
+                "POSIX Linux syscall 重定向: pid=%lu sysno=%lu entry=%p ret=%p",
+                current_tcb->task->pid, args.syscall_number,
+                current_tcb->task->linux_subsystem_entry.addr(),
+                reinterpret_cast<void *>(ctx->linux_ra()));
+            env::inst().trap_context(env::key::trap_context()) = nullptr;
+            return true;
+        }
+
+        ctx->pc() += 4;
         syscall::handle_user_ecall(util::nnullforce(current_tcb),
                                    util::nnullforce(ctx), args);
         env::inst().trap_context(env::key::trap_context()) = nullptr;
@@ -862,9 +880,6 @@ extern "C" void handle_trap(csr_scause_t scause, umb_t sepc, umb_t stval,
             ctx->sstatus.spp ? "smode" : "umode");
     }
     bool from_umode = !ctx->sstatus.spp;
-    if (task::TaskManager::initialized()) {
-        task::TaskManager::inst().reap_recycled();
-    }
     if (scause.interrupt) {
         interrupt::dispatch(scause, sepc, stval, ctx);
     } else {

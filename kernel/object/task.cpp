@@ -10,6 +10,7 @@
 #include <task/scheduler.h>
 #include <task/task.h>
 #include <task/task_struct.h>
+#include <task/wait.h>
 
 namespace cap {
     namespace {
@@ -56,15 +57,17 @@ namespace cap {
         bool killing_current =
             current_tcb != nullptr && current_tcb->task == pcb;
 
-        loggers::TASK::INFO("开始终止进程: pid=%lu exit_code=%d",
+        loggers::TASK::DEBUG("开始终止进程: pid=%lu exit_code=%d",
                             pcb->pid, exit_code);
         pcb->exit_code = exit_code;
         if (pcb->exiting) {
             void_return();
         }
         pcb->exiting = true;
-        if (pcb->cholder != nullptr) {
-            pcb->cholder->clear();
+        auto wake_res = wait::wake_all(task::task_exit_wait_wd());
+        if (!wake_res.has_value()) {
+            loggers::TASK::ERROR("唤醒等待退出进程的线程失败: pid=%lu err=%d",
+                                 pcb->pid, wake_res.error());
         }
         for (auto &tcb : pcb->threads) {
             if (&tcb != current_tcb &&
@@ -77,10 +80,11 @@ namespace cap {
                                          tcb.tid, dequeue_res.error());
                 }
             }
-            tcb.basic_entity.state = ThreadState::WAITING;
+            tcb.basic_entity.state = ThreadState::DYING;
         }
+        task::TaskManager::inst().enqueue_recycle(pcb);
         if (killing_current) {
-            current_tcb->basic_entity.state = ThreadState::WAITING;
+            current_tcb->basic_entity.state = ThreadState::DYING;
             current_tcb->basic_entity
                 .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
             if (runtime_tcb == current_tcb) {
@@ -90,15 +94,115 @@ namespace cap {
         void_return();
     }
 
-    Result<void> PCBObject::map(MemoryObject &memory, VirAddr vaddr,
-                                PageMan::RWX rwx, MemoryGrowth growth) const {
+    Result<void> PCBObject::map(MemoryObject &memory, size_t offset,
+                                VirAddr vaddr, size_t sz,
+                                VMA::Prot protflg) const {
         if (!imply(perm::pcb::VMCONTEXT)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
         if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
-        return memory.map_into(*_obj->pcb->tmm, vaddr, rwx, growth);
+        if (!memory.cap()->imply(perm::memory::MAP)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if ((protflg & VMA::PROT_R) != 0 &&
+            !memory.cap()->imply(perm::memory::READ))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if ((protflg & VMA::PROT_W) != 0 &&
+            !memory.cap()->imply(perm::memory::WRITE))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if ((protflg & VMA::PROT_X) != 0 &&
+            !memory.cap()->imply(perm::memory::EXEC))
+        {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+
+        auto *payload = memory.obj();
+        if (payload == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if ((offset % PAGESIZE) != 0 || (vaddr.arith() % PAGESIZE) != 0 ||
+            (sz % PAGESIZE) != 0)
+        {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (sz == 0 || offset > payload->memsz || sz > payload->memsz - offset) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        VMA::Type type =
+            (protflg & VMA::PROT_SHARE) != 0 ? VMA::Type::SHARE
+                                             : VMA::Type::DATA;
+        auto add_res = _obj->pcb->tmm->add_vma(
+            type, MemoryGrowth::FIXED, VirArea(vaddr, vaddr + sz), payload,
+            protflg, offset);
+        propagate(add_res);
+        void_return();
+    }
+
+    Result<void> PCBObject::unmap(VirAddr vaddr, size_t sz) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if ((vaddr.arith() % PAGESIZE) != 0 || (sz % PAGESIZE) != 0 || sz == 0) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        return _obj->pcb->tmm->remove_vma_range(VirArea(vaddr, vaddr + sz));
+    }
+
+    Result<cap::VMAInfo> PCBObject::query_vaddr(VirAddr vaddr,
+                                                CapIdx mem_cap) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto query_res = _obj->pcb->tmm->query_vaddr(vaddr, mem_cap);
+        propagate(query_res);
+        auto result = query_res.value();
+        return cap::VMAInfo{
+            .vma_type  = static_cast<b64>(result.type),
+            .vma_prot  = result.prot,
+            .vma_start = result.start.addr(),
+            .vma_size  = result.size,
+            .mem_cap   = result.mem_cap,
+        };
+    }
+
+    Result<std::vector<cap::VMAInfo>> PCBObject::query_vspace(
+        size_t offset, size_t max_entries, bool expose_mem_cap) const {
+        if (!imply(perm::pcb::VMCONTEXT)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || _obj->pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto entries = _obj->pcb->tmm->query_vspace(
+            offset, max_entries,
+            [expose_mem_cap](const VMA &) {
+                return expose_mem_cap ? cap::null : cap::error;
+            });
+        std::vector<cap::VMAInfo> results{};
+        results.reserve(entries.size());
+        for (size_t i = 0; i < entries.size(); ++i) {
+            results.push_back(cap::VMAInfo{
+                .vma_type  = static_cast<b64>(entries[i].type),
+                .vma_prot  = entries[i].prot,
+                .vma_start = entries[i].start.addr(),
+                .vma_size  = entries[i].size,
+                .mem_cap   = entries[i].mem_cap,
+            });
+        }
+        return results;
     }
 
     Result<task::PCB *> PCBObject::require_new_thread() const {
@@ -139,5 +243,16 @@ namespace cap {
             unexpect_return(ErrCode::NULLPTR);
         }
         return _obj->pcb;
+    }
+
+    Result<task::TCB *> TCBObject::require_current() const {
+        if (_obj->tcb == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto *current = current_object_tcb();
+        if (current == nullptr || current != _obj->tcb) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        return _obj->tcb;
     }
 }  // namespace cap

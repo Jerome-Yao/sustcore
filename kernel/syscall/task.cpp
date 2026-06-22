@@ -26,12 +26,17 @@
 #include <syscall/uaccess.h>
 #include <task/scheduler.h>
 #include <task/task.h>
+#include <vfs/vfs.h>
 
 #include <cassert>
 #include <cstring>
+#include <sys/wait.h>
 
 namespace syscall {
     namespace {
+        constexpr const char *POSIX_SUBSYSTEM_IMAGE = "/initrd/linux-subsystem.mod";
+        constexpr size_t TCB_WAIT_WNOHANG           = 1;
+
         [[nodiscard]]
         Result<task::TCB *> running_tcb() noexcept {
             auto *current = schd::Scheduler::inst().current_tcb();
@@ -39,6 +44,27 @@ namespace syscall {
                 unexpect_return(ErrCode::INVALID_PARAM);
             }
             return current;
+        }
+
+        [[nodiscard]]
+        int encode_linux_wait_status(int exit_code) noexcept {
+            return __W_EXITCODE(exit_code & 0xff, 0);
+        }
+
+        Result<void> write_wait_status(UBuffer *status_buf,
+                                       cap::PCBPayload *pcb_payload) {
+            if (status_buf == nullptr) {
+                void_return();
+            }
+            if (pcb_payload == nullptr || pcb_payload->pcb == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+
+            int status = encode_linux_wait_status(pcb_payload->pcb->exit_code);
+            memcpy(status_buf->kbuf(), &status, sizeof(status));
+            auto commit_res = status_buf->commit_to_user();
+            propagate(commit_res);
+            void_return();
         }
     }  // namespace
 
@@ -93,6 +119,39 @@ namespace syscall {
             unexpect_return(ErrCode::TYPE_NOT_MATCHED);
         }
         return memory;
+    }
+
+    static Result<cap::MemoryPayload *> lookup_memory_in_holder(
+        cap::CHolder *holder, CapIdx idx, cap::Capability **out_cap) {
+        if (holder == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto cap_res = holder->lookup(idx);
+        propagate(cap_res);
+        if (out_cap != nullptr) {
+            *out_cap = cap_res.value();
+        }
+        auto *memory = cap_res.value()->payload_as<cap::MemoryPayload>();
+        if (memory == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return memory;
+    }
+
+    static Result<cap::TCBPayload *> lookup_tcb(CapIdx idx,
+                                                cap::Capability **out_cap) {
+        auto holder_res = current_holder();
+        propagate(holder_res);
+        auto cap_res = holder_res.value()->lookup(idx);
+        propagate(cap_res);
+        if (out_cap != nullptr) {
+            *out_cap = cap_res.value();
+        }
+        auto *tcb = cap_res.value()->payload_as<cap::TCBPayload>();
+        if (tcb == nullptr || tcb->tcb == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return tcb;
     }
 
     static Result<cap::Capability *> lookup_vfile(CapIdx idx) {
@@ -177,14 +236,31 @@ namespace syscall {
         }
     }
 
+    [[nodiscard]]
+    static Result<CapIdx> find_exited_pcb_cap(const std::vector<CapIdx> &pcbs) {
+        if (pcbs.empty()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        for (auto pcb_cap : pcbs) {
+            cap::Capability *pcb_cap_obj = nullptr;
+            auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+            if (!pcb_res.has_value()) {
+                continue;
+            }
+            if (pcb_res.value()->pcb->exiting) {
+                return pcb_cap;
+            }
+        }
+        return cap::null;
+    }
+
     Result<CapIdx> pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
-                                      UBuffer &&caps_buf, size_t caps_sz,
-                                      size_t sched_class, UBuffer *startup_buf,
-                                      size_t startup_buf_sz) {
+                                      size_t sched_class,
+                                      const StartupArguments &startup) {
         loggers::SYSCALL::DEBUG(
-            "创建进程: pcb=%p image_cap=%p, caps_uaddr=%p, caps_sz=%u, "
+            "创建进程: pcb=%p image_cap=%p, caps_sz=%u, "
             "sched_class=%u",
-            pcb_cap, image_cap, caps_buf.uaddr().addr(), caps_sz, sched_class);
+            pcb_cap, image_cap, startup.caps.size(), sched_class);
 
         cap::Capability *pcb_cap_obj = nullptr;
         auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
@@ -216,10 +292,16 @@ namespace syscall {
             assert(rm_res.has_value());
         });
 
-        auto copy_res = copy_initial_caps_in_place(
-            parent_pcb->cholder, parent_pcb->tmm.get(), child_holder,
-            caps_sz == 0 ? nullptr : &caps_buf, caps_sz);
-        propagate(copy_res);
+        if (!startup.caps.empty()) {
+            UBuffer caps_buf(VirAddr::null,
+                             startup.caps.size() * sizeof(CapIdx));
+            memcpy(caps_buf.kbuf(), startup.caps.data(),
+                   startup.caps.size() * sizeof(CapIdx));
+            auto copy_res = copy_initial_caps_in_place(
+                parent_pcb->cholder, parent_pcb->tmm.get(), child_holder,
+                &caps_buf, startup.caps.size());
+            propagate(copy_res);
+        }
 
         auto child_image_cap_res = child_holder->insert_to_free(
             image_res.value()->payload(), perm::vfile::EXEC);
@@ -228,10 +310,7 @@ namespace syscall {
         // 2) 使用已预配置的 CHolder 加载子进程 ELF
         auto load_res = task::TaskManager::inst().load_elf_into(
             child_image_cap_res.value(), child_holder, sched_res.value(),
-            startup_buf_sz == 0 || startup_buf == nullptr
-                ? nullptr
-                : startup_buf->kbuf(),
-            startup_buf_sz);
+            startup.argv, startup.envp, startup.bsargv);
         propagate(load_res);
         holder_guard.release();
         auto pcb_guard = util::Guard([&]() {
@@ -259,6 +338,80 @@ namespace syscall {
         return ret_insert_res.value();
     }
 
+    Result<CapIdx> pcb_create_linux_process(CapIdx pcb_cap, CapIdx image_cap,
+                                            size_t sched_class,
+                                            const StartupArguments &startup) {
+        loggers::SYSCALL::DEBUG(
+            "创建POSIX进程: pcb=%p image_cap=%p, caps_sz=%u, "
+            "sched_class=%u",
+            pcb_cap, image_cap, startup.caps.size(), sched_class);
+
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto parent_res = pcb_obj.require_new_process_execute();
+        propagate(parent_res);
+        task::PCB *parent_pcb = parent_res.value();
+        if (parent_pcb->cholder == nullptr || parent_pcb->tmm == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto sched_res = parse_user_sched_class(sched_class);
+        propagate(sched_res);
+        auto image_res = lookup_vfile(image_cap);
+        propagate(image_res);
+
+        auto current_holder_res = current_holder();
+        propagate(current_holder_res);
+        cap::CHolder *current_holder = current_holder_res.value();
+
+        auto child_holder_res = cap::CHolderManager::inst().create_holder();
+        propagate(child_holder_res);
+        cap::CHolder *child_holder = child_holder_res.value();
+        auto holder_guard          = util::Guard([child_holder]() {
+            auto rm_res =
+                cap::CHolderManager::inst().remove_holder(child_holder->id());
+            assert(rm_res.has_value());
+        });
+
+        if (!startup.caps.empty()) {
+            UBuffer caps_buf(VirAddr::null,
+                             startup.caps.size() * sizeof(CapIdx));
+            memcpy(caps_buf.kbuf(), startup.caps.data(),
+                   startup.caps.size() * sizeof(CapIdx));
+            auto copy_res = copy_initial_caps_in_place(
+                parent_pcb->cholder, parent_pcb->tmm.get(), child_holder,
+                &caps_buf, startup.caps.size());
+            propagate(copy_res);
+        }
+
+        auto child_image_cap_res = child_holder->insert_to_free(
+            image_res.value()->payload(), perm::vfile::EXEC);
+        propagate(child_image_cap_res);
+        auto subsystem_cap_res =
+            VFS::inst().open(POSIX_SUBSYSTEM_IMAGE, *child_holder);
+        propagate(subsystem_cap_res);
+
+        auto create_res = task::TaskManager::inst().load_linux_elf_into(
+            child_image_cap_res.value(), child_holder, subsystem_cap_res.value(),
+            sched_res.value(), startup.argv, startup.envp, startup.bsargv);
+        propagate(create_res);
+        holder_guard.release();
+
+        auto *pcb = create_res.value().get();
+        auto child_pcb_cap_res = pcb->cholder->lookup(pcb->pcb_cap);
+        propagate(child_pcb_cap_res);
+        auto ret_insert_res = current_holder->insert_to_free(
+            child_pcb_cap_res.value()->payload(),
+            child_pcb_cap_res.value()->perm());
+        propagate(ret_insert_res);
+
+        loggers::SYSCALL::DEBUG("创建POSIX进程成功: image_cap=%p, pid=%d",
+                               image_cap, pcb->pid);
+        return ret_insert_res.value();
+    }
+
     Result<CapIdx> pcb_create_thread(CapIdx pcb_cap, VirAddr entry,
                                      VirAddr stack_addr, size_t stack_size) {
         cap::Capability *cap = nullptr;
@@ -277,6 +430,50 @@ namespace syscall {
             entry, stack_addr, stack_size);
         propagate(thread_res);
         return thread_res.value();
+    }
+
+    Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
+                            UBuffer *status_buf, size_t options) {
+        if (options != 0 && options != TCB_WAIT_WNOHANG) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        cap::Capability *tcb_cap_obj = nullptr;
+        auto tcb_res                 = lookup_tcb(tcb_cap, &tcb_cap_obj);
+        propagate(tcb_res);
+        cap::TCBObject tcb_obj(util::nnullforce(tcb_cap_obj));
+        auto current_tcb_res = tcb_obj.require_current();
+        propagate(current_tcb_res);
+
+        auto exited_res = find_exited_pcb_cap(pcbs);
+        propagate(exited_res);
+        if (exited_res.value() != cap::null ||
+            options == TCB_WAIT_WNOHANG)
+        {
+            if (exited_res.value() != cap::null) {
+                auto pcb_res = lookup_pcb(exited_res.value(), nullptr);
+                propagate(pcb_res);
+                auto status_res =
+                    write_wait_status(status_buf, pcb_res.value());
+                propagate(status_res);
+            }
+            return exited_res.value();
+        }
+
+        auto wait_res = wait_event(task::task_exit_wait_wd(), ({
+            auto __exited_res = find_exited_pcb_cap(pcbs);
+            __exited_res.has_value() && __exited_res.value() != cap::null;
+        }));
+        propagate(wait_res);
+        auto final_res = find_exited_pcb_cap(pcbs);
+        propagate(final_res);
+        if (final_res.value() != cap::null) {
+            auto pcb_res = lookup_pcb(final_res.value(), nullptr);
+            propagate(pcb_res);
+            auto status_res = write_wait_status(status_buf, pcb_res.value());
+            propagate(status_res);
+        }
+        return final_res.value();
     }
 
     Result<size_t> pcb_fork(CapIdx pcb_cap, UBuffer &&child_cap_buf) {
@@ -328,25 +525,76 @@ namespace syscall {
         return true;
     }
 
-    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, VirAddr vaddr,
-                         PageMan::RWX rwx, cap::MemoryGrowth growth) {
+    Result<bool> pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset,
+                         VirAddr vaddr, size_t sz, b64 protflg) {
         cap::Capability *pcb_cap_obj = nullptr;
         auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
         propagate(pcb_res);
 
         cap::Capability *mem_cap_obj = nullptr;
-        auto memory_res              = lookup_memory(mem_cap, &mem_cap_obj);
+        cap::CHolder *target_holder  = pcb_res.value()->pcb->cholder;
+        auto memory_res =
+            lookup_memory_in_holder(target_holder, mem_cap, &mem_cap_obj);
         propagate(memory_res);
         cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
         cap::MemoryObject mem_obj(util::nnullforce(mem_cap_obj));
-        auto map_res = pcb_obj.map(mem_obj, vaddr, rwx, growth);
+        auto map_res = pcb_obj.map(mem_obj, offset, vaddr, sz, protflg);
         propagate(map_res);
         return true;
     }
 
+    Result<bool> pcb_unmap(CapIdx pcb_cap, VirAddr vaddr, size_t sz) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto unmap_res = pcb_obj.unmap(vaddr, sz);
+        propagate(unmap_res);
+        return true;
+    }
+
+    Result<void> pcb_query_vaddr(CapIdx pcb_cap, VirAddr vaddr,
+                                 UBuffer &&info_buf, bool expose_mem_cap) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto query_res = pcb_obj.query_vaddr(
+            vaddr, expose_mem_cap ? cap::null : cap::error);
+        propagate(query_res);
+        if (info_buf.len() < sizeof(cap::VMAInfo)) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        memcpy(info_buf.kbuf(), &query_res.value(), sizeof(cap::VMAInfo));
+        auto commit_res = info_buf.commit_to_user();
+        propagate(commit_res);
+        void_return();
+    }
+
+    Result<size_t> pcb_query_vspace(CapIdx pcb_cap, size_t offset,
+                                    UBuffer &&info_buf, size_t max_entries,
+                                    bool expose_mem_cap) {
+        cap::Capability *pcb_cap_obj = nullptr;
+        auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+        propagate(pcb_res);
+        cap::PCBObject pcb_obj(util::nnullforce(pcb_cap_obj));
+        auto query_res =
+            pcb_obj.query_vspace(offset, max_entries, expose_mem_cap);
+        propagate(query_res);
+        if (info_buf.len() < query_res.value().size() * sizeof(cap::VMAInfo)) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+        auto *out = reinterpret_cast<cap::VMAInfo *>(info_buf.kbuf());
+        for (size_t i = 0; i < query_res.value().size(); ++i) {
+            out[i] = query_res.value()[i];
+        }
+        auto commit_res = info_buf.commit_to_user();
+        propagate(commit_res);
+        return query_res.value().size();
+    }
+
     Result<bool> pcb_execve(CapIdx pcb_cap, CapIdx image_cap,
-                            UBuffer &&reserved_buf, size_t reserved_sz,
-                            UBuffer *startup_buf, size_t startup_buf_sz) {
+                            const StartupArguments &startup) {
         cap::Capability *cap = nullptr;
         auto pcb_res         = lookup_pcb(pcb_cap, &cap);
         propagate(pcb_res);
@@ -355,21 +603,11 @@ namespace syscall {
         propagate(target_res);
         auto image_res = lookup_vfile(image_cap);
         propagate(image_res);
-        CapIdx *reserved = nullptr;
-        if (reserved_sz != 0) {
-            reserved = reinterpret_cast<CapIdx *>(reserved_buf.kbuf());
-        }
-        if (reserved_sz != 0 && reserved == nullptr) {
-            unexpect_return(ErrCode::NULLPTR);
-        }
 
         auto exec_res = task::TaskManager::inst().exec_pcb(
-            util::nnullforce(target_res.value()), image_cap, reserved,
-            reserved_sz,
-            startup_buf_sz == 0 || startup_buf == nullptr
-                ? nullptr
-                : startup_buf->kbuf(),
-            startup_buf_sz);
+            util::nnullforce(target_res.value()), image_cap,
+            startup.caps.data(), startup.caps.size(), startup.argv,
+            startup.envp, startup.bsargv);
         propagate(exec_res);
         return true;
     }

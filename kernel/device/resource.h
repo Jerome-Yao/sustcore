@@ -97,13 +97,24 @@ namespace device {
          * @return const PhyArea& MMIO 区域引用.
          */
         [[nodiscard]]
-        const PhyArea &region() const noexcept {
-            return _region;
+        PhyArea region() const noexcept {
+            return PhyArea(_aligned_base + _area.begin.arith(),
+                           _aligned_base + _area.end.arith());
         }
 
         [[nodiscard]]
         bool mapped() const noexcept {
             return _mapped;
+        }
+
+        [[nodiscard]]
+        PhyAddr aligned_base() const noexcept {
+            return _aligned_base;
+        }
+
+        [[nodiscard]]
+        PhyArea area() const noexcept {
+            return _area;
         }
     private:
         /**
@@ -112,9 +123,14 @@ namespace device {
          * @param region 统一设备节点解析出的单个 MMIO 区域.
          */
         explicit MMIOResource(PhyArea region) noexcept
-            : _region(region), _mapped(false) {}
+            : _aligned_base(region.begin.page_align_down()),
+              _area(PhyAddr(region.begin - _aligned_base),
+                    PhyAddr(region.end - _aligned_base)),
+              _mapped(false) {}
 
-        PhyArea _region;
+        PhyAddr _aligned_base;
+
+        PhyArea _area;
         mutable bool _mapped;
 
         friend class MMIOManager;

@@ -43,6 +43,13 @@ namespace task {
         INIT_USER,
     };
 
+    constexpr static VirAddr GENERIC_PROCESS_BASE =
+        VirAddr(static_cast<addr_t>(0x0000000020000000ULL));
+    constexpr static VirAddr GENERIC_INTERPRET_BASE =
+        VirAddr(static_cast<addr_t>(0x0000000010000000ULL));
+    constexpr static VirAddr GENERIC_SUBSYSTEM_BASE =
+        VirAddr(static_cast<addr_t>(0x0000000200000000ULL));
+
     using KThreadEntry = void (*)(void *);
 
     // Make sure that TCB is has standard layout,
@@ -116,8 +123,7 @@ namespace task {
         util::ListHead<TCB> list_head;
 
         // running information
-        constexpr static size_t KSTACK_PAGES =
-            16;  // 64KB kernel stack — ext4 read_directory call chain is deep
+        constexpr static size_t KSTACK_PAGES = 64;  // 256KB(64 pages) for kernel stack
         constexpr static size_t KSTACK_SIZE = KSTACK_PAGES * PAGESIZE;
         void *kstack_bottom;
         char *ksp;
@@ -206,6 +212,9 @@ namespace task {
 
         // initialization information
         VirAddr entrypoint;
+        VirAddr linuxproc_entrypoint;
+        VirAddr linux_subsystem_entry;
+        bool is_linux_process;
         CapIdx pcb_cap;
         CapIdx main_tcb_cap;
 

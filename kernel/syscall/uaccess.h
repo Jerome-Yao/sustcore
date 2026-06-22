@@ -297,6 +297,38 @@ namespace syscall {
         UBuffer _ubuf;
         int _len;
 
+        [[nodiscard]]
+        Result<char> read_user_char(size_t offset) noexcept {
+            TaskMemoryManager *tmm = nullptr;
+            auto *current = schd::Scheduler::inst().current_tcb();
+            if (current != nullptr && current->task != nullptr) {
+                tmm = current->task->tmm.get();
+            } else {
+                tmm = env::inst().tmm();
+            }
+            if (tmm == nullptr) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            VirAddr addr = uaddr() + offset;
+            auto locate_res = tmm->locate(addr);
+            propagate(locate_res);
+            VMA *vma = locate_res.value();
+            if (vma == nullptr || vma->memory == nullptr ||
+                !within(vma->varea, addr))
+            {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+
+            size_t mem_offset = vma->mem_offset + (addr - vma->varea.begin);
+            char ch           = '\0';
+            auto read_res     = vma->memory->read(mem_offset, &ch, 1);
+            propagate(read_res);
+            if (read_res.value() != 1) {
+                unexpect_return(ErrCode::IO_ERROR);
+            }
+            return ch;
+        }
+
     public:
         /**
          * @brief 从用户空间构造字符串代理并立即同步.
@@ -372,9 +404,32 @@ namespace syscall {
          */
         [[nodiscard]]
         Result<void> sync_from_user() noexcept {
-            auto sync_res = _ubuf.sync_from_user();
-            propagate(sync_res);
-            _len = strnlen(kbuf(), maxlen());
+            if (_ubuf.kbuf() == nullptr || maxlen() == 0) {
+                _len = 0;
+                void_return();
+            }
+
+            memset(kbuf(), 0, maxlen());
+            size_t copied = 0;
+            for (; copied + 1 < maxlen(); ++copied) {
+                auto ch_res = read_user_char(copied);
+                propagate(ch_res);
+                kbuf()[copied] = ch_res.value();
+                if (ch_res.value() == '\0') {
+                    _len = static_cast<int>(copied);
+                    void_return();
+                }
+            }
+
+            auto last_ch_res = read_user_char(copied);
+            propagate(last_ch_res);
+            kbuf()[copied] = last_ch_res.value();
+            if (last_ch_res.value() == '\0') {
+                _len = static_cast<int>(copied);
+                void_return();
+            }
+            kbuf()[maxlen() - 1] = '\0';
+            _len = static_cast<int>(strnlen(kbuf(), maxlen()));
             void_return();
         }
 

@@ -58,7 +58,6 @@ concept IMetadataProvider = requires(T a) {
 using inode_t = size_t;
 
 struct DirectoryEntryInfo {
-    bool is_file;
     std::string name;
 };
 
@@ -74,7 +73,7 @@ public:
     virtual ~IMetadata() = default;
 };
 
-enum class INodeType : uint8_t { FILE, DIRECTORY };
+enum class INodeType : uint8_t { FILE, DIRECTORY, SYMLINK };
 
 /**
  * @brief inode接口
@@ -101,6 +100,8 @@ public:
      */
     [[nodiscard]]
     virtual Result<IFile *> as_file();
+    [[nodiscard]]
+    virtual Result<class ISymlink *> as_symlink();
     /**
      * @brief 获得元数据
      *
@@ -190,6 +191,20 @@ public:
     virtual FileCachePolicy file_cache() const {
         return FileCachePolicy::SHARED;
     }
+};
+
+class ISymlink : public IINode {
+public:
+    static constexpr INodeType IDENTIFIER = INodeType::SYMLINK;
+    [[nodiscard]]
+    INodeType type_id() const override {
+        return IDENTIFIER;
+    }
+
+    virtual ~ISymlink() = default;
+
+    [[nodiscard]]
+    virtual Result<std::string> target() = 0;
 };
 
 /**
@@ -294,6 +309,16 @@ public:
     virtual Result<util::owner<IINode *>> get_inode(inode_t inode_id) = 0;
     [[nodiscard]]
     virtual Result<uint16_t> inode_mode(inode_t inode_id) {
+        (void)inode_id;
+        unexpect_return(ErrCode::NOT_SUPPORTED);
+    }
+    [[nodiscard]]
+    virtual Result<bool> is_symlink(inode_t inode_id) {
+        (void)inode_id;
+        return false;
+    }
+    [[nodiscard]]
+    virtual Result<std::string> readlink(inode_t inode_id) {
         (void)inode_id;
         unexpect_return(ErrCode::NOT_SUPPORTED);
     }

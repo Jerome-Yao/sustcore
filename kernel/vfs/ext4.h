@@ -29,7 +29,6 @@ namespace ext4 {
 
     struct Ext4DirEntry {
         inode_t inode_id = 0;
-        bool is_file     = true;
         std::string name {};
     };
 
@@ -213,8 +212,6 @@ namespace ext4 {
                                        std::string_view name,
                                        std::string_view target);
         [[nodiscard]]
-        Result<bool> dir_entry_is_file(inode_t inode_id, uint8_t file_type);
-        [[nodiscard]]
         Result<Ext4ExtentMapping> extent_lookup(inode_t inode_id,
                                                 uint32_t logical);
         [[nodiscard]]
@@ -263,6 +260,10 @@ namespace ext4 {
         Result<inode_t> root() final;
         [[nodiscard]]
         Result<util::owner<IINode *>> get_inode(inode_t inode_id) final;
+        [[nodiscard]]
+        Result<bool> is_symlink(inode_t inode_id) final;
+        [[nodiscard]]
+        Result<std::string> readlink(inode_t inode_id) final;
         [[nodiscard]]
         Result<inode_t> alloc_inode(INodeType type) final;
         [[nodiscard]]

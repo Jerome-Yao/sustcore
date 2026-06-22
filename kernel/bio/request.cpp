@@ -44,8 +44,20 @@ namespace blk {
                 unexpect_return(ErrCode::BUSY);
             }
             req->status = BlockReqStatus::SUBMITTED;
+            loggers::DEVICE::DEBUG(
+                "blk submit: dev=%lu lba=%lu cnt=%lu ring_empty=%d",
+                static_cast<unsigned long>(_devno),
+                static_cast<unsigned long>(req->lba),
+                static_cast<unsigned long>(req->block_count),
+                static_cast<int>(_ring.empty()));
         }
         auto wake_res = wait::locked_wake_all(_wait_wd, _lock);
+        if (wake_res.has_value()) {
+            loggers::DEVICE::DEBUG("blk submit wake: dev=%lu wd=%lu woken=%lu",
+                                    static_cast<unsigned long>(_devno),
+                                    static_cast<unsigned long>(_wait_wd),
+                                    static_cast<unsigned long>(wake_res.value()));
+        }
         propagate(wake_res);
         void_return();
     }
@@ -70,6 +82,11 @@ namespace blk {
         while (true) {
             auto pop_res = try_dequeue();
             if (pop_res.has_value()) {
+                loggers::DEVICE::DEBUG(
+                    "blk dequeue: dev=%lu lba=%lu cnt=%lu",
+                    static_cast<unsigned long>(_devno),
+                    static_cast<unsigned long>(pop_res.value()->lba),
+                    static_cast<unsigned long>(pop_res.value()->block_count));
                 return pop_res.value();
             }
             if (pop_res.error() == ErrCode::FUTURE_CANCLED) {
@@ -78,10 +95,16 @@ namespace blk {
             if (pop_res.error() != ErrCode::ENTRY_NOT_FOUND) {
                 propagate_return(pop_res);
             }
-            auto wait_res = wait::locked_wait_event(
-                _wait_wd, _lock,
-                [this]() noexcept { return _stopped || !_ring.empty(); });
+            loggers::DEVICE::DEBUG("blk wait_and_dequeue sleep: dev=%lu wd=%lu",
+                                    static_cast<unsigned long>(_devno),
+                                    static_cast<unsigned long>(_wait_wd));
+            auto wait_res =
+                locked_wait_event(_wait_wd, _lock, _stopped || !_ring.empty());
             propagate(wait_res);
+            loggers::DEVICE::DEBUG(
+                "blk wait_and_dequeue resumed: dev=%lu wd=%lu",
+                static_cast<unsigned long>(_devno),
+                static_cast<unsigned long>(_wait_wd));
         }
     }
 
@@ -105,6 +128,10 @@ namespace blk {
             req->status = BlockReqStatus::FAILED;
         }
         req->result  = result;
+        loggers::DEVICE::DEBUG("blk complete: dev=%lu lba=%lu ok=%d",
+                                static_cast<unsigned long>(_devno),
+                                static_cast<unsigned long>(req->lba),
+                                static_cast<int>(result.has_value()));
         auto set_res = req->promise.set_value(result);
         propagate(set_res);
         if (req->on_complete) {
