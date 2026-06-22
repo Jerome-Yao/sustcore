@@ -233,6 +233,9 @@ namespace virtio {
             }
 
             auto *req = req_res.value();
+            loggers::DEVICE::INFO("virtio-blk worker got req: lba=%lu cnt=%lu",
+                                  static_cast<unsigned long>(req->lba),
+                                  static_cast<unsigned long>(req->block_count));
             auto mark_res = _queue->mark_processing(util::nnullforce(req));
             propagate(mark_res);
             auto process_res = process_request(*req);

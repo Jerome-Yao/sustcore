@@ -129,5 +129,8 @@ namespace cap {
          */
         explicit TCBObject(util::nonnull<Capability *> cap)
             : CapObj<TCBPayload>(cap) {}
+
+        [[nodiscard]]
+        Result<task::TCB *> require_current() const;
     };
 }  // namespace cap

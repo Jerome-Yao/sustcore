@@ -20,6 +20,17 @@
 #include <cassert>
 
 namespace task {
+    namespace {
+        wait::wd_t g_task_exit_wait_wd = 0;
+    }  // namespace
+
+    wait::wd_t task_exit_wait_wd() noexcept {
+        if (g_task_exit_wait_wd == 0 && wait::WaitReasonManager::initialized()) {
+            g_task_exit_wait_wd = wait::alloc_reason();
+        }
+        return g_task_exit_wait_wd;
+    }
+
     void TCB::SyscallInfo::reset() noexcept {
         syscall_args   = {};
         syscall_number = 0;

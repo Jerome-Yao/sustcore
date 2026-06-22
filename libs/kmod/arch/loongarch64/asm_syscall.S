@@ -38,6 +38,12 @@ sys_pcb_create_thread:
     li.d $a7, SYS_CREATE_THREAD
     do_syscall
 
+    .global sys_tcb_wait
+    .type sys_tcb_wait, @function
+sys_tcb_wait:
+    li.d $a7, SYS_TCB_WAIT
+    do_syscall
+
     .global sys_pcb_fork
     .type sys_pcb_fork, @function
 sys_pcb_fork:

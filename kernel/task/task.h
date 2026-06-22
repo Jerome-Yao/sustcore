@@ -39,6 +39,9 @@ namespace task {
         VirAddr auxv;
     };
 
+    [[nodiscard]]
+    wait::wd_t task_exit_wait_wd() noexcept;
+
     class TaskManager {
     private:
         std::atomic<size_t> __tid_alloc = 1;

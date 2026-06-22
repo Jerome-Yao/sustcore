@@ -235,6 +235,7 @@ namespace syscall {
             case SYS_CREATE_THREAD:       return "SYS_CREATE_THREAD";
             case SYS_YIELD_THREAD:        return "SYS_YIELD_THREAD";
             case SYS_EXECVE:              return "SYS_EXECVE";
+            case SYS_TCB_WAIT:            return "SYS_TCB_WAIT";
             case SYS_PCB_MAP:             return "SYS_PCB_MAP";
             case SYS_PCB_UNMAP:           return "SYS_PCB_UNMAP";
             case SYS_PCB_QUERY_VADDR:     return "SYS_PCB_QUERY_VADDR";
@@ -428,6 +429,21 @@ namespace syscall {
                 ret = result_value_ret("创建线程",
                                        pcb_create_thread(capidx, VirAddr(arg0),
                                                          VirAddr(arg1), arg2));
+                break;
+            }
+            case SYS_TCB_WAIT: {
+                auto caps_res = copy_terminated_values<CapIdx>(
+                    VirAddr(arg0), cap::null);
+                if (!caps_res.has_value()) {
+                    loggers::SYSCALL::ERROR("同步等待PCB列表失败: err=%s",
+                                            to_cstring(caps_res.error()));
+                    ret = RetPack{.processed = true,
+                                  .ret0      = 0,
+                                  .ret1 = static_cast<b64>(caps_res.error())};
+                    break;
+                }
+                ret = result_value_ret("等待进程状态改变",
+                                       tcb_wait(capidx, caps_res.value(), arg1));
                 break;
             }
             case SYS_FORK: {

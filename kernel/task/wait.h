@@ -41,12 +41,11 @@ namespace wait {
     struct promise_base;
 }  // namespace wait
 
-
 namespace wait {
     wd_t alloc_reason();
     Result<void> future_begin_update() noexcept;
-    Result<void> future_wait_current(wd_t wait_wd,
-                                     WaitReadyPredicate ready_predicate) noexcept;
+    Result<void> future_wait_current(
+        wd_t wait_wd, WaitReadyPredicate ready_predicate) noexcept;
     Result<void> check_future_wait_thread(bool require_kernel) noexcept;
 
     enum class FutureState {
@@ -59,7 +58,7 @@ namespace wait {
 
     struct WaitContext {
         FutureState state                      = FutureState::COMPLETE;
-        wd_t wait_wd                          = 0;
+        wd_t wait_wd                           = 0;
         WaitPredicate wait_predicate           = {};
         WaitReadyPredicate ready_predicate     = {};
         std::coroutine_handle<> suspended_leaf = nullptr;
@@ -145,8 +144,8 @@ namespace wait {
         }
 
         template <typename Awaitable>
-            requires(!std::same_as<std::remove_cvref_t<Awaitable>,
-                                   FutureAwaiter>)
+            requires(
+                !std::same_as<std::remove_cvref_t<Awaitable>, FutureAwaiter>)
         auto await_transform(Awaitable &&awaitable);
     };
 
@@ -708,7 +707,7 @@ namespace wait {
         Future &operator=(Future &&other) noexcept {
             if (this != &other) {
                 release();
-                _state = other._state;
+                _state       = other._state;
                 other._state = nullptr;
             }
             return *this;
@@ -777,7 +776,8 @@ namespace wait {
                     wait_context.state           = FutureState::PENDING;
                     wait_context.wait_wd         = future->wait_wd();
                     wait_context.wait_predicate  = {};
-                    wait_context.ready_predicate = [future = future]() noexcept {
+                    wait_context.ready_predicate = [future =
+                                                        future]() noexcept {
                         return future != nullptr && future->readable();
                     };
                     wait_context.suspended_leaf = handle;
@@ -835,7 +835,7 @@ namespace wait {
         Promise &operator=(Promise &&other) noexcept {
             if (this != &other) {
                 release();
-                _state = other._state;
+                _state       = other._state;
                 other._state = nullptr;
             }
             return *this;
@@ -886,7 +886,7 @@ namespace wait {
     template <>
     class Future<void> {
     public:
-        using value_type = void;
+        using value_type       = void;
         using wait_result_type = Result<void>;
 
         Future() noexcept = default;
@@ -916,7 +916,7 @@ namespace wait {
         Future &operator=(Future &&other) noexcept {
             if (this != &other) {
                 release();
-                _state = other._state;
+                _state       = other._state;
                 other._state = nullptr;
             }
             return *this;
@@ -985,7 +985,7 @@ namespace wait {
         Promise &operator=(Promise &&other) noexcept {
             if (this != &other) {
                 release();
-                _state = other._state;
+                _state       = other._state;
                 other._state = nullptr;
             }
             return *this;
@@ -1042,8 +1042,7 @@ namespace wait {
         Result<void> _result{};
 
     public:
-        explicit FutureAwaiter(wd_t wait_wd,
-                               WaitPredicate predicate            = {},
+        explicit FutureAwaiter(wd_t wait_wd, WaitPredicate predicate = {},
                                WaitReadyPredicate ready_predicate = {}) noexcept
             : _wait_wd(wait_wd),
               _predicate(std::move(predicate)),
@@ -1100,7 +1099,8 @@ namespace wait {
     template <typename Awaitable>
         requires(!std::same_as<std::remove_cvref_t<Awaitable>, FutureAwaiter>)
     inline auto promise_base::await_transform(Awaitable &&awaitable) {
-        if constexpr (detail::is_wait_cotask_v<std::remove_cvref_t<Awaitable>> ||
+        if constexpr (detail::is_wait_cotask_v<
+                          std::remove_cvref_t<Awaitable>> ||
                       detail::is_wait_future_v<std::remove_cvref_t<Awaitable>>)
         {
             return std::forward<Awaitable>(awaitable).operator co_await();
@@ -1122,7 +1122,8 @@ namespace wait {
     }
 
     template <typename T>
-    typename detail::future_wait_result_t<T> take_wait_result(Future<T> &future) {
+    typename detail::future_wait_result_t<T> take_wait_result(
+        Future<T> &future) {
         return future.value();
     }
 
@@ -1154,8 +1155,7 @@ namespace wait {
         wd_t alloc_reason();
         // 将当前线程加入等待队列
         Result<void> enqueue(wd_t wd, task::TCB *tcb);
-        Result<void> enqueue(wd_t wd, task::TCB *tcb,
-                             WaitPredicate predicate);
+        Result<void> enqueue(wd_t wd, task::TCB *tcb, WaitPredicate predicate);
         Result<task::TCB *> peek_one(wd_t wd);
         // 从等待队列中弹出一个线程
         Result<task::TCB *> pop_one(wd_t wd);
@@ -1178,24 +1178,7 @@ namespace wait {
     [[deprecated("use co_await wait_current(...) in syscall coroutine paths")]]
     Result<void> deprecated_wait_current(wd_t wd);
     [[deprecated("use co_await wait_current(...) in syscall coroutine paths")]]
-    Result<void> deprecated_wait_current(wd_t wd,
-                                         WaitPredicate predicate);
-    /**
-     * @brief 等待指定事件变为就绪.
-     *
-     * 该接口面向普通线程阻塞场景: 在每次进入等待前以及被唤醒返回后
-     * 都会重新检查 ready_predicate, 直到其返回 true.
-     *
-     * @param wd 等待描述符, 必须非 0.
-     * @param ready_predicate 事件就绪判断函数, 必须非空.
-     * @return Result<void> 成功返回空结果, 失败返回错误码.
-     */
-    Result<void> wait_event(wd_t wd,
-                            WaitReadyPredicate ready_predicate) noexcept;
-    template <GuardedLockLike GL = GuardedLock>
-    Result<void> locked_wait_event(
-        wd_t wd, SpinLocker &lock,
-        WaitReadyPredicate ready_predicate) noexcept;
+    Result<void> deprecated_wait_current(wd_t wd, WaitPredicate predicate);
     Result<task::TCB *> peek_one(wd_t wd);
     Result<size_t> wake_one(wd_t wd);
     Result<size_t> wake_all(wd_t wd);
@@ -1209,7 +1192,8 @@ namespace wait {
     typename detail::future_wait_result_t<T> wait_for(Future<T> &future);
 
     template <typename T>
-    typename detail::future_wait_result_t<T> kthread_wait_for(Future<T> &future);
+    typename detail::future_wait_result_t<T> kthread_wait_for(
+        Future<T> &future);
     Result<bool> current_thread_is_kernel() noexcept;
     template <typename T>
     typename detail::future_wait_result_t<T> blocking_wait_for(
@@ -1222,48 +1206,6 @@ template <typename T>
 using PromiseResult = wait::Promise<Result<T>>;
 
 namespace wait {
-    template <GuardedLockLike GL>
-    inline Result<void> locked_wait_event(
-        wd_t wd, SpinLocker &lock,
-        WaitReadyPredicate ready_predicate) noexcept {
-        if (wd == 0 || !ready_predicate) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        auto &scheduler = schd::Scheduler::inst();
-        auto &waitman   = WaitReasonManager::inst();
-
-        auto *current = scheduler.current_tcb();
-        if (current == nullptr) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        if (current->schd_class == schd::ClassType::IDLE) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        while (true) {
-            {
-                GL guarded(lock);
-                if (ready_predicate()) {
-                    void_return();
-                }
-
-                auto enqueue_res =
-                    waitman.enqueue(wd, current,
-                                    [ready_predicate = ready_predicate](
-                                        task::TCB *tcb [[maybe_unused]]) {
-                                        return ready_predicate();
-                                    });
-                propagate(enqueue_res);
-
-                current->basic_entity
-                    .flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
-            }
-            scheduler.schedule(true);
-        }
-    }
-
     template <GuardedLockLike GL>
     inline Result<size_t> locked_wakeup(wd_t wd, SpinLocker &lock) {
         GL guarded(lock);
@@ -1410,10 +1352,11 @@ namespace wait {
         }
 
         switch (_state->state) {
-            case FutureState::PENDING:   unexpect_return(ErrCode::FUTURE_PENDING);
-            case FutureState::ERROR:     unexpect_return(_state->error);
-            case FutureState::CANCLED:   unexpect_return(ErrCode::FUTURE_CANCLED);
-            case FutureState::CONSUMED:  unexpect_return(ErrCode::FUTURE_CONSUMED);
+            case FutureState::PENDING: unexpect_return(ErrCode::FUTURE_PENDING);
+            case FutureState::ERROR:   unexpect_return(_state->error);
+            case FutureState::CANCLED: unexpect_return(ErrCode::FUTURE_CANCLED);
+            case FutureState::CONSUMED:
+                unexpect_return(ErrCode::FUTURE_CONSUMED);
             case FutureState::COMPLETE: {
                 if (!_state->value.has_value()) {
                     unexpect_return(ErrCode::FUTURE_ERROR);
@@ -1438,10 +1381,11 @@ namespace wait {
         }
 
         switch (_state->state) {
-            case FutureState::PENDING:  unexpect_return(ErrCode::FUTURE_PENDING);
-            case FutureState::ERROR:    unexpect_return(_state->error);
-            case FutureState::CANCLED:  unexpect_return(ErrCode::FUTURE_CANCLED);
-            case FutureState::CONSUMED: unexpect_return(ErrCode::FUTURE_CONSUMED);
+            case FutureState::PENDING: unexpect_return(ErrCode::FUTURE_PENDING);
+            case FutureState::ERROR:   unexpect_return(_state->error);
+            case FutureState::CANCLED: unexpect_return(ErrCode::FUTURE_CANCLED);
+            case FutureState::CONSUMED:
+                unexpect_return(ErrCode::FUTURE_CONSUMED);
             case FutureState::COMPLETE:
                 _state->state = FutureState::CONSUMED;
                 void_return();
@@ -1459,13 +1403,13 @@ namespace wait {
     }
 
     template <typename T>
-    inline typename detail::future_wait_result_t<T> wait_for(Future<T> &future) {
+    inline typename detail::future_wait_result_t<T> wait_for(
+        Future<T> &future) {
         propagate(check_future_wait_thread(false));
         while (!future.readable()) {
             auto wait_res = future_wait_current(
-                future.wait_wd(), [&future]() noexcept {
-                    return future.readable();
-                });
+                future.wait_wd(),
+                [&future]() noexcept { return future.readable(); });
             propagate(wait_res);
         }
         return take_wait_result(future);
@@ -1477,9 +1421,8 @@ namespace wait {
         propagate(check_future_wait_thread(true));
         while (!future.readable()) {
             auto wait_res = future_wait_current(
-                future.wait_wd(), [&future]() noexcept {
-                    return future.readable();
-                });
+                future.wait_wd(),
+                [&future]() noexcept { return future.readable(); });
             propagate(wait_res);
         }
         return take_wait_result(future);
@@ -1496,3 +1439,131 @@ namespace wait {
         return wait_for(future);
     }
 }  // namespace wait
+
+#define __wait_event_init_state()                               \
+    auto &__wait_scheduler = ::schd::Scheduler::inst();         \
+    auto &__wait_waitman   = ::wait::WaitReasonManager::inst(); \
+    auto *__wait_current   = __wait_scheduler.current_tcb()
+
+#define __wait_event_set_invalid(result) \
+    ((result) = std::unexpected(ErrCode::INVALID_PARAM))
+
+#define __wait_event_invalid_context() \
+    (__wait_current == nullptr ||      \
+     __wait_current->schd_class == ::schd::ClassType::IDLE)
+
+#define __wait_event_remove_or_break(result)                            \
+    do {                                                                \
+        auto __wait_remove_res = __wait_waitman.remove(__wait_current); \
+        if (!__wait_remove_res.has_value()) {                           \
+            (result) = std::unexpected(__wait_remove_res.error());      \
+            break;                                                      \
+        }                                                               \
+    } while (false)
+
+#define wait_event(wd, condition)                                         \
+    ({                                                                    \
+        Result<void> __wait_result = std::expected<void, ErrCode>{};      \
+        if ((wd) == 0) {                                                  \
+            __wait_event_set_invalid(__wait_result);                      \
+        } else {                                                          \
+            __wait_event_init_state();                                    \
+            if (__wait_event_invalid_context()) {                         \
+                __wait_event_set_invalid(__wait_result);                  \
+            } else {                                                      \
+                while (true) {                                            \
+                    if (!__wait_result.has_value()) {                     \
+                        break;                                            \
+                    }                                                     \
+                    if (condition) {                                      \
+                        break;                                            \
+                    }                                                     \
+                    auto __wait_enqueue_res =                             \
+                        __wait_waitman.enqueue((wd), __wait_current);     \
+                    if (!__wait_enqueue_res.has_value()) {                \
+                        __wait_result =                                   \
+                            std::unexpected(__wait_enqueue_res.error());   \
+                        break;                                            \
+                    }                                                     \
+                    if (condition) {                                      \
+                        auto __wait_remove_res =                          \
+                            __wait_waitman.remove(__wait_current);        \
+                        if (!__wait_remove_res.has_value()) {             \
+                            __wait_result =                               \
+                                std::unexpected(__wait_remove_res.error()); \
+                        }                                                 \
+                        break;                                            \
+                    }                                                     \
+                    __wait_current->basic_entity                          \
+                        .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>(); \
+                    __wait_scheduler.schedule(true);                      \
+                    auto __wait_remove_res =                              \
+                        __wait_waitman.remove(__wait_current);            \
+                    if (!__wait_remove_res.has_value()) {                 \
+                        __wait_result =                                   \
+                            std::unexpected(__wait_remove_res.error());   \
+                        break;                                            \
+                    }                                                     \
+                }                                                         \
+            }                                                             \
+        }                                                                 \
+        __wait_result;                                                    \
+    })
+
+#define locked_wait_event_with(lock_guard_type, wd, lock, condition)          \
+    ({                                                                        \
+        Result<void> __wait_result = std::expected<void, ErrCode>{};          \
+        if ((wd) == 0) {                                                      \
+            __wait_event_set_invalid(__wait_result);                          \
+        } else {                                                              \
+            __wait_event_init_state();                                        \
+            if (__wait_event_invalid_context()) {                             \
+                __wait_event_set_invalid(__wait_result);                      \
+            } else {                                                          \
+                while (true) {                                                \
+                    if (!__wait_result.has_value()) {                         \
+                        break;                                                \
+                    }                                                         \
+                    {                                                         \
+                        lock_guard_type __wait_guard(lock);                    \
+                        if (condition) {                                      \
+                            break;                                            \
+                        }                                                     \
+                        auto __wait_enqueue_res =                             \
+                            __wait_waitman.enqueue((wd), __wait_current);     \
+                        if (!__wait_enqueue_res.has_value()) {                \
+                            __wait_result =                                   \
+                                std::unexpected(__wait_enqueue_res.error());   \
+                            break;                                            \
+                        }                                                     \
+                        if (condition) {                                      \
+                            auto __wait_remove_res =                          \
+                                __wait_waitman.remove(__wait_current);        \
+                            if (!__wait_remove_res.has_value()) {             \
+                                __wait_result =                               \
+                                    std::unexpected(__wait_remove_res.error()); \
+                            }                                                 \
+                            break;                                            \
+                        }                                                     \
+                    }                                                         \
+                    __wait_current->basic_entity                              \
+                        .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>(); \
+                    __wait_scheduler.schedule(true);                          \
+                    {                                                         \
+                        lock_guard_type __wait_guard(lock);                    \
+                        auto __wait_remove_res =                              \
+                            __wait_waitman.remove(__wait_current);            \
+                        if (!__wait_remove_res.has_value()) {                 \
+                            __wait_result =                                   \
+                                std::unexpected(__wait_remove_res.error());   \
+                            break;                                            \
+                        }                                                     \
+                    }                                                         \
+                }                                                             \
+            }                                                                 \
+        }                                                                     \
+        __wait_result;                                                        \
+    })
+
+#define locked_wait_event(wd, lock, condition) \
+    locked_wait_event_with(GuardedLock, (wd), (lock), (condition))

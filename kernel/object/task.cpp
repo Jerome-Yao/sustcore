@@ -10,6 +10,7 @@
 #include <task/scheduler.h>
 #include <task/task.h>
 #include <task/task_struct.h>
+#include <task/wait.h>
 
 namespace cap {
     namespace {
@@ -63,6 +64,11 @@ namespace cap {
             void_return();
         }
         pcb->exiting = true;
+        auto wake_res = wait::wake_all(task::task_exit_wait_wd());
+        if (!wake_res.has_value()) {
+            loggers::TASK::ERROR("唤醒等待退出进程的线程失败: pid=%lu err=%d",
+                                 pcb->pid, wake_res.error());
+        }
         for (auto &tcb : pcb->threads) {
             if (&tcb != current_tcb &&
                 tcb.basic_entity.state == ThreadState::READY)
@@ -237,5 +243,16 @@ namespace cap {
             unexpect_return(ErrCode::NULLPTR);
         }
         return _obj->pcb;
+    }
+
+    Result<task::TCB *> TCBObject::require_current() const {
+        if (_obj->tcb == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto *current = current_object_tcb();
+        if (current == nullptr || current != _obj->tcb) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        return _obj->tcb;
     }
 }  // namespace cap

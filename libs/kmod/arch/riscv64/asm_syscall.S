@@ -43,6 +43,14 @@ sys_pcb_create_thread:
     ecall
     ret
 
+    .global sys_tcb_wait
+    .type   sys_tcb_wait, @function
+sys_tcb_wait:
+    /* a0 = tcb cap slot, a1 = pcb cap array, a2 = options */
+    li a7, SYS_TCB_WAIT
+    ecall
+    ret
+
     .global sys_pcb_fork
     .type   sys_pcb_fork, @function
 sys_pcb_fork:

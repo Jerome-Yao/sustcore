@@ -34,6 +34,7 @@
 namespace syscall {
     namespace {
         constexpr const char *POSIX_SUBSYSTEM_IMAGE = "/initrd/linux-subsystem.mod";
+        constexpr size_t TCB_WAIT_WNOHANG           = 1;
 
         [[nodiscard]]
         Result<task::TCB *> running_tcb() noexcept {
@@ -113,6 +114,22 @@ namespace syscall {
             unexpect_return(ErrCode::TYPE_NOT_MATCHED);
         }
         return memory;
+    }
+
+    static Result<cap::TCBPayload *> lookup_tcb(CapIdx idx,
+                                                cap::Capability **out_cap) {
+        auto holder_res = current_holder();
+        propagate(holder_res);
+        auto cap_res = holder_res.value()->lookup(idx);
+        propagate(cap_res);
+        if (out_cap != nullptr) {
+            *out_cap = cap_res.value();
+        }
+        auto *tcb = cap_res.value()->payload_as<cap::TCBPayload>();
+        if (tcb == nullptr || tcb->tcb == nullptr) {
+            unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+        }
+        return tcb;
     }
 
     static Result<cap::Capability *> lookup_vfile(CapIdx idx) {
@@ -195,6 +212,24 @@ namespace syscall {
                 unexpect_return(ErrCode::INVALID_PARAM);
             default: unexpect_return(ErrCode::INVALID_PARAM);
         }
+    }
+
+    [[nodiscard]]
+    static Result<CapIdx> find_exited_pcb_cap(const std::vector<CapIdx> &pcbs) {
+        if (pcbs.empty()) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        for (auto pcb_cap : pcbs) {
+            cap::Capability *pcb_cap_obj = nullptr;
+            auto pcb_res                 = lookup_pcb(pcb_cap, &pcb_cap_obj);
+            if (!pcb_res.has_value()) {
+                continue;
+            }
+            if (pcb_res.value()->pcb->exiting) {
+                return pcb_cap;
+            }
+        }
+        return cap::null;
     }
 
     Result<CapIdx> pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
@@ -373,6 +408,35 @@ namespace syscall {
             entry, stack_addr, stack_size);
         propagate(thread_res);
         return thread_res.value();
+    }
+
+    Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
+                            size_t options) {
+        if (options != 0 && options != TCB_WAIT_WNOHANG) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        cap::Capability *tcb_cap_obj = nullptr;
+        auto tcb_res                 = lookup_tcb(tcb_cap, &tcb_cap_obj);
+        propagate(tcb_res);
+        cap::TCBObject tcb_obj(util::nnullforce(tcb_cap_obj));
+        auto current_tcb_res = tcb_obj.require_current();
+        propagate(current_tcb_res);
+
+        auto exited_res = find_exited_pcb_cap(pcbs);
+        propagate(exited_res);
+        if (exited_res.value() != cap::null ||
+            options == TCB_WAIT_WNOHANG)
+        {
+            return exited_res.value();
+        }
+
+        auto wait_res = wait_event(task::task_exit_wait_wd(), ({
+            auto __exited_res = find_exited_pcb_cap(pcbs);
+            __exited_res.has_value() && __exited_res.value() != cap::null;
+        }));
+        propagate(wait_res);
+        return find_exited_pcb_cap(pcbs);
     }
 
     Result<size_t> pcb_fork(CapIdx pcb_cap, UBuffer &&child_cap_buf) {

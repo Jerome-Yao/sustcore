@@ -47,6 +47,9 @@ namespace syscall {
     [[nodiscard]]
     Result<CapIdx> pcb_create_thread(CapIdx pcb_cap, VirAddr entry,
                                      VirAddr stack_addr, size_t stack_size);
+    [[nodiscard]]
+    Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
+                            size_t options);
 
     /**
      * @brief fork 当前进程, 子 PCB capability 输出缓冲区已由 dispatcher 预处理.
