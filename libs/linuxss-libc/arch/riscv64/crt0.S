@@ -73,7 +73,11 @@ linux_subsystem_entry:
     auipc gp, %pcrel_hi(__global_pointer$)
     addi gp, gp, %pcrel_lo(3b)
     .option pop
+    mv t3, sp
+    addi sp, sp, -16
+    sd t3, 0(sp)
     call linux_dispatch
+    addi sp, sp, 16
 
 .Ldispatch_resume:
     ld ra, 0(sp)

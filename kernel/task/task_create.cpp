@@ -1039,6 +1039,9 @@ namespace task {
         child_pcb->tmm          = child_tmm;
         child_pcb->cholder      = child_holder;
         child_pcb->entrypoint   = parent_pcb->entrypoint;
+        child_pcb->linuxproc_entrypoint  = parent_pcb->linuxproc_entrypoint;
+        child_pcb->linux_subsystem_entry = parent_pcb->linux_subsystem_entry;
+        child_pcb->is_linux_process      = parent_pcb->is_linux_process;
         child_pcb->pcb_cap      = ret_slot;
         child_pcb->main_tcb_cap = parent_pcb->main_tcb_cap;
 

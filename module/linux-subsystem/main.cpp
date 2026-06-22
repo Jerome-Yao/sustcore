@@ -26,7 +26,8 @@
 extern "C" bool g_linux_initialized = false;
 
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
-                                 size_t a4, size_t a5, size_t a6, size_t a7);
+                                 size_t a4, size_t a5, size_t a6, size_t a7,
+                                 addr_t dispatch_frame_sp);
 
 #define INVALID_VALUE 0xFFFF'FFFF'FFFF'FFFF
 
@@ -357,7 +358,8 @@ size_t linux_sys_munmap(void *addr, size_t length) {
 }
 
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
-                                 size_t a4, size_t a5, size_t a6, size_t a7) {
+                                 size_t a4, size_t a5, size_t a6, size_t a7,
+                                 addr_t dispatch_frame_sp) {
     switch (a7) {
         case __NR_write:
             return linux_sys_write(a0, reinterpret_cast<const void *>(a1), a2);
@@ -371,8 +373,11 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             return linux_sys_munmap(reinterpret_cast<void *>(a0), a1);
         case __NR_clone:
             return linux_sys_clone(a0, a1, reinterpret_cast<int *>(a2),
-                                   reinterpret_cast<int *>(a3), a4);
-        case __NR_brk:   return linux_sys_brk(a0);
+                                   reinterpret_cast<int *>(a3), a4,
+                                   dispatch_frame_sp);
+        case __NR_brk: {
+            return linux_sys_brk(a0);
+        }
         case __NR_uname: return linux_sys_uname(reinterpret_cast<void *>(a0));
         case __NR_faccessat:
             // TODO: 实现 __NR_faccessat 系统调用，目前先返回 -ENOENT;
@@ -383,6 +388,11 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_set_robust_list:
             // 未实现
             return -ENOSYS;
+        case __NR_wait4:
+            return linux_sys_wait4(static_cast<int>(a0),
+                                   reinterpret_cast<int *>(a1),
+                                   static_cast<int>(a2),
+                                   reinterpret_cast<void *>(a3));
         case __NR_exit: linux_sys_exit(a0); return 0;
         default:
             printf("linux-subsystem: unsupported syscall %s (%d)\n",

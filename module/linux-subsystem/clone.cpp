@@ -13,6 +13,8 @@
 #include <prog.h>
 #include <std/stdio.h>
 #include <sus/types.h>
+#include <syscall.h>
+#include <sys/wait.h>
 #include <thread.h>
 
 #include <cstddef>
@@ -25,32 +27,42 @@ namespace {
         const char *name;
     };
 
-    constexpr size_t CSIGNAL             = 0x000000ff;
-    constexpr size_t CLONE_VM            = 0x00000100;
-    constexpr size_t CLONE_FS            = 0x00000200;
-    constexpr size_t CLONE_FILES         = 0x00000400;
-    constexpr size_t CLONE_SIGHAND       = 0x00000800;
-    constexpr size_t CLONE_PIDFD         = 0x00001000;
-    constexpr size_t CLONE_PTRACE        = 0x00002000;
-    constexpr size_t CLONE_VFORK         = 0x00004000;
-    constexpr size_t CLONE_PARENT        = 0x00008000;
-    constexpr size_t CLONE_THREAD        = 0x00010000;
-    constexpr size_t CLONE_NEWNS         = 0x00020000;
-    constexpr size_t CLONE_SYSVSEM       = 0x00040000;
-    constexpr size_t CLONE_SETTLS        = 0x00080000;
-    constexpr size_t CLONE_PARENT_SETTID = 0x00100000;
+    struct LastChildState {
+        size_t pid   = 0;
+        CapIdx pcb_cap = cap::null;
+        bool valid   = false;
+    };
+
+    constexpr size_t CSIGNAL              = 0x000000ff;
+    constexpr size_t CLONE_VM             = 0x00000100;
+    constexpr size_t CLONE_FS             = 0x00000200;
+    constexpr size_t CLONE_FILES          = 0x00000400;
+    constexpr size_t CLONE_SIGHAND        = 0x00000800;
+    constexpr size_t CLONE_PIDFD          = 0x00001000;
+    constexpr size_t CLONE_PTRACE         = 0x00002000;
+    constexpr size_t CLONE_VFORK          = 0x00004000;
+    constexpr size_t CLONE_PARENT         = 0x00008000;
+    constexpr size_t CLONE_THREAD         = 0x00010000;
+    constexpr size_t CLONE_NEWNS          = 0x00020000;
+    constexpr size_t CLONE_SYSVSEM        = 0x00040000;
+    constexpr size_t CLONE_SETTLS         = 0x00080000;
+    constexpr size_t CLONE_PARENT_SETTID  = 0x00100000;
     constexpr size_t CLONE_CHILD_CLEARTID = 0x00200000;
-    constexpr size_t CLONE_DETACHED      = 0x00400000;
-    constexpr size_t CLONE_UNTRACED      = 0x00800000;
-    constexpr size_t CLONE_CHILD_SETTID  = 0x01000000;
-    constexpr size_t CLONE_NEWCGROUP     = 0x02000000;
-    constexpr size_t CLONE_NEWUTS        = 0x04000000;
-    constexpr size_t CLONE_NEWIPC        = 0x08000000;
-    constexpr size_t CLONE_NEWUSER       = 0x10000000;
-    constexpr size_t CLONE_NEWPID        = 0x20000000;
-    constexpr size_t CLONE_NEWNET        = 0x40000000;
-    constexpr size_t CLONE_IO            = 0x80000000;
-    constexpr size_t CLONE_NEWTIME       = 0x00000080;
+    constexpr size_t CLONE_DETACHED       = 0x00400000;
+    constexpr size_t CLONE_UNTRACED       = 0x00800000;
+    constexpr size_t CLONE_CHILD_SETTID   = 0x01000000;
+    constexpr size_t CLONE_NEWCGROUP      = 0x02000000;
+    constexpr size_t CLONE_NEWUTS         = 0x04000000;
+    constexpr size_t CLONE_NEWIPC         = 0x08000000;
+    constexpr size_t CLONE_NEWUSER        = 0x10000000;
+    constexpr size_t CLONE_NEWPID         = 0x20000000;
+    constexpr size_t CLONE_NEWNET         = 0x40000000;
+    constexpr size_t CLONE_IO             = 0x80000000;
+    constexpr size_t CLONE_NEWTIME        = 0x00000080;
+    constexpr int WAIT4_WNOHANG           = 1;
+    constexpr int WAIT4_ANY_CHILD         = -1;
+
+    LastChildState g_last_child{};
 
     constexpr CloneFlagName CLONE_FLAG_NAMES[] = {
         {.value = CLONE_NEWTIME, .name = "CLONE_NEWTIME"},
@@ -123,16 +135,55 @@ namespace {
         constexpr size_t CLONE_THREAD_FLAG = 0x00010000;
         return (flags & CLONE_VM_FLAG) != 0 && (flags & CLONE_THREAD_FLAG) != 0;
     }
+
+    void clear_last_child() noexcept {
+        g_last_child = {};
+    }
 }  // namespace
 
-CapIdx clone_process(size_t flags, addr_t newsp, int *parent_tid,
-                     int *child_tid, addr_t tls) {
+size_t clone_process(size_t flags, addr_t newsp, int *parent_tid,
+                     int *child_tid, addr_t tls,
+                     addr_t dispatch_frame_sp) {
     printf(
-        "linux-subsystem: clone_process placeholder flags=0x%016lx newsp=%p "
-        "parent_tid=%p child_tid=%p tls=%p\n",
+        "linux-subsystem: clone_process flags=0x%016lx newsp=%p "
+        "parent_tid=%p child_tid=%p tls=%p dispatch_frame=%p\n",
         static_cast<unsigned long>(flags), reinterpret_cast<void *>(newsp),
-        parent_tid, child_tid, reinterpret_cast<void *>(tls));
-    return cap::error;
+        parent_tid, child_tid, reinterpret_cast<void *>(tls),
+        reinterpret_cast<void *>(dispatch_frame_sp));
+
+    if (newsp != 0) {
+        printf("linux-subsystem: clone_process 忽略 newsp=%p\n",
+               reinterpret_cast<void *>(newsp));
+    }
+    if (parent_tid != nullptr || child_tid != nullptr || tls != 0) {
+        printf(
+            "linux-subsystem: clone_process 忽略 父子 tid 与 tls\n");
+    }
+
+    CapIdx child_pcb_cap = cap::null;
+    size_t pid           = sys_pcb_fork(__prog_pcb_cap, &child_pcb_cap);
+    if (pid == 0 && child_pcb_cap != cap::null && child_pcb_cap != cap::error) {
+        printf("linux-subsystem: 子进程返回\n");
+        __prog_pcb_cap = child_pcb_cap;
+        clear_last_child();
+        if (newsp != 0) {
+            // TODO: 当前仅做 stack pivot，不复制旧调用链依赖的栈内容。
+            linux_clone_fork_return_trampoline(newsp, dispatch_frame_sp);
+        }
+    } else {
+        printf("linux-subsystem: 父进程返回\n");
+        if (pid > 0 && child_pcb_cap != cap::null && child_pcb_cap != cap::error) {
+            g_last_child = LastChildState{
+                .pid     = pid,
+                .pcb_cap = child_pcb_cap,
+                .valid   = true,
+            };
+            printf("linux-subsystem: 记录最近子进程 pid=%lu pcb_cap=%p\n",
+                   static_cast<unsigned long>(g_last_child.pid),
+                   reinterpret_cast<void *>(g_last_child.pcb_cap));
+        }
+    }
+    return pid;
 }
 
 CapIdx clone_thread(size_t flags, addr_t newsp, int *parent_tid, int *child_tid,
@@ -146,22 +197,85 @@ CapIdx clone_thread(size_t flags, addr_t newsp, int *parent_tid, int *child_tid,
 }
 
 size_t linux_sys_clone(size_t flags, addr_t newsp, int *parent_tid,
-                       int *child_tid, addr_t tls) {
+                       int *child_tid, addr_t tls,
+                       addr_t dispatch_frame_sp) {
     auto flags_str = clone_flags_to_string(flags);
     size_t csignal = flags & CSIGNAL;
     printf(
         "linux-subsystem: clone flags=0x%016lx (%s) newsp=%p parent_tid=%p "
-        "child_tid=%p tls=%p CSIGNAL=0x%02lx\n",
+        "child_tid=%p tls=%p dispatch_frame=%p CSIGNAL=0x%02lx\n",
         static_cast<unsigned long>(flags), flags_str.c_str(),
         reinterpret_cast<void *>(newsp), parent_tid, child_tid,
-        reinterpret_cast<void *>(tls), static_cast<unsigned long>(csignal));
+        reinterpret_cast<void *>(tls),
+        reinterpret_cast<void *>(dispatch_frame_sp),
+        static_cast<unsigned long>(csignal));
 
     if (thread_like_clone(flags)) {
         printf("linux-subsystem: clone dispatch => clone_thread\n");
+        printf("linux-subsystem: TODO thread-like clone is not implemented\n");
+        linux_sys_exit(-1);
     } else {
         printf("linux-subsystem: clone dispatch => clone_process\n");
+        if (newsp != 0) {
+            printf(
+                "linux-subsystem: clone->fork forwarding will return via "
+                "helper with newsp=%p dispatch_frame=%p\n",
+                reinterpret_cast<void *>(newsp),
+                reinterpret_cast<void *>(dispatch_frame_sp));
+        }
+        return clone_process(flags, newsp, parent_tid, child_tid, tls,
+                             dispatch_frame_sp);
+    }
+    return static_cast<size_t>(-ENOSYS);
+}
+
+size_t linux_sys_wait4(int pid, int *status, int options, void *rusage) {
+    printf(
+        "linux-subsystem: wait4 pid=%d status=%p options=0x%x rusage=%p\n",
+        pid, status, options, rusage);
+
+    if (rusage != nullptr) {
+        printf("linux-subsystem: wait4 暂不支持 rusage\n");
+        return static_cast<size_t>(-ENOSYS);
     }
 
-    linux_sys_exit(-1);
-    return static_cast<size_t>(-ENOSYS);
+    if (!g_last_child.valid) {
+        printf("linux-subsystem: wait4 没有可等待的子进程\n");
+        return static_cast<size_t>(-ECHILD);
+    }
+
+    if (pid != WAIT4_ANY_CHILD &&
+        static_cast<size_t>(pid) != g_last_child.pid)
+    {
+        printf("linux-subsystem: wait4 pid=%d 不匹配最近子进程 pid=%lu\n",
+               pid, static_cast<unsigned long>(g_last_child.pid));
+        return static_cast<size_t>(-ECHILD);
+    }
+
+    if (options != 0 && options != WAIT4_WNOHANG) {
+        printf("linux-subsystem: wait4 暂不支持 options=0x%x\n", options);
+        return static_cast<size_t>(-EINVAL);
+    }
+
+    CapIdx wait_caps[] = {g_last_child.pcb_cap, cap::null};
+    int *status_ptr    = status;
+    size_t wait_options = options == WAIT4_WNOHANG
+                              ? static_cast<size_t>(WAIT4_WNOHANG)
+                              : 0;
+    CapIdx waited_cap =
+        sys_tcb_wait(__prog_main_tcb_cap, wait_caps, status_ptr, wait_options);
+    if (waited_cap == cap::null) {
+        printf("linux-subsystem: wait4 WNOHANG 未等到子进程退出\n");
+        return 0;
+    }
+    if (waited_cap == cap::error) {
+        printf("linux-subsystem: wait4 syscall 失败\n");
+        return static_cast<size_t>(-ECHILD);
+    }
+
+    const size_t child_pid = g_last_child.pid;
+    printf("linux-subsystem: wait4 等到子进程 pid=%lu 退出\n",
+           static_cast<unsigned long>(child_pid));
+    clear_last_child();
+    return child_pid;
 }

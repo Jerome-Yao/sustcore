@@ -556,7 +556,7 @@ namespace exception {
             switch (cause) {
                 case FaultCause::NO_PRESENT: {
                     // 如果是内核地址, 则尝试复制主内核页表的映射
-                    if (is_kernel_vaddr(fault_addr)) {
+                    if (is_kernel_vaddr(fault_addr) && fault_addr.nonnull()) {
                         auto kernel_pgd = e.main_kernel_pgd();
                         if (!kernel_pgd.nonnull()) {
                             loggers::EXCEPTION::ERROR(

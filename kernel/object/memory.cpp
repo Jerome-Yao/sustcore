@@ -321,7 +321,7 @@ namespace cap {
         page.refcount     = 1;
         old_refcount--;
         GFP::put_page(old_paddr, 1);
-        loggers::PAGING::INFO(
+        loggers::PAGING::DEBUG(
             "MemoryPayload::fork: offvpn=%lu old=%p new=%p shared_ref=%lu",
             offvpn, old_paddr.addr(), new_paddr.addr(), old_refcount);
         void_return();

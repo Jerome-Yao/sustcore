@@ -44,11 +44,11 @@ namespace task {
     };
 
     constexpr static VirAddr GENERIC_PROCESS_BASE =
-        VirAddr(static_cast<addr_t>(0x000400000000ULL));
+        VirAddr(static_cast<addr_t>(0x0000000020000000ULL));
     constexpr static VirAddr GENERIC_INTERPRET_BASE =
-        VirAddr(static_cast<addr_t>(0x000080000000ULL));
+        VirAddr(static_cast<addr_t>(0x0000000010000000ULL));
     constexpr static VirAddr GENERIC_SUBSYSTEM_BASE =
-        VirAddr(static_cast<addr_t>(0x000100000000ULL));
+        VirAddr(static_cast<addr_t>(0x0000000200000000ULL));
 
     using KThreadEntry = void (*)(void *);
 

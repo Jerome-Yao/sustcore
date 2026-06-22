@@ -33,4 +33,5 @@ extern "C" void linux_main(const void *stack_sp, size_t argc, const char *argv[]
                            const char *envp[], const Elf64_auxv_t *auxv,
                            size_t bsargc, const bsheader *bsargv[]);
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
-                                 size_t a4, size_t a5, size_t a6, size_t a7);
+                                 size_t a4, size_t a5, size_t a6, size_t a7,
+                                 addr_t dispatch_frame_sp);

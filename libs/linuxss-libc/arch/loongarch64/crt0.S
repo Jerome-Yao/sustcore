@@ -50,7 +50,11 @@ linux_subsystem_entry:
     st.d $s7, $sp, 88
     st.d $s8, $sp, 96
 
+    move $t3, $sp
+    addi.d $sp, $sp, -16
+    st.d $t3, $sp, 0
     bl linux_dispatch
+    addi.d $sp, $sp, 16
 
 .Ldispatch_resume:
 

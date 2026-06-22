@@ -27,5 +27,9 @@ size_t linux_sys_brk(size_t newbrk);
 [[noreturn]]
 void linux_sys_exit(int exitcode);
 size_t linux_sys_uname(void *buf);
+size_t linux_sys_wait4(int pid, int *status, int options, void *rusage);
 size_t linux_sys_clone(size_t flags, addr_t newsp, int *parent_tid,
-                       int *child_tid, addr_t tls);
+                       int *child_tid, addr_t tls,
+                       addr_t dispatch_frame_sp);
+extern "C" [[noreturn]] void linux_clone_fork_return_trampoline(
+    addr_t newsp, addr_t dispatch_frame_sp);

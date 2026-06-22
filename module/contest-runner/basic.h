@@ -5,7 +5,5 @@ namespace basic {
         "getpid", "getppid", "gettimeofday", "mkdir_", "mmap",   "mount",
         "munmap", "openat",  "open",         "pipe",   "read",   "sleep",
         "times",  "umount",  "uname",        "unlink", "wait",   "waitpid",
-        "write",  "yield",
-        nullptr
-    };
+        "write",  "yield",   nullptr};
 }

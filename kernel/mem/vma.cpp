@@ -584,7 +584,7 @@ bool TaskMemoryManager::on_wp(VirAddr fault_addr) {
                             PageMan::is_global(*qres.pte),
                             PageMan::is_present(*qres.pte)));
     PageMan::flush_tlb();
-    loggers::PAGING::INFO("TM::on_wp: resolved cow addr=%p page=%p",
+    loggers::PAGING::DEBUG("TM::on_wp: resolved cow addr=%p page=%p",
                           fault_addr.addr(), aligned_vaddr.addr());
     return true;
 }
