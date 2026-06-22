@@ -30,6 +30,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <sys/wait.h>
 
 namespace syscall {
     namespace {
@@ -43,6 +44,27 @@ namespace syscall {
                 unexpect_return(ErrCode::INVALID_PARAM);
             }
             return current;
+        }
+
+        [[nodiscard]]
+        int encode_linux_wait_status(int exit_code) noexcept {
+            return __W_EXITCODE(exit_code & 0xff, 0);
+        }
+
+        Result<void> write_wait_status(UBuffer *status_buf,
+                                       cap::PCBPayload *pcb_payload) {
+            if (status_buf == nullptr) {
+                void_return();
+            }
+            if (pcb_payload == nullptr || pcb_payload->pcb == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+
+            int status = encode_linux_wait_status(pcb_payload->pcb->exit_code);
+            memcpy(status_buf->kbuf(), &status, sizeof(status));
+            auto commit_res = status_buf->commit_to_user();
+            propagate(commit_res);
+            void_return();
         }
     }  // namespace
 
@@ -385,7 +407,7 @@ namespace syscall {
             child_pcb_cap_res.value()->perm());
         propagate(ret_insert_res);
 
-        loggers::SYSCALL::INFO("创建POSIX进程成功: image_cap=%p, pid=%d",
+        loggers::SYSCALL::DEBUG("创建POSIX进程成功: image_cap=%p, pid=%d",
                                image_cap, pcb->pid);
         return ret_insert_res.value();
     }
@@ -411,7 +433,7 @@ namespace syscall {
     }
 
     Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
-                            size_t options) {
+                            UBuffer *status_buf, size_t options) {
         if (options != 0 && options != TCB_WAIT_WNOHANG) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
@@ -428,6 +450,13 @@ namespace syscall {
         if (exited_res.value() != cap::null ||
             options == TCB_WAIT_WNOHANG)
         {
+            if (exited_res.value() != cap::null) {
+                auto pcb_res = lookup_pcb(exited_res.value(), nullptr);
+                propagate(pcb_res);
+                auto status_res =
+                    write_wait_status(status_buf, pcb_res.value());
+                propagate(status_res);
+            }
             return exited_res.value();
         }
 
@@ -436,7 +465,15 @@ namespace syscall {
             __exited_res.has_value() && __exited_res.value() != cap::null;
         }));
         propagate(wait_res);
-        return find_exited_pcb_cap(pcbs);
+        auto final_res = find_exited_pcb_cap(pcbs);
+        propagate(final_res);
+        if (final_res.value() != cap::null) {
+            auto pcb_res = lookup_pcb(final_res.value(), nullptr);
+            propagate(pcb_res);
+            auto status_res = write_wait_status(status_buf, pcb_res.value());
+            propagate(status_res);
+        }
+        return final_res.value();
     }
 
     Result<size_t> pcb_fork(CapIdx pcb_cap, UBuffer &&child_cap_buf) {

@@ -233,7 +233,7 @@ namespace virtio {
             }
 
             auto *req = req_res.value();
-            loggers::DEVICE::INFO("virtio-blk worker got req: lba=%lu cnt=%lu",
+            loggers::DEVICE::DEBUG("virtio-blk worker got req: lba=%lu cnt=%lu",
                                   static_cast<unsigned long>(req->lba),
                                   static_cast<unsigned long>(req->block_count));
             auto mark_res = _queue->mark_processing(util::nnullforce(req));
@@ -446,7 +446,7 @@ namespace virtio {
 
         const size_t window_offset = DEBUG_DUMP_OFFSET - first_block * _block_size;
         const u8 *window           = blocks.data() + window_offset;
-        loggers::DEVICE::INFO(
+        loggers::DEVICE::DEBUG(
             "virtio-blk 调试窗口: node=%s image_offset=[0x%llx,0x%llx)",
             name(), static_cast<unsigned long long>(DEBUG_DUMP_OFFSET),
             static_cast<unsigned long long>(DEBUG_DUMP_OFFSET + DEBUG_DUMP_SIZE));
@@ -475,7 +475,7 @@ namespace virtio {
             line[static_cast<size_t>(pos)] = '|';
             ++pos;
             line[static_cast<size_t>(pos)]   = '\0';
-            loggers::DEVICE::INFO("%s", line.data());
+            loggers::DEVICE::DEBUG("%s", line.data());
         }
         void_return();
     }

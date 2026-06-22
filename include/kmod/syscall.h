@@ -76,7 +76,8 @@ CapIdx sys_create_linux_process(CapIdx image_cap, size_t sched_class,
 CapIdx sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
                              void *stack_addr, size_t stack_size);
 CapIdx sys_create_thread(void (*entry)(), void *stack_addr, size_t stack_size);
-CapIdx sys_tcb_wait(CapIdx tcb_cap, CapIdx pcbs_idx[], size_t options);
+CapIdx sys_tcb_wait(CapIdx tcb_cap, CapIdx pcbs_idx[], int *status,
+                    size_t options);
 size_t sys_pcb_fork(CapIdx pcb_cap, CapIdx *child_pcb_cap);
 size_t fork(CapIdx *child_pcb_cap);
 bool sys_pcb_execve(CapIdx pcb_cap, CapIdx image_cap, CapIdx rsvdlst[],

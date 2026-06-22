@@ -44,7 +44,7 @@ namespace blk {
                 unexpect_return(ErrCode::BUSY);
             }
             req->status = BlockReqStatus::SUBMITTED;
-            loggers::SUSTCORE::INFO(
+            loggers::DEVICE::DEBUG(
                 "blk submit: dev=%lu lba=%lu cnt=%lu ring_empty=%d",
                 static_cast<unsigned long>(_devno),
                 static_cast<unsigned long>(req->lba),
@@ -53,7 +53,7 @@ namespace blk {
         }
         auto wake_res = wait::locked_wake_all(_wait_wd, _lock);
         if (wake_res.has_value()) {
-            loggers::SUSTCORE::INFO("blk submit wake: dev=%lu wd=%lu woken=%lu",
+            loggers::DEVICE::DEBUG("blk submit wake: dev=%lu wd=%lu woken=%lu",
                                     static_cast<unsigned long>(_devno),
                                     static_cast<unsigned long>(_wait_wd),
                                     static_cast<unsigned long>(wake_res.value()));
@@ -82,7 +82,7 @@ namespace blk {
         while (true) {
             auto pop_res = try_dequeue();
             if (pop_res.has_value()) {
-                loggers::SUSTCORE::INFO(
+                loggers::DEVICE::DEBUG(
                     "blk dequeue: dev=%lu lba=%lu cnt=%lu",
                     static_cast<unsigned long>(_devno),
                     static_cast<unsigned long>(pop_res.value()->lba),
@@ -95,13 +95,13 @@ namespace blk {
             if (pop_res.error() != ErrCode::ENTRY_NOT_FOUND) {
                 propagate_return(pop_res);
             }
-            loggers::SUSTCORE::INFO("blk wait_and_dequeue sleep: dev=%lu wd=%lu",
+            loggers::DEVICE::DEBUG("blk wait_and_dequeue sleep: dev=%lu wd=%lu",
                                     static_cast<unsigned long>(_devno),
                                     static_cast<unsigned long>(_wait_wd));
             auto wait_res =
                 locked_wait_event(_wait_wd, _lock, _stopped || !_ring.empty());
             propagate(wait_res);
-            loggers::SUSTCORE::INFO(
+            loggers::DEVICE::DEBUG(
                 "blk wait_and_dequeue resumed: dev=%lu wd=%lu",
                 static_cast<unsigned long>(_devno),
                 static_cast<unsigned long>(_wait_wd));
@@ -128,7 +128,7 @@ namespace blk {
             req->status = BlockReqStatus::FAILED;
         }
         req->result  = result;
-        loggers::SUSTCORE::INFO("blk complete: dev=%lu lba=%lu ok=%d",
+        loggers::DEVICE::DEBUG("blk complete: dev=%lu lba=%lu ok=%d",
                                 static_cast<unsigned long>(_devno),
                                 static_cast<unsigned long>(req->lba),
                                 static_cast<int>(result.has_value()));

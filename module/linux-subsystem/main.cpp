@@ -11,13 +11,13 @@
 
 #include <elf.h>
 #include <errno.h>
+#include <prm.h>
+#include <prog.h>
 #include <std/stdio.h>
 #include <sus/types.h>
 #include <sustcore/bootstrap.h>
 #include <sustcore/syscall_str.h>
-#include <prm.h>
 #include <syscall.h>
-#include "prog.h"
 
 #include <cstddef>
 #include <cstring>
@@ -32,16 +32,16 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
 
 namespace {
     constexpr size_t LINUX_MMAP_QUERY_BATCH = 64;
-    constexpr size_t PROT_READ             = 0x1;
-    constexpr size_t PROT_WRITE            = 0x2;
-    constexpr size_t PROT_EXEC             = 0x4;
-    constexpr size_t VMA_PROT_R            = 0x1;
-    constexpr size_t VMA_PROT_W            = 0x2;
-    constexpr size_t VMA_PROT_X            = 0x4;
-    constexpr size_t MAP_PRIVATE           = 0x02;
-    constexpr size_t MAP_FIXED             = 0x10;
-    constexpr size_t MAP_ANONYMOUS         = 0x20;
-    constexpr uint64_t MEMORY_GROWTH_FIXED = 0;
+    constexpr size_t PROT_READ              = 0x1;
+    constexpr size_t PROT_WRITE             = 0x2;
+    constexpr size_t PROT_EXEC              = 0x4;
+    constexpr size_t VMA_PROT_R             = 0x1;
+    constexpr size_t VMA_PROT_W             = 0x2;
+    constexpr size_t VMA_PROT_X             = 0x4;
+    constexpr size_t MAP_PRIVATE            = 0x02;
+    constexpr size_t MAP_FIXED              = 0x10;
+    constexpr size_t MAP_ANONYMOUS          = 0x20;
+    constexpr uint64_t MEMORY_GROWTH_FIXED  = 0;
 
     struct linux_iovec {
         const void *iov_base;
@@ -74,9 +74,8 @@ namespace {
         size_t offset = 0;
         size_t cursor = page_align_up_user(__linuxss_ssheap_base + PAGESIZE);
         while (true) {
-            size_t count =
-                sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
-                                     LINUX_MMAP_QUERY_BATCH);
+            size_t count = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                                LINUX_MMAP_QUERY_BATCH);
             if (count == 0 || count == static_cast<size_t>(-1)) {
                 return cursor;
             }
@@ -194,9 +193,10 @@ void dump_bsargv(size_t bsargc, const bsheader *const *bsargv) {
             case boot::TYPE_CAPEXP: {
                 BootstrapCapExplainView cap_view{};
                 if (!bootstrap_parse_cap_explain(view, cap_view)) {
-                    printf("bsargv[%u] = { type=TYPE_CAPEXP, size=%u, "
-                           "parse_error=true }\n",
-                           static_cast<unsigned>(i), record->size);
+                    printf(
+                        "bsargv[%u] = { type=TYPE_CAPEXP, size=%u, "
+                        "parse_error=true }\n",
+                        static_cast<unsigned>(i), record->size);
                     continue;
                 }
                 printf(
@@ -210,9 +210,10 @@ void dump_bsargv(size_t bsargc, const bsheader *const *bsargv) {
             case boot::TYPE_VADDREXP: {
                 BootstrapVaddrExplainView vaddr_view{};
                 if (!bootstrap_parse_vaddr_explain(view, vaddr_view)) {
-                    printf("bsargv[%u] = { type=TYPE_VADDREXP, size=%u, "
-                           "parse_error=true }\n",
-                           static_cast<unsigned>(i), record->size);
+                    printf(
+                        "bsargv[%u] = { type=TYPE_VADDREXP, size=%u, "
+                        "parse_error=true }\n",
+                        static_cast<unsigned>(i), record->size);
                     continue;
                 }
                 printf(
@@ -223,10 +224,11 @@ void dump_bsargv(size_t bsargc, const bsheader *const *bsargv) {
                 continue;
             }
             default:
-                printf("bsargv[%u] = { type=%u, size=%u, raw_data=%p, "
-                       "raw_size=%u }\n",
-                       static_cast<unsigned>(i), record->type, record->size,
-                       view.data, static_cast<unsigned>(view.data_size));
+                printf(
+                    "bsargv[%u] = { type=%u, size=%u, raw_data=%p, "
+                    "raw_size=%u }\n",
+                    static_cast<unsigned>(i), record->type, record->size,
+                    view.data, static_cast<unsigned>(view.data_size));
                 continue;
         }
     }
@@ -320,9 +322,9 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     }
 
     size_t aligned_length = page_align_up_user(length);
-    size_t target_addr =
-        (flags & MAP_FIXED) != 0 ? reinterpret_cast<size_t>(addr)
-                                 : choose_mmap_base(aligned_length);
+    size_t target_addr    = (flags & MAP_FIXED) != 0
+                                ? reinterpret_cast<size_t>(addr)
+                                : choose_mmap_base(aligned_length);
     if ((target_addr % PAGESIZE) != 0) {
         return INVALID_VALUE;
     }
@@ -351,7 +353,7 @@ size_t linux_sys_munmap(void *addr, size_t length) {
         return INVALID_VALUE;
     }
     return sys_pcb_unmap(__prog_pcb_cap, addr, aligned_length) ? 0
-                                                                : INVALID_VALUE;
+                                                               : INVALID_VALUE;
 }
 
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
@@ -363,36 +365,36 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             return linux_sys_writev(
                 a0, reinterpret_cast<const linux_iovec *>(a1), a2);
         case __NR_mmap:
-            return linux_sys_mmap(reinterpret_cast<void *>(a0), a1, a2, a3,
-                                  a4, a5);
+            return linux_sys_mmap(reinterpret_cast<void *>(a0), a1, a2, a3, a4,
+                                  a5);
         case __NR_munmap:
             return linux_sys_munmap(reinterpret_cast<void *>(a0), a1);
-        case __NR_brk: return linux_sys_brk(a0);
-        case __NR_uname:
-            return linux_sys_uname(reinterpret_cast<void *>(a0));
+        case __NR_brk:   return linux_sys_brk(a0);
+        case __NR_uname: return linux_sys_uname(reinterpret_cast<void *>(a0));
         case __NR_faccessat:
             // TODO: 实现 __NR_faccessat 系统调用，目前先返回 -ENOENT;
-            return - ENOENT;
+            return -ENOENT;
         case __NR_set_tid_address:
             // 未实现
             return -ENOSYS;
         case __NR_set_robust_list:
             // 未实现
             return -ENOSYS;
-        case __NR_exit:
-            sys_pcb_kill(__prog_pcb_cap, a0);
-            return 0;
+        case __NR_exit: linux_sys_exit(a0); return 0;
         default:
             printf("linux-subsystem: unsupported syscall %s (%d)\n",
                    syscall_to_string(a7), a7);
-            printf("linux-subsystem: syscall arguments: a0=%p, a1=%p, a2=%p, a3=%p, "
-                   "a4=%p, a5=%p, a6=%p\n",
-                   reinterpret_cast<void *>(a0), reinterpret_cast<const char *>(a1),
-                   reinterpret_cast<void *>(a2), reinterpret_cast<void *>(a3),
-                   reinterpret_cast<void *>(a4), reinterpret_cast<void *>(a5),
-                   reinterpret_cast<void *>(a6));
-            // 先卡死以进行测试
-            while (true);
+            printf(
+                "linux-subsystem: syscall arguments: a0=%p, a1=%p, a2=%p, "
+                "a3=%p, "
+                "a4=%p, a5=%p, a6=%p\n",
+                reinterpret_cast<void *>(a0),
+                reinterpret_cast<const char *>(a1),
+                reinterpret_cast<void *>(a2), reinterpret_cast<void *>(a3),
+                reinterpret_cast<void *>(a4), reinterpret_cast<void *>(a5),
+                reinterpret_cast<void *>(a6));
+            // 直接退出
+            linux_sys_exit(-1);
             return INVALID_VALUE;
     }
 }

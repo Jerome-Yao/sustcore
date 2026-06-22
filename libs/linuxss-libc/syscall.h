@@ -50,6 +50,8 @@ extern "C" CapIdx sys_pcb_create_linux_process(CapIdx pcb_cap,
 extern "C" CapIdx sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
                                         void *stack_addr,
                                         size_t stack_size);
+extern "C" CapIdx sys_tcb_wait(CapIdx tcb_cap, CapIdx pcbs_idx[],
+                               int *status, size_t options);
 extern "C" size_t sys_pcb_fork(CapIdx pcb_cap, CapIdx *child_pcb_cap);
 extern "C" bool sys_pcb_execve(CapIdx pcb_cap, CapIdx image_cap,
                                CapIdx rsvdlst[], const char *argv[],

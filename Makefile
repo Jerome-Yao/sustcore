@@ -48,7 +48,7 @@ arg-basic :=  q=$(q) build-mode=$(build-mode) architecture=$(architecture) \
 -include $(path-script)/config.mk
 
 library-components := sbi basecpp kmod linuxss-libc rpc libfdt
-module-components := default init linux-subsystem test-linux test_endpoint_master test_endpoint_slave test_call_service test_call_user \
+module-components := default init contest-runner linux-subsystem test-linux test_endpoint_master test_endpoint_slave test_call_service test_call_user \
 	test_fork test_execve test_thread test_rpc_server test_rpc_client \
 	test_file_rw_a test_file_rw_b test_ext4_read test_ext4_create test_ext4_rw \
 	test_fs_score
@@ -62,6 +62,7 @@ library-component-makefile.libfdt := $(path-e)/third_party/libs/libfdt/Makefile
 
 module-component-makefile.default := $(path-e)/module/default/Makefile
 module-component-makefile.init := $(path-e)/module/init/Makefile
+module-component-makefile.contest-runner := $(path-e)/module/contest-runner/Makefile
 module-component-makefile.linux-subsystem := $(path-e)/module/linux-subsystem/Makefile
 module-component-makefile.test-linux := $(path-e)/module/test-linux/Makefile
 module-component-makefile.test_endpoint_master := $(path-e)/module/test_endpoint_master/Makefile
@@ -104,6 +105,7 @@ kernel/feature.mk: FORCE $(config-json) kernel/feature.json tools/feature_gen/fe
 build-mods: make-initrd build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.default) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.init) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.contest-runner) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.linux-subsystem) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test-linux) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_endpoint_master) $(arg-basic) build

@@ -42,11 +42,11 @@ namespace task {
                                   VirArea(heap_start, heap_start), heap_mem,
                                   VMA::PROT_R | VMA::PROT_W);
             if (!heap_res.has_value()) {
-                loggers::SUSTCORE::ERROR("无法初始化 POSIX 子系统堆VMA: %d",
+                loggers::TASK::ERROR("无法初始化 POSIX 子系统堆VMA: %d",
                                          heap_res.error());
                 propagate_return(heap_res);
             }
-            loggers::SUSTCORE::INFO(
+            loggers::TASK::INFO(
                 "创建POSIX子系统 HEAP VMA: area=[%p,%p) mem=%p memsz=%lu",
                 heap_start.addr(), heap_start.addr(), heap_mem, 0UL);
             spec.linuxss_heap_vaddr   = heap_start;
@@ -92,7 +92,7 @@ namespace task {
                                         LoadPrm &prm) {
         auto create_res = cap::CHolderManager::inst().create_holder();
         if (!create_res.has_value()) {
-            loggers::SUSTCORE::ERROR("创建CHolder失败! 错误码: %s",
+            loggers::TASK::ERROR("创建CHolder失败! 错误码: %s",
                                      to_cstring(create_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
@@ -117,7 +117,7 @@ namespace task {
 
         auto gfp_res = GFP::get_free_page(1);
         if (!gfp_res.has_value()) {
-            loggers::SUSTCORE::ERROR("无法为程序页表分配物理页");
+            loggers::TASK::ERROR("无法为程序页表分配物理页");
             unexpect_return(ErrCode::CREATION_FAILED);
         }
         auto tmm = util::owner(new TaskMemoryManager(gfp_res.value()));
@@ -223,14 +223,14 @@ namespace task {
                                ? preload(image_cap, spec, prm)
                                : preload_into(image_cap, holder, spec, prm);
         if (!preload_res.has_value()) {
-            loggers::SUSTCORE::ERROR("预加载程序资源失败! 错误码: %s",
+            loggers::TASK::ERROR("预加载程序资源失败! 错误码: %s",
                                      to_cstring(preload_res.error()));
             propagate_return(preload_res);
         }
 
         auto load_res = loader::elf::load(spec, prm);
         if (!load_res.has_value()) {
-            loggers::SUSTCORE::ERROR("加载ELF程序失败! 错误码: %s",
+            loggers::TASK::ERROR("加载ELF程序失败! 错误码: %s",
                                      to_cstring(load_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
@@ -259,7 +259,7 @@ namespace task {
 
         auto preload_res = preload_into(image_cap, holder, spec, prm);
         if (!preload_res.has_value()) {
-            loggers::SUSTCORE::ERROR("预加载POSIX程序失败! 错误码: %s",
+            loggers::TASK::ERROR("预加载POSIX程序失败! 错误码: %s",
                                      to_cstring(preload_res.error()));
             propagate_return(preload_res);
         }
@@ -268,7 +268,7 @@ namespace task {
         auto load_linux_res = loader::elf::load_segments(
             spec, prm, true, task::GENERIC_PROCESS_BASE, true, &interp_path);
         if (!load_linux_res.has_value()) {
-            loggers::SUSTCORE::ERROR("加载POSIX程序失败! 错误码: %s",
+            loggers::TASK::ERROR("加载POSIX程序失败! 错误码: %s",
                                      to_cstring(load_linux_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
@@ -290,7 +290,7 @@ namespace task {
             auto interp_cap_res =
                 VFS::inst().open(interp_path.c_str(), *holder);
             if (!interp_cap_res.has_value()) {
-                loggers::SUSTCORE::ERROR(
+                loggers::TASK::ERROR(
                     "无法加载 POSIX 解释器! 路径: %s, 错误码 : %s",
                     interp_path.c_str(), to_cstring(interp_cap_res.error()));
                 propagate_return(interp_cap_res);
@@ -305,7 +305,7 @@ namespace task {
                 spec, interp_prm, false, task::GENERIC_INTERPRET_BASE, true,
                 nullptr);
             if (!interp_load_res.has_value()) {
-                loggers::SUSTCORE::ERROR("加载POSIX解释器失败! 错误码: %s",
+                loggers::TASK::ERROR("加载POSIX解释器失败! 错误码: %s",
                                          to_cstring(interp_load_res.error()));
                 unexpect_return(ErrCode::CREATION_FAILED);
             }
@@ -324,7 +324,7 @@ namespace task {
         auto load_subsystem_res =
             loader::elf::load_segments(spec, subsystem_prm, false);
         if (!load_subsystem_res.has_value()) {
-            loggers::SUSTCORE::ERROR("加载POSIX子系统失败! 错误码: %s",
+            loggers::TASK::ERROR("加载POSIX子系统失败! 错误码: %s",
                                      to_cstring(load_subsystem_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }

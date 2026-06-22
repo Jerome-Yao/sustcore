@@ -388,7 +388,8 @@ void run_requests(const std::vector<SpawnRequest> &requests,
         kmod_fclose(fd);
 
         CapIdx wait_caps[] = {child_pcb, cap::null};
-        CapIdx exited_cap  = sys_tcb_wait(__main_tcb_cap, wait_caps, 0);
+        CapIdx exited_cap  =
+            sys_tcb_wait(__main_tcb_cap, wait_caps, nullptr, 0);
         if (exited_cap == cap::null || exited_cap == cap::error) {
             printf("init: 等待 %s 失败\n", request.dispname);
             return;
@@ -432,35 +433,40 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     mount_testing_ext4(root_dir_cap);
 
     std::vector<SpawnRequest> requests{
-        SpawnRequest{
-            .path       = "/initrd/test_fork.mod",
-            .dispname   = "test_fork",
-            .is_linuxproc = false,
-        },
-        SpawnRequest{
-            .path       = "/initrd/test_endpoint_master.mod",
-            .dispname   = "test_endpoint_master",
-            .is_linuxproc = false,
-        },
-        SpawnRequest{
-            .path       = "/initrd/test_call_service.mod",
-            .dispname   = "test_call_service",
-            .is_linuxproc = false,
-        },
-        SpawnRequest{
-            .path       = "/initrd/test_file_rw_a.mod",
-            .dispname   = "test_file_rw_a",
-            .is_linuxproc = false,
-        },
-        SpawnRequest{
-            .path       = "/initrd/test-linux.mod",
-            .dispname   = "test-linux",
-            .is_linuxproc = true,
-        },
+        // SpawnRequest{
+        //     .path       = "/initrd/test_fork.mod",
+        //     .dispname   = "test_fork",
+        //     .is_linuxproc = false,
+        // },
+        // SpawnRequest{
+        //     .path       = "/initrd/test_endpoint_master.mod",
+        //     .dispname   = "test_endpoint_master",
+        //     .is_linuxproc = false,
+        // },
+        // SpawnRequest{
+        //     .path       = "/initrd/test_call_service.mod",
+        //     .dispname   = "test_call_service",
+        //     .is_linuxproc = false,
+        // },
+        // SpawnRequest{
+        //     .path       = "/initrd/test_file_rw_a.mod",
+        //     .dispname   = "test_file_rw_a",
+        //     .is_linuxproc = false,
+        // },
+        // SpawnRequest{
+        //     .path       = "/initrd/test-linux.mod",
+        //     .dispname   = "test-linux",
+        //     .is_linuxproc = true,
+        // },
         SpawnRequest{
             .path       = "/initrd/tmp/write",
             .dispname   = "write",
             .is_linuxproc = true,
+        },
+        SpawnRequest{
+            .path       = "/initrd/contest-runner.mod",
+            .dispname   = "contest-runner",
+            .is_linuxproc = false,
         },
     };
 

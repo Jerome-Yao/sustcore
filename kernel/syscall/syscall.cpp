@@ -442,8 +442,14 @@ namespace syscall {
                                   .ret1 = static_cast<b64>(caps_res.error())};
                     break;
                 }
+                UBuffer status_buf((VirAddr)arg1, sizeof(int));
+                UBuffer *status_buf_ptr = nullptr;
+                if (arg1 != 0) {
+                    status_buf_ptr = &status_buf;
+                }
                 ret = result_value_ret("等待进程状态改变",
-                                       tcb_wait(capidx, caps_res.value(), arg1));
+                                       tcb_wait(capidx, caps_res.value(),
+                                                status_buf_ptr, arg2));
                 break;
             }
             case SYS_FORK: {

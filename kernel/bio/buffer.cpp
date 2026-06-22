@@ -244,7 +244,7 @@ namespace blk {
         }
 
         if (buffer->inflight) {
-            loggers::SUSTCORE::INFO("buffer wait inflight: dev=%lu blk=%lu",
+            loggers::DEVICE::DEBUG("buffer wait inflight: dev=%lu blk=%lu",
                                     static_cast<unsigned long>(_devno),
                                     static_cast<unsigned long>(blkno));
             auto wait_res = wait_event(buffer->wait_wd, !buffer->inflight);
@@ -258,26 +258,26 @@ namespace blk {
         }
 
         buffer->inflight = true;
-        loggers::SUSTCORE::INFO("buffer submit read: dev=%lu blk=%lu",
+        loggers::DEVICE::DEBUG("buffer submit read: dev=%lu blk=%lu",
                                 static_cast<unsigned long>(_devno),
                                 static_cast<unsigned long>(blkno));
         auto sumbit_future =
             _request_layer->submit_read_async(blkno, buffer->data, 1);
         auto submit_res   = wait::blocking_wait_for(sumbit_future);
         buffer->inflight = false;
-        loggers::SUSTCORE::INFO("buffer submit done: dev=%lu blk=%lu ok=%d",
+        loggers::DEVICE::DEBUG("buffer submit done: dev=%lu blk=%lu ok=%d",
                                 static_cast<unsigned long>(_devno),
                                 static_cast<unsigned long>(blkno),
                                 static_cast<int>(submit_res.has_value()));
         auto wake_res = wait::wake_all(buffer->wait_wd);
         if (!wake_res.has_value()) {
-            loggers::SUSTCORE::ERROR(
+            loggers::DEVICE::ERROR(
                 "BufferCache wake inflight waiters failed: devno=%u blkno=%u err=%s",
                 static_cast<unsigned>(_devno), static_cast<unsigned>(blkno),
                 to_cstring(wake_res.error()));
         }
         if (!submit_res.has_value()) {
-            loggers::SUSTCORE::ERROR(
+            loggers::DEVICE::ERROR(
                 "BufferCache read submit failed: devno=%u blkno=%u blksz=%u err=%s",
                 static_cast<unsigned>(_devno), static_cast<unsigned>(blkno),
                 static_cast<unsigned>(_blksz),

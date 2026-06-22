@@ -128,7 +128,7 @@ namespace loader::elf {
                 propagate(read_res);
                 auto write_res = memory.write(mem_offset + loaded, buffer, chunk);
                 propagate(write_res);
-                loggers::SUSTCORE::DEBUG(
+                loggers::ELFLOADER::DEBUG(
                     "ELF段文件写入: file_off=%lu mem_off=%lu chunk=%lu",
                     static_cast<unsigned long>(file_offset + loaded),
                     mem_offset + loaded, chunk);
@@ -154,7 +154,7 @@ namespace loader::elf {
                 auto write_res =
                     memory.write(mem_offset + filled, zeros, chunk);
                 propagate(write_res);
-                loggers::SUSTCORE::DEBUG(
+                loggers::ELFLOADER::DEBUG(
                     "ELF段清零: mem_off=%lu chunk=%lu", mem_offset + filled,
                     chunk);
                 filled += chunk;
@@ -187,10 +187,10 @@ namespace loader::elf {
                 hex_dump += item;
             }
 
-            loggers::SUSTCORE::DEBUG("  VMA类型: %s, 起始地址: %p",
+            loggers::ELFLOADER::DEBUG("  VMA类型: %s, 起始地址: %p",
                                      to_string(vma.type),
                                      vma.varea.begin.addr());
-            loggers::SUSTCORE::DEBUG("    前%u字节: %s", actual_size,
+            loggers::ELFLOADER::DEBUG("    前%u字节: %s", actual_size,
                                      hex_dump.c_str());
             void_return();
         }
@@ -278,7 +278,7 @@ namespace loader::elf {
             VMA &vma = vma_res.value().get();
             size_t mem_offset = vma.mem_offset + segment.page_prefix;
 
-            loggers::SUSTCORE::INFO(
+            loggers::ELFLOADER::INFO(
                 "加载ELF段: idx=%u map=[%p,%p) vaddr=%p filesz=%lu memsz=%lu "
                 "prefix=%lu mem_off=%lu",
                 segment.index, segment.map_begin.addr(),
@@ -303,7 +303,7 @@ namespace loader::elf {
             }
             auto first_page_res = vma.memory->lookup_page(mem_offset);
             if (first_page_res.has_value()) {
-                loggers::SUSTCORE::INFO(
+                loggers::ELFLOADER::INFO(
                     "ELF段首物理页: mem=%p mem_off=%lu paddr=%p", vma.memory,
                     mem_offset, first_page_res.value().addr());
             }
@@ -436,11 +436,11 @@ namespace loader::elf {
                 segment_mem, vma_prot);
             if (!add_res.has_value()) {
                 delete segment_mem;
-                loggers::SUSTCORE::ERROR("无法为段%d添加VMA: %d", i,
+                loggers::ELFLOADER::ERROR("无法为段%d添加VMA: %d", i,
                                          add_res.error());
                 while (true);
             }
-            loggers::SUSTCORE::INFO(
+            loggers::ELFLOADER::INFO(
                 "创建ELF VMA: type=%s area=[%p,%p) mem=%p memsz=%lu mem_off=%lu",
                 to_string(vma_type), aligned_segvaddr.addr(), segvend.addr(),
                 segment_mem, static_cast<unsigned long>(map_memsz), 0UL);
@@ -491,20 +491,20 @@ namespace loader::elf {
                 VirArea(heap_start, heap_start), heap_mem,
                 VMA::PROT_R | VMA::PROT_W);
             if (!heap_res.has_value()) {
-                loggers::SUSTCORE::ERROR("无法初始化堆VMA: %d",
+                loggers::ELFLOADER::ERROR("无法初始化堆VMA: %d",
                                          heap_res.error());
                 propagate_return(heap_res);
             }
-            loggers::SUSTCORE::INFO(
+            loggers::ELFLOADER::INFO(
                 "创建HEAP VMA: area=[%p,%p) mem=%p memsz=%lu",
                 heap_start.addr(), heap_start.addr(), heap_mem, 0UL);
             spec.heap_vaddr   = heap_start;
             spec.heap_mem_cap = heap_cap_res.value();
         }
 
-        loggers::SUSTCORE::DEBUG("ELF加载完成, TM中的VMA列表:");
+        loggers::ELFLOADER::DEBUG("ELF加载完成, TM中的VMA列表:");
         for (const auto &vma : spec.tmm->vmas()) {
-            loggers::SUSTCORE::DEBUG("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
+            loggers::ELFLOADER::DEBUG("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
                                     to_string(vma.type), vma.varea.begin.addr(),
                                     vma.varea.end.addr(), vma.size());
         }
@@ -519,7 +519,7 @@ namespace loader::elf {
                 PageMan::page_flags(rwx, true, false));
         }
 
-        loggers::SUSTCORE::DEBUG("每个VMA的前16字节内容:");
+        loggers::ELFLOADER::DEBUG("每个VMA的前16字节内容:");
         for (const auto &vma : spec.tmm->vmas()) {
             if (vma.varea.nullable()) {
                 continue;

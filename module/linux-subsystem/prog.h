@@ -24,4 +24,6 @@ extern CapIdx __prog_heap_mem_cap;
 
 void init_prog_data(size_t bsargc, const bsheader *bsargv[]);
 size_t linux_sys_brk(size_t newbrk);
+[[noreturn]]
+void linux_sys_exit(int exitcode);
 size_t linux_sys_uname(void *buf);

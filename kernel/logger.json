@@ -63,5 +63,10 @@
         "name": "EXCEPTION",
         "channel": "KernelIO",
         "default": "info"
+    },
+    "elfloader": {
+        "name": "ELFLOADER",
+        "channel": "KernelIO",
+        "default": "info"
     }
 }

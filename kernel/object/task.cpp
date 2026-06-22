@@ -57,7 +57,7 @@ namespace cap {
         bool killing_current =
             current_tcb != nullptr && current_tcb->task == pcb;
 
-        loggers::TASK::INFO("开始终止进程: pid=%lu exit_code=%d",
+        loggers::TASK::DEBUG("开始终止进程: pid=%lu exit_code=%d",
                             pcb->pid, exit_code);
         pcb->exit_code = exit_code;
         if (pcb->exiting) {

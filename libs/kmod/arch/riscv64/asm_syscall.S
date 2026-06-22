@@ -46,7 +46,7 @@ sys_pcb_create_thread:
     .global sys_tcb_wait
     .type   sys_tcb_wait, @function
 sys_tcb_wait:
-    /* a0 = tcb cap slot, a1 = pcb cap array, a2 = options */
+    /* a0 = tcb cap slot, a1 = pcb cap array, a2 = status out ptr, a3 = options */
     li a7, SYS_TCB_WAIT
     ecall
     ret

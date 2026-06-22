@@ -9,11 +9,11 @@
  *
  */
 
-#include "prog.h"
-
 #include <prm.h>
+#include <prog.h>
 #include <syscall.h>
 
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -78,11 +78,11 @@ namespace {
     }
 }  // namespace
 
-size_t __prog_heap_base      = 0;
-size_t __prog_brk            = 0;
-CapIdx __prog_pcb_cap        = cap::null;
-CapIdx __prog_main_tcb_cap   = cap::null;
-CapIdx __prog_heap_mem_cap   = cap::null;
+size_t __prog_heap_base    = 0;
+size_t __prog_brk          = 0;
+CapIdx __prog_pcb_cap      = cap::null;
+CapIdx __prog_main_tcb_cap = cap::null;
+CapIdx __prog_heap_mem_cap = cap::null;
 
 void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
     __prog_heap_base    = 0;
@@ -170,4 +170,10 @@ size_t linux_sys_uname(void *buf) {
     copy_uts_field(uts.domainname, "(none)");
     memcpy(buf, &uts, sizeof(uts));
     return 0;
+}
+[[noreturn]]
+void linux_sys_exit(int exitcode) {
+    sys_pcb_kill(__prog_pcb_cap, exitcode);
+    printf("linux-subsystem: this statement shouldn't be executed!");
+    while (true);
 }
