@@ -453,21 +453,21 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         //     .dispname   = "test_file_rw_a",
         //     .is_linuxproc = false,
         // },
-        // SpawnRequest{
-        //     .path       = "/initrd/test-linux.mod",
-        //     .dispname   = "test-linux",
-        //     .is_linuxproc = true,
-        // },
+        SpawnRequest{
+            .path       = "/initrd/test-linux.mod",
+            .dispname   = "test-linux",
+            .is_linuxproc = true,
+        },
         SpawnRequest{
             .path       = "/initrd/tmp/write",
             .dispname   = "write",
             .is_linuxproc = true,
         },
-        SpawnRequest{
-            .path       = "/initrd/contest-runner.mod",
-            .dispname   = "contest-runner",
-            .is_linuxproc = false,
-        },
+        // SpawnRequest{
+        //     .path       = "/initrd/contest-runner.mod",
+        //     .dispname   = "contest-runner",
+        //     .is_linuxproc = false,
+        // },
     };
 
     // try write file /sys/dev/serial@10000000/serial
