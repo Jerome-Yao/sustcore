@@ -23,9 +23,9 @@
 		"logger": {},
 		"linuxss": {
 			"logger": {},
-			"logger-disable-all": false
+			"logger-disable-all": true
 		},
-		"logger-disable-all": false
+		"logger-disable-all": true
 	},
 	"loongarch64": {
 		"compiler-prefix": "/opt/gcc-13.2.0-loongarch64-linux-gnu/bin/loongarch64-linux-gnu-",
@@ -49,8 +49,8 @@
 		"logger": {},
 		"linuxss": {
 			"logger": {},
-			"logger-disable-all": false
+			"logger-disable-all": true
 		},
-		"logger-disable-all": false
+		"logger-disable-all": true
 	}
 }
