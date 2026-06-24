@@ -84,7 +84,8 @@ size_t __prog_brk          = 0;
 CapIdx __prog_pcb_cap      = cap::null;
 CapIdx __prog_main_tcb_cap = cap::null;
 CapIdx __prog_heap_mem_cap = cap::null;
-CapIdx __prog_root_dir_cap  = cap::null;
+CapIdx __prog_root_dir_cap = cap::null;
+char __prog_cwd[LINUX_PATH_MAX] = "/";
 
 void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
     __prog_heap_base    = 0;
@@ -92,7 +93,8 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
     __prog_pcb_cap      = cap::null;
     __prog_main_tcb_cap = cap::null;
     __prog_heap_mem_cap = cap::null;
-    __prog_root_dir_cap  = cap::null;
+    __prog_root_dir_cap = cap::null;
+    strcpy(__prog_cwd, "/");
 
     for (size_t i = 0; i < bsargc; ++i) {
         BootstrapRecordView view{};
@@ -146,6 +148,16 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
                 __prog_heap_base = vaddr_view.vaddr.arith();
                 __prog_brk       = vaddr_view.vaddr.arith();
             }
+            continue;
+        }
+
+        if (view.header->type == boot::TYPE_CWDPATH) {
+            const char *cwd_path = nullptr;
+            if (!bootstrap_parse_cwd_path(view, cwd_path)) {
+                continue;
+            }
+            strncpy(__prog_cwd, cwd_path, LINUX_PATH_MAX - 1);
+            __prog_cwd[LINUX_PATH_MAX - 1] = '\0';
         }
     }
 }
@@ -190,4 +202,15 @@ void linux_sys_exit(int exitcode) {
     loggers::LXRT::ERROR("sys_exit 返回到不应执行的位置: exitcode=%d",
                          exitcode);
     while (true);
+}
+
+size_t linux_sys_getpid() {
+    if (__prog_pcb_cap == cap::null || __prog_pcb_cap == cap::error) {
+        return INVALID_VALUE;
+    }
+    return sys_getpid(__prog_pcb_cap);
+}
+
+size_t linux_sys_sched_yield() {
+    return sys_yield() != 0 ? INVALID_VALUE : 0;
 }
