@@ -928,7 +928,7 @@ namespace {
 
     [[nodiscard]]
     b64 file_perm_from_oflags(flags::oflg_t oflags) {
-        b64 perm = 0;
+        b64 perm = perm::basic::CLONE;
         if ((oflags & flags::O_READ) != 0) {
             perm |= perm::vfile::READ;
         }
@@ -943,7 +943,7 @@ namespace {
 
     [[nodiscard]]
     b64 dir_perm_from_oflags(flags::oflg_t oflags) {
-        b64 perm = 0;
+        b64 perm = perm::basic::CLONE;
         if ((oflags & flags::O_READ) != 0) {
             perm |= perm::vdir::READ;
         }
@@ -1259,7 +1259,8 @@ Result<CapIdx> VFS::open(cap::Capability &parent_dir_cap, const char *relpath,
 
     auto global_res = _global_target_path(*parent, relpath);
     propagate(global_res);
-    auto file_res = _open_file(global_res.value().second.c_str());
+    auto file_res = _open_file_at(*parent->vinode(), parent->mount_path(),
+                                  relpath);
     if (!file_res.has_value() && file_res.error() == ErrCode::ENTRY_NOT_FOUND &&
         (oflags & flags::O_EXECUTE) == 0 &&
         (oflags & flags::O_CREAT) != 0)

@@ -1,6 +1,6 @@
 /**
  * @file runtime.cpp
- * @author OpenAI
+ * @author theflysong
  * @brief linux subsystem 运行时基础支持
  * @version alpha-1.0.0
  * @date 2026-06-23
@@ -51,6 +51,31 @@ void operator delete(void *ptr) noexcept {
 void operator delete(void *ptr, size_t size) noexcept {
     (void)ptr;
     (void)size;
+}
+
+void *operator new[](size_t size) {
+    void *ptr = linuxss_alloc(size);
+    if (ptr == nullptr) {
+        panic("operator new[] failed size=%lu", static_cast<unsigned long>(size));
+    }
+    return ptr;
+}
+
+void operator delete[](void *ptr) noexcept {
+    (void)ptr;
+}
+
+void operator delete[](void *ptr, size_t size) noexcept {
+    (void)ptr;
+    (void)size;
+}
+
+extern "C" {
+void *__dso_handle = nullptr;
+
+int __cxa_atexit(void (*)(void *), void *, void *) {
+    return 0;
+}
 }
 
 void panic(const char *format, ...) {

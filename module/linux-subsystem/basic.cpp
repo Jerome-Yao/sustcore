@@ -10,16 +10,21 @@
  */
 
 #include <logger.h>
+#include <fdtable.h>
+#include <file.h>
 #include <prm.h>
 #include <prog.h>
 #include <syscall.h>
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace {
     constexpr size_t INVALID_VALUE      = 0xFFFF'FFFF'FFFF'FFFF;
     constexpr size_t UTSNAME_FIELD_SIZE = 65;
+    constexpr int LINUX_O_WRONLY        = 1;
 
     struct linux_utsname {
         char sysname[UTSNAME_FIELD_SIZE];
@@ -82,19 +87,25 @@ namespace {
 size_t __prog_heap_base    = 0;
 size_t __prog_brk          = 0;
 CapIdx __prog_pcb_cap      = cap::null;
+CapIdx __prog_parent_cap   = cap::null;
 CapIdx __prog_main_tcb_cap = cap::null;
 CapIdx __prog_heap_mem_cap = cap::null;
 CapIdx __prog_root_dir_cap = cap::null;
-char __prog_cwd[LINUX_PATH_MAX] = "/";
+CapIdx __prog_cwd_dir_cap  = cap::null;
+std::vector<CapIdx> __prog_children{};
+std::string __prog_cwd     = "/";
 
 void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
     __prog_heap_base    = 0;
     __prog_brk          = 0;
     __prog_pcb_cap      = cap::null;
+    __prog_parent_cap   = cap::null;
     __prog_main_tcb_cap = cap::null;
     __prog_heap_mem_cap = cap::null;
     __prog_root_dir_cap = cap::null;
-    strcpy(__prog_cwd, "/");
+    __prog_cwd_dir_cap  = cap::null;
+    __prog_children.clear();
+    __prog_cwd          = "/";
 
     for (size_t i = 0; i < bsargc; ++i) {
         BootstrapRecordView view{};
@@ -115,6 +126,12 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
                 __prog_pcb_cap = cap_view.cap_idx;
                 continue;
             }
+            if (cap_view.cap_type == PayloadType::PCB &&
+                strcmp(cap_view.cap_desc, "#parent") == 0)
+            {
+                __prog_parent_cap = cap_view.cap_idx;
+                continue;
+            }
             if (cap_view.cap_type == PayloadType::TCB &&
                 parse_tagged_index(cap_view.cap_desc, "#main:", tagged_idx))
             {
@@ -133,6 +150,8 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
             {
                 if (strcmp(cap_view.cap_desc + 1, "/") == 0) {
                     __prog_root_dir_cap = cap_view.cap_idx;
+                } else if (strcmp(cap_view.cap_desc, "#cwd") == 0) {
+                    __prog_cwd_dir_cap = cap_view.cap_idx;
                 }
                 continue;
             }
@@ -151,15 +170,24 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
             continue;
         }
 
-        if (view.header->type == boot::TYPE_CWDPATH) {
-            const char *cwd_path = nullptr;
-            if (!bootstrap_parse_cwd_path(view, cwd_path)) {
+        if (view.header->type == boot::TYPE_PATHEXP) {
+            BootstrapPathExplainView path_view{};
+            if (!bootstrap_parse_path_explain(view, path_view)) {
                 continue;
             }
-            strncpy(__prog_cwd, cwd_path, LINUX_PATH_MAX - 1);
-            __prog_cwd[LINUX_PATH_MAX - 1] = '\0';
+            if (strncmp(path_view.path_desc, "#cwd:", 5) == 0) {
+                __prog_cwd = path_view.path_desc + 5;
+            }
         }
     }
+
+    if (__prog_cwd_dir_cap == cap::null || __prog_cwd_dir_cap == cap::error) {
+        (void)linux_opendir_fd(__prog_cwd.c_str(), CWD_FD);
+        __prog_cwd_dir_cap = fd_to_cap(CWD_FD);
+    }
+
+    (void)linux_open_fd("/dev/stdout", 1, LINUX_O_WRONLY);
+    (void)linux_open_fd("/dev/stdout", 2, LINUX_O_WRONLY);
 }
 
 size_t linux_sys_brk(size_t newbrk) {
@@ -209,6 +237,13 @@ size_t linux_sys_getpid() {
         return INVALID_VALUE;
     }
     return sys_getpid(__prog_pcb_cap);
+}
+
+size_t linux_sys_getppid() {
+    if (__prog_parent_cap == cap::null || __prog_parent_cap == cap::error) {
+        return 0;
+    }
+    return sys_getpid(__prog_parent_cap);
 }
 
 size_t linux_sys_sched_yield() {

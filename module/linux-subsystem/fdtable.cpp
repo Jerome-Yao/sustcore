@@ -11,7 +11,7 @@ int alloc_fd(CapIdx cap) {
     fd_table_lock.lock();
 
     int fd = -EMFILE;
-    for (int i = 3; i < MAX_FDS; ++i) {
+    for (int i = CWD_FD_RESERVED + 1; i < MAX_FDS; ++i) {
         if (fd_table[i].cap == cap::null) {
             fd_table[i].cap    = cap;
             fd_table[i].offset = 0;
@@ -22,6 +22,24 @@ int alloc_fd(CapIdx cap) {
 
     fd_table_lock.unlock();
     return fd;
+}
+
+bool bind_fd(int fd, CapIdx cap) {
+    if (fd < 0 || fd >= MAX_FDS || cap == cap::null || cap == cap::error) {
+        return false;
+    }
+
+    fd_table_lock.lock();
+
+    CapIdx old_cap = fd_table[fd].cap;
+    if (old_cap != cap::null && old_cap != cap) {
+        sys_cap_remove(old_cap);
+    }
+    fd_table[fd].cap    = cap;
+    fd_table[fd].offset = 0;
+
+    fd_table_lock.unlock();
+    return true;
 }
 
 void free_fd(int fd) {

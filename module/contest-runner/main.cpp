@@ -9,44 +9,153 @@
  *
  */
 
-#include <kmod/syscall.h>
 #include <sustcore/bootstrap.h>
 #include <sys/wait.h>
 
 #include <cstdio>
-#include <string>
-#include <vector>
+#include <cstring>
 
-#include "basic.h"
+#include "runner.h"
 
-namespace {
-    constexpr const char *TEST_ROOTS[] = {
-        "/testing/glibc/basic",
-        "/testing/musl/basic",
-        nullptr,
-    };
+namespace contest_runner {
+    namespace {
+        constexpr uint64_t PERM_BASIC_MIGRATE_ONCE = 0x0008;
+        constexpr uint64_t PERM_PCB_GETPID         = 0x01'0000;
 
-    constexpr const char *KMOD_TESTS[] = {
-        // "/initrd/test_page_cache.mod",
-        // "/initrd/test_page_cache_perf.mod",
-        // "/initrd/test_file_backed_memory.mod",
-        // "/initrd/test_fs_score.mod",
-        nullptr,
-    };
+        [[nodiscard]]
+        CapIdx spawn_linux_program(int fd, CapIdx root_dir_cap,
+                                   CapIdx cwd_dir_cap, const char *cwd_path,
+                                   const char *argv[]) {
+            if (fd < 0 || root_dir_cap == cap::null || root_dir_cap == cap::error ||
+                cwd_dir_cap == cap::null || cwd_dir_cap == cap::error)
+            {
+                return cap::error;
+            }
+            if (cwd_path == nullptr || cwd_path[0] == '\0') {
+                return cap::error;
+            }
 
-    struct FailureInfo {
-        std::string path;
-        int status;
-    };
+            CapIdx child_root_cap = sys_cap_clone(root_dir_cap);
+            if (child_root_cap == cap::null || child_root_cap == cap::error) {
+                return cap::error;
+            }
+            CapIdx child_cwd_dir_cap = sys_cap_clone(cwd_dir_cap);
+            if (child_cwd_dir_cap == cap::null ||
+                child_cwd_dir_cap == cap::error)
+            {
+                sys_cap_remove(child_root_cap);
+                return cap::error;
+            }
+            CapIdx child_parent_pcb_cap =
+                sys_cap_derive(__pcb_cap,
+                               PERM_PCB_GETPID | PERM_BASIC_MIGRATE_ONCE);
+            if (child_parent_pcb_cap == cap::null ||
+                child_parent_pcb_cap == cap::error)
+            {
+                sys_cap_remove(child_root_cap);
+                sys_cap_remove(child_cwd_dir_cap);
+                return cap::error;
+            }
 
-    struct TestRunStats {
-        size_t total  = 0;
-        size_t passed = 0;
-        size_t failed = 0;
-        std::vector<FailureInfo> failures;
-    };
+            struct RootDirBootstrap {
+                bsheader header;
+                BootstrapCapExplainPayloadHead explain;
+                char desc[3];
+            } root_bootstrap{
+                .header =
+                    bsheader{
+                        .size = sizeof(RootDirBootstrap),
+                        .type = boot::TYPE_CAPEXP,
+                    },
+                .explain =
+                    BootstrapCapExplainPayloadHead{
+                        .cap_idx  = child_root_cap,
+                        .cap_type = PayloadType::VDIR,
+                        .cap_perm = ~b64(0),
+                    },
+                .desc = "#/",
+            };
 
-    [[nodiscard]]
+            struct CwdDirBootstrap {
+                bsheader header;
+                BootstrapCapExplainPayloadHead explain;
+                char desc[5];
+            } cwd_bootstrap_cap{
+                .header =
+                    bsheader{
+                        .size = sizeof(CwdDirBootstrap),
+                        .type = boot::TYPE_CAPEXP,
+                    },
+                .explain =
+                    BootstrapCapExplainPayloadHead{
+                        .cap_idx  = child_cwd_dir_cap,
+                        .cap_type = PayloadType::VDIR,
+                        .cap_perm = ~b64(0),
+                    },
+                .desc = "#cwd",
+            };
+
+            struct ParentPcbBootstrap {
+                bsheader header;
+                BootstrapCapExplainPayloadHead explain;
+                char desc[8];
+            } parent_bootstrap{
+                .header =
+                    bsheader{
+                        .size = sizeof(ParentPcbBootstrap),
+                        .type = boot::TYPE_CAPEXP,
+                    },
+                .explain =
+                    BootstrapCapExplainPayloadHead{
+                        .cap_idx  = child_parent_pcb_cap,
+                        .cap_type = PayloadType::PCB,
+                        .cap_perm = PERM_PCB_GETPID | PERM_BASIC_MIGRATE_ONCE,
+                    },
+                .desc = "#parent",
+            };
+
+            char cwd_desc[256]{};
+            int cwd_desc_len = snprintf(cwd_desc, sizeof(cwd_desc), "#cwd:%s",
+                                        cwd_path);
+            if (cwd_desc_len <= 0 ||
+                static_cast<size_t>(cwd_desc_len) >= sizeof(cwd_desc))
+            {
+                sys_cap_remove(child_root_cap);
+                sys_cap_remove(child_cwd_dir_cap);
+                sys_cap_remove(child_parent_pcb_cap);
+                return cap::error;
+            }
+
+            alignas(bsheader) char cwd_path_bootstrap[sizeof(bsheader) +
+                                                      sizeof(cwd_desc)]{};
+            auto *cwd_header = reinterpret_cast<bsheader *>(cwd_path_bootstrap);
+            cwd_header->size =
+                sizeof(bsheader) + static_cast<size_t>(cwd_desc_len) + 1;
+            cwd_header->type = boot::TYPE_PATHEXP;
+            memcpy(cwd_path_bootstrap + sizeof(bsheader), cwd_desc,
+                   static_cast<size_t>(cwd_desc_len) + 1);
+
+            CapIdx initial_caps[] = {child_root_cap, child_cwd_dir_cap,
+                                     child_parent_pcb_cap, cap::null};
+            const char *bsargv[]  = {
+                reinterpret_cast<const char *>(&root_bootstrap),
+                reinterpret_cast<const char *>(&cwd_bootstrap_cap),
+                reinterpret_cast<const char *>(&parent_bootstrap),
+                cwd_path_bootstrap,
+                nullptr,
+            };
+            CapIdx child_pcb      = sys_create_linux_process(
+                kmod_getcap(fd), SCHED_CLASS_FCFS, initial_caps, argv, nullptr,
+                bsargv);
+            sys_cap_remove(child_root_cap);
+            sys_cap_remove(child_cwd_dir_cap);
+            if (child_pcb == cap::null || child_pcb == cap::error) {
+                sys_cap_remove(child_parent_pcb_cap);
+            }
+            return child_pcb;
+        }
+    }  // namespace
+
     CapIdx bootstrap_root_dir() {
         CapIdx cap = cap::null;
         bool found = false;
@@ -72,221 +181,82 @@ namespace {
         return ok && found ? cap : cap::null;
     }
 
-    [[nodiscard]]
-    CapIdx spawn_kmod_test(int fd, CapIdx root_dir_cap) {
-        if (fd < 0 || root_dir_cap == cap::null || root_dir_cap == cap::error) {
-            return cap::error;
+    bool open_cwd_dir(const char *path, OpenDirHandle &cwd) {
+        cwd = {};
+        cwd.fd = kmod_opendir(path);
+        if (cwd.fd < 0) {
+            printf("contest-runner: opendir failed %s\n", path);
+            return false;
         }
 
-        CapIdx child_root_cap = sys_cap_clone(root_dir_cap);
-        if (child_root_cap == cap::null || child_root_cap == cap::error) {
-            return cap::error;
+        cwd.cap = kmod_getcap(cwd.fd);
+        if (cwd.cap == cap::null || cwd.cap == cap::error) {
+            printf("contest-runner: cwd cap invalid %s\n", path);
+            kmod_fclose(cwd.fd);
+            cwd = {};
+            return false;
         }
 
-        struct RootDirBootstrap {
-            bsheader header;
-            BootstrapCapExplainPayloadHead explain;
-            char desc[3];
-        } bootstrap{
-            .header =
-                bsheader{
-                    .size = sizeof(RootDirBootstrap),
-                    .type = boot::TYPE_CAPEXP,
-                },
-            .explain =
-                BootstrapCapExplainPayloadHead{
-                    .cap_idx  = child_root_cap,
-                    .cap_type = PayloadType::VDIR,
-                    .cap_perm = ~b64(0),
-                },
-            .desc = "#/",
-        };
-
-        CapIdx initial_caps[] = {child_root_cap, cap::null};
-        const char *bsargv[]  = {reinterpret_cast<const char *>(&bootstrap),
-                                 nullptr};
-        CapIdx child_pcb      = sys_create_process(
-            kmod_getcap(fd), SCHED_CLASS_RR, initial_caps, nullptr, nullptr,
-            bsargv);
-        sys_cap_remove(child_root_cap);
-        return child_pcb;
+        cwd.path = path;
+        return true;
     }
 
-    [[nodiscard]]
-    CapIdx spawn_linux_test(int fd, CapIdx root_dir_cap,
-                            const char *cwd_path) {
-        if (fd < 0 || root_dir_cap == cap::null || root_dir_cap == cap::error) {
-            return cap::error;
+    void close_cwd_dir(OpenDirHandle &cwd) {
+        if (cwd.fd >= 0) {
+            kmod_fclose(cwd.fd);
         }
-        if (cwd_path == nullptr || cwd_path[0] == '\0') {
-            return cap::error;
-        }
-
-        CapIdx child_root_cap = sys_cap_clone(root_dir_cap);
-        if (child_root_cap == cap::null || child_root_cap == cap::error) {
-            return cap::error;
-        }
-
-        struct RootDirBootstrap {
-            bsheader header;
-            BootstrapCapExplainPayloadHead explain;
-            char desc[3];
-        } bootstrap{
-            .header =
-                bsheader{
-                    .size = sizeof(RootDirBootstrap),
-                    .type = boot::TYPE_CAPEXP,
-                },
-            .explain =
-                BootstrapCapExplainPayloadHead{
-                    .cap_idx  = child_root_cap,
-                    .cap_type = PayloadType::VDIR,
-                    .cap_perm = ~b64(0),
-                },
-            .desc = "#/",
-        };
-
-        const size_t cwd_path_len = strlen(cwd_path) + 1;
-        alignas(bsheader) char cwd_bootstrap[sizeof(bsheader) + 256]{};
-        if (cwd_path_len > sizeof(cwd_bootstrap) - sizeof(bsheader)) {
-            sys_cap_remove(child_root_cap);
-            return cap::error;
-        }
-        auto *cwd_header = reinterpret_cast<bsheader *>(cwd_bootstrap);
-        cwd_header->size = sizeof(bsheader) + cwd_path_len;
-        cwd_header->type = boot::TYPE_CWDPATH;
-        memcpy(cwd_bootstrap + sizeof(bsheader), cwd_path, cwd_path_len);
-
-        CapIdx initial_caps[] = {child_root_cap, cap::null};
-        const char *bsargv[]  = {reinterpret_cast<const char *>(&bootstrap),
-                                 cwd_bootstrap, nullptr};
-        CapIdx child_pcb      = sys_create_linux_process(
-            kmod_getcap(fd), SCHED_CLASS_FCFS, initial_caps, nullptr, nullptr,
-            bsargv);
-        sys_cap_remove(child_root_cap);
-        return child_pcb;
+        cwd = {};
     }
 
-    void run_kmod_testcase(const char *path, CapIdx root_dir_cap,
-                           TestRunStats &stats) {
-        ++stats.total;
-        printf("contest-runner: start %s\n", path);
-
-        int fd = kmod_fopen(path, "x");
+    RunProgramError run_program(const RunnerContext &ctx,
+                                const OpenDirHandle &cwd,
+                                const char *program_path, const char *argv[],
+                                int &status) {
+        status = 0;
+        int fd = kmod_fopen(program_path, "x");
         if (fd < 0) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), -1});
-            printf("contest-runner: open failed %s\n", path);
-            return;
+            return RunProgramError::OPEN_FAILED;
         }
 
-        CapIdx child_pcb = spawn_kmod_test(fd, root_dir_cap);
+        CapIdx child_pcb = spawn_linux_program(fd, ctx.root_dir_cap, cwd.cap,
+                                               cwd.path, argv);
         kmod_fclose(fd);
         if (child_pcb == cap::null || child_pcb == cap::error) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), -1});
-            printf("contest-runner: spawn failed %s\n", path);
-            return;
+            return RunProgramError::SPAWN_FAILED;
         }
 
         CapIdx wait_caps[] = {child_pcb, cap::null};
-        int status         = 0;
-        CapIdx exited_cap =
-            sys_tcb_wait(__main_tcb_cap, wait_caps, &status, 0);
+        CapIdx exited_cap  = sys_tcb_wait(__main_tcb_cap, wait_caps, &status, 0);
         if (exited_cap == cap::null || exited_cap == cap::error) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), -1});
-            printf("contest-runner: wait failed %s\n", path);
-            return;
+            return RunProgramError::WAIT_FAILED;
         }
-
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), status});
-            printf("contest-runner: failed %s status=0x%x\n", path, status);
-            return;
-        }
-
-        ++stats.passed;
-        printf("contest-runner: passed %s status=0x%x\n", path, status);
+        return RunProgramError::NONE;
     }
 
-    [[nodiscard]]
-    TestRunStats run_kmod_suite(CapIdx root_dir_cap) {
-        TestRunStats stats{};
-        printf("contest-runner: kmod suite begin\n");
-        for (size_t i = 0; KMOD_TESTS[i] != nullptr; ++i) {
-            run_kmod_testcase(KMOD_TESTS[i], root_dir_cap, stats);
-        }
-        printf("contest-runner: kmod suite done total=%lu passed=%lu failed=%lu\n",
-               static_cast<unsigned long>(stats.total),
-               static_cast<unsigned long>(stats.passed),
-               static_cast<unsigned long>(stats.failed));
-        return stats;
+    bool run_status_success(int status) {
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
     }
 
-    void run_testcase(const char *root, const char *testcase,
-                      CapIdx root_dir_cap,
-                      TestRunStats &stats) {
-        ++stats.total;
-
-        char path[256]{};
-        snprintf(path, sizeof(path), "%s/%s", root, testcase);
-        printf("contest-runner: start %s\n", path);
-
-        int fd = kmod_fopen(path, "x");
-        if (fd < 0) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), -1});
-            printf("contest-runner: open failed %s\n", path);
-            return;
-        }
-
-        CapIdx child_pcb = spawn_linux_test(fd, root_dir_cap, root);
-        kmod_fclose(fd);
-        if (child_pcb == cap::null || child_pcb == cap::error) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), -1});
-            printf("contest-runner: spawn failed %s\n", path);
-            return;
-        }
-
-        CapIdx wait_caps[] = {child_pcb, cap::null};
-        int status         = 0;
-        CapIdx exited_cap =
-            sys_tcb_wait(__main_tcb_cap, wait_caps, &status, 0);
-        if (exited_cap == cap::null || exited_cap == cap::error) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), -1});
-            printf("contest-runner: wait failed %s\n", path);
-            return;
-        }
-
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            ++stats.failed;
-            stats.failures.push_back({std::string(path), status});
-            printf("contest-runner: failed %s status=0x%x\n", path, status);
-            return;
-        }
-
-        ++stats.passed;
-        printf("contest-runner: passed %s status=0x%x\n", path, status);
+    int run_exit_code(int status) {
+        return WIFEXITED(status) ? WEXITSTATUS(status) : status;
     }
 
-    [[nodiscard]]
-    TestRunStats run_suite(const char *root, CapIdx root_dir_cap) {
-        TestRunStats stats{};
-        printf("contest-runner: suite begin %s\n", root);
-        for (size_t i = 0; basic::testcases[i] != nullptr; ++i) {
-            run_testcase(root, basic::testcases[i], root_dir_cap, stats);
+    const char *run_error_string(RunProgramError error) {
+        switch (error) {
+            case RunProgramError::NONE:        return "none";
+            case RunProgramError::OPEN_FAILED: return "open";
+            case RunProgramError::SPAWN_FAILED: return "spawn";
+            case RunProgramError::WAIT_FAILED: return "wait";
+            default:                           return "unknown";
         }
-        printf("contest-runner: suite done %s total=%lu passed=%lu failed=%lu\n",
-               root, static_cast<unsigned long>(stats.total),
-               static_cast<unsigned long>(stats.passed),
-               static_cast<unsigned long>(stats.failed));
-        return stats;
     }
-}  // namespace
+
+    void accumulate_stats(TestRunStats &total, const TestRunStats &part) {
+        total.total += part.total;
+        total.passed += part.passed;
+        total.failed += part.failed;
+    }
+}  // namespace contest_runner
 
 extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
                          const bsheader *bsargv[]) {
@@ -295,37 +265,40 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     (void)envp;
     (void)bsargv;
 
-    CapIdx root_dir_cap = bootstrap_root_dir();
+    CapIdx root_dir_cap = contest_runner::bootstrap_root_dir();
     if (root_dir_cap == cap::null || root_dir_cap == cap::error) {
         printf("contest-runner: bootstrap root dir capability missing\n");
         return 1;
     }
 
-    TestRunStats total{};
-    auto kmod_stats = run_kmod_suite(root_dir_cap);
-    total.total += kmod_stats.total;
-    total.passed += kmod_stats.passed;
-    total.failed += kmod_stats.failed;
-    for (auto &f : kmod_stats.failures) {
-        total.failures.push_back(std::move(f));
+    struct LibcTarget {
+        const char *name;
+        const char *root;
+    };
+    constexpr LibcTarget LIBC_TARGETS[] = {
+        {.name="glibc", .root="/testing/glibc"},
+        {.name="musl", .root="/testing/musl"},
+        {.name=nullptr, .root=nullptr},
+    };
+
+    contest_runner::TestRunStats total{};
+    for (size_t i = 0; LIBC_TARGETS[i].name != nullptr; ++i) {
+        contest_runner::RunnerContext ctx{
+            .root_dir_cap = root_dir_cap,
+            .libc_root    = LIBC_TARGETS[i].root,
+            .libc_name    = LIBC_TARGETS[i].name,
+        };
+
+        contest_runner::accumulate_stats(total,
+                                         contest_runner::run_basic(ctx));
+        // contest_runner::accumulate_stats(total,
+        //                                  contest_runner::run_busybox(ctx));
+        // contest_runner::accumulate_stats(total,
+        //                                  contest_runner::run_libctest(ctx));
+        // contest_runner::accumulate_stats(total,
+        //                                  contest_runner::run_ltp(ctx));
     }
 
-    for (size_t i = 0; TEST_ROOTS[i] != nullptr; ++i) {
-        auto stats = run_suite(TEST_ROOTS[i], root_dir_cap);
-        total.total += stats.total;
-        total.passed += stats.passed;
-        total.failed += stats.failed;
-        for (auto &f : stats.failures) {
-            total.failures.push_back(std::move(f));
-        }
-    }
-
-    if (!total.failures.empty()) {
-        printf("contest-runner: FAILED TESTS:\n");
-        for (const auto &f : total.failures) {
-            printf("  %s (status=0x%x)\n", f.path.c_str(), f.status);
-        }
-    }
     printf("contest-runner: all done total=%lu passed=%lu failed=%lu\n",
            static_cast<unsigned long>(total.total),
            static_cast<unsigned long>(total.passed),
