@@ -82,7 +82,6 @@ namespace loader::elf {
             return len;
         }
 
-
     }  // namespace
 
     constexpr const unsigned char ELF_MAGIC[] = {0x7f, 'E', 'L', 'F'};
@@ -159,8 +158,8 @@ namespace loader::elf {
         for (const auto &segment : segments) {
             loggers::ELFLOADER::DEBUG(
                 "loadsegs: idx=%u map=[%p,%p) vaddr=%p filesz=%lu memsz=%lu",
-                segment.index, segment.map_begin.addr(),
-                segment.map_end.addr(), segment.runtime_vaddr.addr(),
+                segment.index, segment.map_begin.addr(), segment.map_end.addr(),
+                segment.runtime_vaddr.addr(),
                 static_cast<unsigned long>(segment.phdr.p_filesz),
                 static_cast<unsigned long>(segment.phdr.p_memsz));
         }
@@ -190,7 +189,7 @@ namespace loader::elf {
         if (file == nullptr) {
             unexpect_return(ErrCode::TYPE_NOT_MATCHED);
         }
-        if (!access_res.value()->imply(perm::vfile::EXEC)) {
+        if (!access_res.value()->imply(perm::vfile::READ | perm::vfile::EXEC)) {
             unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
         }
 
@@ -283,7 +282,6 @@ namespace loader::elf {
             VMA::Prot vma_prot = phdr_to_vma_prot(phdr.p_flags);
 
             const bool no_data = phdr.p_filesz == 0;
-            const bool no_data = phdr.p_filesz == 0;
 
             if (no_data) {
                 // 纯 BSS 段: 匿名 MemoryPayload
@@ -291,12 +289,11 @@ namespace loader::elf {
                     map_memsz, false, false, VMA::Growth::FIXED);
                 auto add_res = spec.tmm->add_vma(
                     vma_type, VMA::Growth::FIXED,
-                    VirArea(aligned_segvaddr, segvend),
-                    segment_mem, vma_prot);
+                    VirArea(aligned_segvaddr, segvend), segment_mem, vma_prot);
                 if (!add_res.has_value()) {
                     delete segment_mem;
                     loggers::ELFLOADER::ERROR("无法为段%d添加VMA: %d", i,
-                                             add_res.error());
+                                              add_res.error());
                     while (true);
                 }
                 loggers::ELFLOADER::DEBUG(
@@ -318,55 +315,48 @@ namespace loader::elf {
                     static_cast<size_t>(phdr.p_filesz) + page_prefix);
                 size_t bss_memsz = map_memsz - data_memsz;
 
-                // DATA 区: file-backed MemoryPayload
-                {
-                    auto *file_clone = access_res.value()->clone();
-                    auto downgrade_res =
-                        file_clone->downgrade(perm::vfile::READ);
-                    if (!downgrade_res.has_value()) {
-                        delete file_clone;
-                        propagate_return(downgrade_res);
-                    }
-                    auto backing =
-                        util::owner<cap::Capability *>(file_clone);
-                    off_t raw_off = static_cast<off_t>(phdr.p_offset) -
-                                    static_cast<off_t>(page_prefix);
-                    size_t file_offset =
-                        raw_off > 0 ? static_cast<size_t>(raw_off) : 0;
-
-                    auto *segment_mem = new cap::MemoryPayload(
-                        data_memsz, false, false, VMA::Growth::FIXED,
-                        std::move(backing), file_offset);
-                    auto add_res = spec.tmm->add_vma(
-                        vma_type, VMA::Growth::FIXED,
-                        VirArea(aligned_segvaddr,
-                                aligned_segvaddr + data_memsz),
-                        segment_mem, vma_prot);
-                    if (!add_res.has_value()) {
-                        delete segment_mem;
-                        loggers::ELFLOADER::ERROR(
-                            "无法为段%d添加VMA(DATA): %d", i,
-                            add_res.error());
-                        while (true);
-                    }
-                    loggers::ELFLOADER::DEBUG(
-                        "创建ELF VMA(DATA): type=%s area=[%p,%p) mem=%p "
-                        "memsz=%lu file_off=%lu",
-                        to_string(vma_type), aligned_segvaddr.addr(),
-                        (aligned_segvaddr + data_memsz).addr(),
-                        segment_mem,
-                        static_cast<unsigned long>(data_memsz),
-                        static_cast<unsigned long>(file_offset));
-
-                    runtime_segments.push_back(RuntimeLoadSegment{
-                        .index         = i,
-                        .phdr          = phdr,
-                        .runtime_vaddr = segvaddr,
-                        .map_begin     = aligned_segvaddr,
-                        .map_end       = aligned_segvaddr + data_memsz,
-                        .page_prefix   = page_prefix,
-                    });
+                auto *file_clone = access_res.value()->clone();
+                auto downgrade_res = file_clone->downgrade(perm::vfile::READ);
+                if (!downgrade_res.has_value()) {
+                    delete file_clone;
+                    propagate_return(downgrade_res);
                 }
+                auto backing = util::owner<cap::Capability *>(file_clone);
+                off_t raw_off = static_cast<off_t>(phdr.p_offset) -
+                                static_cast<off_t>(page_prefix);
+                size_t file_offset =
+                    raw_off > 0 ? static_cast<size_t>(raw_off) : 0;
+
+                auto *segment_mem = new cap::MemoryPayload(
+                    data_memsz, false, false, VMA::Growth::FIXED,
+                    std::move(backing), file_offset);
+                auto add_res = spec.tmm->add_vma(
+                    vma_type, VMA::Growth::FIXED,
+                    VirArea(aligned_segvaddr,
+                            aligned_segvaddr + data_memsz),
+                    segment_mem, vma_prot);
+                if (!add_res.has_value()) {
+                    delete segment_mem;
+                    loggers::ELFLOADER::ERROR("无法为段%d添加VMA(DATA): %d",
+                                              i, add_res.error());
+                    while (true);
+                }
+                loggers::ELFLOADER::DEBUG(
+                    "创建ELF VMA(DATA): type=%s area=[%p,%p) mem=%p "
+                    "memsz=%lu file_off=%lu",
+                    to_string(vma_type), aligned_segvaddr.addr(),
+                    (aligned_segvaddr + data_memsz).addr(), segment_mem,
+                    static_cast<unsigned long>(data_memsz),
+                    static_cast<unsigned long>(file_offset));
+
+                runtime_segments.push_back(RuntimeLoadSegment{
+                    .index         = i,
+                    .phdr          = phdr,
+                    .runtime_vaddr = segvaddr,
+                    .map_begin     = aligned_segvaddr,
+                    .map_end       = aligned_segvaddr + data_memsz,
+                    .page_prefix   = page_prefix,
+                });
 
                 if (bss_memsz > 0) {
                     // BSS 区: 匿名 MemoryPayload
@@ -378,18 +368,16 @@ namespace loader::elf {
                         segment_mem, vma_prot);
                     if (!add_res.has_value()) {
                         delete segment_mem;
-                        loggers::ELFLOADER::ERROR(
-                            "无法为段%d添加VMA(BSS): %d", i,
-                            add_res.error());
+                        loggers::ELFLOADER::ERROR("无法为段%d添加VMA(BSS): %d",
+                                                  i, add_res.error());
                         while (true);
                     }
                     loggers::ELFLOADER::DEBUG(
                         "创建ELF VMA(BSS尾部): type=%s area=[%p,%p) mem=%p "
                         "memsz=%lu",
                         to_string(vma_type),
-                        (aligned_segvaddr + data_memsz).addr(),
-                        segvend.addr(), segment_mem,
-                        static_cast<unsigned long>(bss_memsz));
+                        (aligned_segvaddr + data_memsz).addr(), segvend.addr(),
+                        segment_mem, static_cast<unsigned long>(bss_memsz));
 
                     runtime_segments.push_back(RuntimeLoadSegment{
                         .index         = i,
