@@ -38,6 +38,7 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
 
 namespace {
     constexpr size_t LINUX_MMAP_QUERY_BATCH = 64;
+    constexpr size_t LINUX_MMAP_GAP         = 0x40000000ULL;
     constexpr size_t PROT_READ              = 0x1;
     constexpr size_t PROT_WRITE             = 0x2;
     constexpr size_t PROT_EXEC              = 0x4;
@@ -206,7 +207,30 @@ namespace {
     size_t choose_mmap_base(size_t length) {
         VMAInfo infos[LINUX_MMAP_QUERY_BATCH]{};
         size_t offset = 0;
-        size_t cursor = page_align_up_user(__linuxss_ssheap_base + PAGESIZE);
+        size_t max_end = 0;
+        while (true) {
+            auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                                  LINUX_MMAP_QUERY_BATCH)
+                                 .to_result();
+            if (!count_res.has_value()) {
+                break;
+            }
+            size_t count = count_res.value();
+            if (count == 0) {
+                break;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                size_t start = reinterpret_cast<size_t>(infos[i].vma_start);
+                size_t end   = start + infos[i].vma_size;
+                if (end > max_end) {
+                    max_end = end;
+                }
+            }
+            offset += count;
+        }
+
+        size_t cursor = page_align_up_user(max_end + LINUX_MMAP_GAP);
+        offset        = 0;
         while (true) {
             auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
                                                   LINUX_MMAP_QUERY_BATCH)
@@ -226,6 +250,37 @@ namespace {
                 }
                 if (cursor < end) {
                     cursor = page_align_up_user(end);
+                }
+            }
+            offset += count;
+        }
+    }
+
+    [[nodiscard]]
+    bool mmap_range_conflicts(size_t begin, size_t length) {
+        if (length == 0) {
+            return false;
+        }
+
+        VMAInfo infos[LINUX_MMAP_QUERY_BATCH]{};
+        size_t offset = 0;
+        size_t end    = begin + length;
+        while (true) {
+            auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                                  LINUX_MMAP_QUERY_BATCH)
+                                 .to_result();
+            if (!count_res.has_value()) {
+                return false;
+            }
+            size_t count = count_res.value();
+            if (count == 0) {
+                return false;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                size_t vma_begin = reinterpret_cast<size_t>(infos[i].vma_start);
+                size_t vma_end   = vma_begin + infos[i].vma_size;
+                if (begin < vma_end && vma_begin < end) {
+                    return true;
                 }
             }
             offset += count;
@@ -472,6 +527,7 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     
     bool is_anonymous = (flags & MAP_ANONYMOUS) != 0;
     bool is_fixed     = (flags & MAP_FIXED) != 0;
+    bool no_replace   = (flags & MAP_FIXED_NOREPLACE) != 0;
     bool is_private   = (flags & MAP_PRIVATE) != 0;
     bool is_shared    = (flags & MAP_SHARED) != 0;
 
@@ -511,11 +567,46 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     size_t target_addr    = is_fixed
                                 ? reinterpret_cast<size_t>(addr)
                                 : choose_mmap_base(aligned_length);
+    
+    if (! is_fixed) {
+        loggers::LXSC::INFO(
+            "mmap chose target address=[%p, %p) for length=%lu",
+            reinterpret_cast<void *>(target_addr),
+            reinterpret_cast<void *>(target_addr + aligned_length),
+            static_cast<unsigned long>(aligned_length));
+    }
+
     if ((target_addr % PAGESIZE) != 0) {
         loggers::LXSC::ERROR(
             "mmap target address is not page-aligned, addr=%p",
             reinterpret_cast<void *>(target_addr));
         return INVALID_VALUE;
+    }
+
+    if (is_fixed) {
+        bool conflict = mmap_range_conflicts(target_addr, aligned_length);
+        if (conflict && no_replace) {
+            loggers::LXSC::ERROR(
+                "mmap MAP_FIXED_NOREPLACE conflicts with existing VMA, "
+                "range=[%p, %p)",
+                reinterpret_cast<void *>(target_addr),
+                reinterpret_cast<void *>(target_addr + aligned_length));
+            return INVALID_VALUE;
+        }
+        if (conflict) {
+            loggers::LXSC::INFO(
+                "mmap MAP_FIXED removes conflicting range=[%p, %p)",
+                reinterpret_cast<void *>(target_addr),
+                reinterpret_cast<void *>(target_addr + aligned_length));
+            if (!sys_pcb_unmap(__prog_pcb_cap,
+                               reinterpret_cast<void *>(target_addr),
+                               aligned_length))
+            {
+                loggers::LXSC::ERROR(
+                    "mmap MAP_FIXED failed to unmap conflicting range");
+                return INVALID_VALUE;
+            }
+        }
     }
 
     CapIdx backing_file_cap = cap::null;
@@ -565,6 +656,8 @@ size_t linux_sys_munmap(void *addr, size_t length) {
     if ((target_addr % PAGESIZE) != 0) {
         return INVALID_VALUE;
     }
+    loggers::LXSC::INFO("munmap addr=%p length=%lu", addr,
+                        static_cast<unsigned long>(length));
     return sys_pcb_unmap(__prog_pcb_cap, addr, aligned_length) ? 0
                                                                : INVALID_VALUE;
 }
