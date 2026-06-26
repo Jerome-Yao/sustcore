@@ -367,3 +367,11 @@ sys_vfs_page_cache_stats:
 sys_time_now_ns:
     li.d $a7, SYS_TIME_NOW_NS
     do_syscall
+
+    .global sys_tcb_nanosleep
+    .type sys_tcb_nanosleep, @function
+sys_tcb_nanosleep:
+    move $a1, $a0
+    move $a0, $zero
+    li.d $a7, SYS_TCB_NANOSLEEP
+    do_syscall

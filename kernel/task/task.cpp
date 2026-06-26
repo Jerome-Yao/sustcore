@@ -9,6 +9,8 @@
  *
  */
 
+#include <driver/clock.h>
+#include <env.h>
 #include <logger.h>
 #include <mem/alloc.h>
 #include <mem/slub.h>
@@ -22,6 +24,55 @@
 namespace task {
     namespace {
         wait::wd_t g_task_exit_wait_wd = 0;
+
+        class NanosleepWakeAction final : public device::ExpireAction {
+        public:
+            explicit NanosleepWakeAction(NanosleepContext *ctx,
+                                         units::time deadline) noexcept;
+
+            void expire(const device::ClockEvent &event) noexcept override;
+
+        private:
+            NanosleepContext *_ctx = nullptr;
+        };
+    }  // namespace
+
+    struct NanosleepContext {
+        wait::wd_t wait_wd = 0;
+        // 这是为避免 “timer 先触发、线程后入队” 的丢唤醒临时措施。
+        // 当前实现依赖该状态位与 wait_event 条件配合工作，后续应考虑
+        // 以更完整的同步与生命周期模型替代。
+        bool fired = false;
+        bool sleeping = false;
+        // 已知问题：当前暂不处理线程在 sleep 未到期前被回收时，
+        // TimeKeeper 队列中仍可能保留指向该 action 的悬空指针。
+        // 该生命周期问题等待后续统一处理。
+        NanosleepWakeAction action;
+
+        NanosleepContext() noexcept
+            : wait_wd(wait::alloc_reason()), action(this, units::time{}) {}
+    };
+
+    namespace {
+        NanosleepWakeAction::NanosleepWakeAction(
+            NanosleepContext *ctx, units::time deadline) noexcept
+            : device::ExpireAction(deadline), _ctx(ctx) {}
+
+        void NanosleepWakeAction::expire(
+            const device::ClockEvent &event [[maybe_unused]]) noexcept {
+            if (_ctx == nullptr) {
+                loggers::TASK::ERROR("NanosleepWakeAction 缺少上下文");
+                return;
+            }
+            _ctx->fired    = true;
+            _ctx->sleeping = false;
+            auto wake_res  = wait::wake_one(_ctx->wait_wd);
+            if (!wake_res.has_value()) {
+                loggers::TASK::ERROR("nanosleep 唤醒失败: wd=%lu err=%s",
+                                     _ctx->wait_wd,
+                                     to_cstring(wake_res.error()));
+            }
+        }
     }  // namespace
 
     wait::wd_t task_exit_wait_wd() noexcept {
@@ -29,6 +80,73 @@ namespace task {
             g_task_exit_wait_wd = wait::alloc_reason();
         }
         return g_task_exit_wait_wd;
+    }
+
+    Result<NanosleepContext *> ensure_nanosleep_context(
+        util::nonnull<TCB *> tcb) noexcept {
+        if (tcb->nanosleep_ctx != nullptr) {
+            return tcb->nanosleep_ctx;
+        }
+
+        auto *ctx = new NanosleepContext();
+        if (ctx == nullptr) {
+            unexpect_return(ErrCode::OUT_OF_MEMORY);
+        }
+        tcb->nanosleep_ctx = ctx;
+        return ctx;
+    }
+
+    void destroy_nanosleep_context(TCB *tcb) noexcept {
+        if (tcb == nullptr || tcb->nanosleep_ctx == nullptr) {
+            return;
+        }
+        delete tcb->nanosleep_ctx;
+        tcb->nanosleep_ctx = nullptr;
+    }
+
+    Result<void> block_current_for_nanosleep(util::nonnull<TCB *> tcb,
+                                             size_t ns) noexcept {
+        if (ns == 0) {
+            void_return();
+        }
+
+        auto ctx_res = ensure_nanosleep_context(tcb);
+        propagate(ctx_res);
+        auto *ctx = ctx_res.value();
+        if (ctx == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        if (ctx->sleeping) {
+            unexpect_return(ErrCode::FAILURE);
+        }
+
+        auto *time_keeper =
+            env::hart_ctx != nullptr ? env::hart_ctx->time_keeper() : nullptr;
+        if (time_keeper == nullptr || time_keeper->source() == nullptr) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        units::time now =
+            time_keeper->source()->to_ns(time_keeper->source()->now());
+        units::time deadline =
+            now + units::time::from_nanoseconds(static_cast<int64_t>(ns));
+
+        ctx->fired    = false;
+        ctx->sleeping = true;
+        ctx->action.revive();
+        ctx->action.set_deadline(deadline);
+        time_keeper->enqueue(
+            util::owner<device::ExpireAction *>(&ctx->action));
+
+        auto wait_res = wait_event(ctx->wait_wd, ctx->fired);
+        if (!wait_res.has_value()) {
+            ctx->sleeping = false;
+            propagate_return(wait_res);
+        }
+
+        ctx->fired    = false;
+        ctx->sleeping = false;
+        void_return();
     }
 
     void TCB::SyscallInfo::reset() noexcept {
@@ -110,6 +228,7 @@ namespace task {
         tcb->boot_role      = BootThreadRole::NONE;
         tcb->wait_wd        = 0;
         tcb->wait_predicate = {};
+        tcb->nanosleep_ctx  = nullptr;
         tcb->wait_head      = {};
         tcb->syscall_info.reset();
 
@@ -192,6 +311,7 @@ namespace task {
             GFP::put_page(tcb->kstack_phy - TCB::KSTACK_SIZE,
                           TCB::KSTACK_PAGES);
         }
+        destroy_nanosleep_context(tcb.get());
         tcb->task          = nullptr;
         tcb->kstack_phy    = PhyAddr::null;
         tcb->kstack_bottom = nullptr;

@@ -17,6 +17,15 @@ sys_time_now_ns:
     syscall 0
     ret
 
+    .global sys_tcb_nanosleep
+    .type sys_tcb_nanosleep, @function
+sys_tcb_nanosleep:
+    move $a1, $a0
+    move $a0, $zero
+    li.d $a7, SYS_TCB_NANOSLEEP
+    syscall 0
+    ret
+
     .global sys_pcb_kill
     .type sys_pcb_kill, @function
 sys_pcb_kill:

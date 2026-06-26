@@ -410,6 +410,9 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_gettimeofday:
             return linux_sys_gettimeofday(reinterpret_cast<void *>(a0),
                                           reinterpret_cast<void *>(a1));
+        case __NR_nanosleep:
+            return linux_sys_nanosleep(reinterpret_cast<const void *>(a0),
+                                       reinterpret_cast<void *>(a1));
         case __NR_getpid:      return linux_sys_getpid();
         case __NR_getppid:     return linux_sys_getppid();
         case __NR_sched_yield: return linux_sys_sched_yield();

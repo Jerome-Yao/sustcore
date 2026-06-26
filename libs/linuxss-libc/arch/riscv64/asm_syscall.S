@@ -16,6 +16,15 @@ sys_time_now_ns:
     ecall
     ret
 
+    .global sys_tcb_nanosleep
+    .type   sys_tcb_nanosleep, @function
+sys_tcb_nanosleep:
+    mv a1, a0
+    li a0, 0
+    li a7, SYS_TCB_NANOSLEEP
+    ecall
+    ret
+
     .global sys_pcb_kill
     .type   sys_pcb_kill, @function
 sys_pcb_kill:

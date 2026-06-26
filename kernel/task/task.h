@@ -41,6 +41,14 @@ namespace task {
 
     [[nodiscard]]
     wait::wd_t task_exit_wait_wd() noexcept;
+    struct NanosleepContext;
+    [[nodiscard]]
+    Result<NanosleepContext *> ensure_nanosleep_context(
+        util::nonnull<TCB *> tcb) noexcept;
+    void destroy_nanosleep_context(TCB *tcb) noexcept;
+    [[nodiscard]]
+    Result<void> block_current_for_nanosleep(
+        util::nonnull<TCB *> tcb, size_t ns) noexcept;
 
     class TaskManager {
     private:
@@ -83,6 +91,7 @@ namespace task {
             tcb->rr_entity            = {};
             tcb->wait_wd              = 0;
             tcb->wait_predicate       = {};
+            tcb->nanosleep_ctx        = nullptr;
             tcb->syscall_info.reset();
             tcb->wait_head = {};
             return util::nnullforce(tcb);

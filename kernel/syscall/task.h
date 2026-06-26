@@ -50,6 +50,8 @@ namespace syscall {
     [[nodiscard]]
     Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
                             UBuffer *status_buf, size_t options);
+    [[nodiscard]]
+    Result<void> tcb_nanosleep(size_t ns);
 
     /**
      * @brief fork 当前进程, 子 PCB capability 输出缓冲区已由 dispatcher 预处理.

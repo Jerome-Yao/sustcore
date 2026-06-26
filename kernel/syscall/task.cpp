@@ -483,6 +483,13 @@ namespace syscall {
         return final_res.value();
     }
 
+    Result<void> tcb_nanosleep(size_t ns) {
+        auto current_tcb_res = running_tcb();
+        propagate(current_tcb_res);
+        return task::block_current_for_nanosleep(
+            util::nnullforce(current_tcb_res.value()), ns);
+    }
+
     Result<size_t> pcb_fork(CapIdx pcb_cap, UBuffer &&child_cap_buf) {
         cap::Capability *cap = nullptr;
         auto pcb_res         = lookup_pcb(pcb_cap, &cap);

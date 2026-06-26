@@ -244,6 +244,7 @@ namespace syscall {
             case SYS_CREATE_POSIX_PROCESS:return "SYS_CREATE_POSIX_PROCESS";
             case SYS_SHUTDOWN:            return "SYS_SHUTDOWN";
             case SYS_TIME_NOW_NS:         return "SYS_TIME_NOW_NS";
+            case SYS_TCB_NANOSLEEP:       return "SYS_TCB_NANOSLEEP";
             case SYS_PCB_KILL:            return "SYS_PCB_KILL";
             case SYS_PCB_FORK:            return "SYS_PCB_FORK";
             case SYS_PCB_GETPID:          return "SYS_PCB_GETPID";
@@ -354,6 +355,10 @@ namespace syscall {
             }
             case SYS_TIME_NOW_NS: {
                 ret.ret0 = time_now_ns();
+                break;
+            }
+            case SYS_TCB_NANOSLEEP: {
+                ret = result_void_ret("tcb_nanosleep", tcb_nanosleep(arg0));
                 break;
             }
             case SYS_VFS_PAGE_CACHE_STATS: {

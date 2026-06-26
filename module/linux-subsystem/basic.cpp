@@ -275,6 +275,25 @@ size_t linux_sys_times(void *buf) {
     }
     return now_res.value() / 1000000ULL;
 }
+
+size_t linux_sys_nanosleep(const void *req, void *rem) {
+    if (req == nullptr) {
+        return INVALID_VALUE;
+    }
+
+    auto *tv = reinterpret_cast<const linux_timeval *>(req);
+    uint64_t ns = tv->sec * 1000000000ULL + tv->usec * 1000ULL;
+    auto sleep_res = sys_tcb_nanosleep(static_cast<size_t>(ns)).to_result();
+    if (!sleep_res.has_value()) {
+        return INVALID_VALUE;
+    }
+
+    if (rem != nullptr) {
+        linux_timeval zero{};
+        memcpy(rem, &zero, sizeof(zero));
+    }
+    return 0;
+}
 [[noreturn]]
 void linux_sys_exit(int exitcode) {
     (void)sys_pcb_kill(__prog_pcb_cap, exitcode).to_result();
