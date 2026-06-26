@@ -1969,6 +1969,17 @@ Result<util::refc_ptr<VINode>> VFS::_resolve_inode_no_follow(
 
 Result<void> VFS::_stat_from_vinode(VINode &vnode, NodeMeta &out) const {
     out.inode = vnode.inode()->inode_id();
+    out.devno = 0;
+    if (vnode.superblock().vfsd().fsd()->is_pseudo()) {
+        out.devno = 0;
+    } else {
+        for (const auto &[_, record] : mount_table) {
+            if (record.superblock.get() == &vnode.superblock()) {
+                out.devno = record.devno;
+                break;
+            }
+        }
+    }
 
     auto symlink_res = vnode.superblock().sb()->is_symlink(out.inode);
     propagate(symlink_res);
@@ -1977,6 +1988,7 @@ Result<void> VFS::_stat_from_vinode(VINode &vnode, NodeMeta &out) const {
         auto target_res = vnode.superblock().sb()->readlink(out.inode);
         propagate(target_res);
         out.size = target_res.value().size();
+        out.links = 1;
         void_return();
     }
 
@@ -1988,6 +2000,7 @@ Result<void> VFS::_stat_from_vinode(VINode &vnode, NodeMeta &out) const {
         auto size_res = file_res.value()->size();
         propagate(size_res);
         out.size = size_res.value();
+        out.links = 1;
         void_return();
     }
 
@@ -1995,6 +2008,7 @@ Result<void> VFS::_stat_from_vinode(VINode &vnode, NodeMeta &out) const {
     if (dir_res.has_value()) {
         out.type = EntryType::DIR;
         out.size = 0;
+        out.links = 1;
         void_return();
     }
 
@@ -2146,6 +2160,16 @@ Result<void> VFS::lstat(cap::Capability &parent_dir_cap, const char *relpath,
         _resolve_inode_no_follow(global_res.value().second, mount_path);
     propagate(vnode_res);
     return _stat_from_vinode(*vnode_res.value().get(), out);
+}
+
+Result<void> VFS::fstat(cap::Capability &cap, NodeMeta &out) const {
+    if (auto *vfile = cap.payload_as<VFile>(); vfile != nullptr) {
+        return _stat_from_vinode(*vfile->vinode().get(), out);
+    }
+    if (auto *vdir = cap.payload_as<VDirectory>(); vdir != nullptr) {
+        return _stat_from_vinode(*vdir->vinode().get(), out);
+    }
+    unexpect_return(ErrCode::TYPE_NOT_MATCHED);
 }
 
 Result<size_t> VFS::readlink(cap::Capability &parent_dir_cap,

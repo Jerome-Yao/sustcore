@@ -340,6 +340,13 @@ sys_vfs_lstat:
     ecall
     ret
 
+    .global sys_vfs_fstat
+    .type   sys_vfs_fstat, @function
+sys_vfs_fstat:
+    li a7, SYS_VFS_FSTAT
+    ecall
+    ret
+
     .global sys_vfs_readlink
     .type   sys_vfs_readlink, @function
 sys_vfs_readlink:

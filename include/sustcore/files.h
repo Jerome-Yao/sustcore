@@ -71,6 +71,8 @@ struct NodeMeta {
     EntryType type;
     size_t size;
     size_t inode;
+    size_t links;
+    size_t devno;
 };
 
 struct VFSPageCacheStats {

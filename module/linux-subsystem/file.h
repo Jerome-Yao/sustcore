@@ -27,3 +27,5 @@ size_t linux_sys_chdir(const char *pathname);
 size_t linux_sys_mkdirat(int dirfd, const char *pathname, int mode);
 size_t linux_sys_unlinkat(int dirfd, const char *pathname, int flags);
 size_t linux_sys_getdents64(int fd, void *dirp, size_t count);
+size_t linux_sys_statx(int dirfd, const char *pathname, int flags,
+                       unsigned mask, void *statxbuf);

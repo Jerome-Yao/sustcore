@@ -26,6 +26,7 @@
 namespace {
     constexpr size_t INVALID_VALUE = 0xFFFF'FFFF'FFFF'FFFF;
     constexpr int AT_FDCWD         = -100;
+    constexpr int AT_EMPTY_PATH    = 0x1000;
     constexpr int LINUX_O_RDONLY   = 0;
     constexpr int LINUX_O_WRONLY   = 1;
     constexpr int LINUX_O_RDWR     = 2;
@@ -45,6 +46,54 @@ namespace {
         unsigned char d_type;
         char d_name[];
     };
+
+    struct linux_statx_timestamp {
+        int64_t tv_sec;
+        uint32_t tv_nsec;
+        int32_t __reserved;
+    };
+
+    struct linux_statx {
+        uint32_t stx_mask;
+        uint32_t stx_blksize;
+        uint64_t stx_attributes;
+        uint32_t stx_nlink;
+        uint32_t stx_uid;
+        uint32_t stx_gid;
+        uint16_t stx_mode;
+        uint16_t __spare0[1];
+        uint64_t stx_ino;
+        uint64_t stx_size;
+        uint64_t stx_blocks;
+        uint64_t stx_attributes_mask;
+        linux_statx_timestamp stx_atime;
+        linux_statx_timestamp stx_btime;
+        linux_statx_timestamp stx_ctime;
+        linux_statx_timestamp stx_mtime;
+        uint32_t stx_rdev_major;
+        uint32_t stx_rdev_minor;
+        uint32_t stx_dev_major;
+        uint32_t stx_dev_minor;
+        uint64_t __spare2[14];
+    };
+
+    constexpr uint32_t STATX_TYPE  = 0x0001U;
+    constexpr uint32_t STATX_MODE  = 0x0002U;
+    constexpr uint32_t STATX_NLINK = 0x0004U;
+    constexpr uint32_t STATX_UID   = 0x0008U;
+    constexpr uint32_t STATX_GID   = 0x0010U;
+    constexpr uint32_t STATX_ATIME = 0x0020U;
+    constexpr uint32_t STATX_INO   = 0x0100U;
+    constexpr uint32_t STATX_SIZE  = 0x0200U;
+    constexpr uint32_t STATX_BLOCKS = 0x0400U;
+    constexpr uint32_t STATX_MTIME  = 0x0040U;
+    constexpr uint32_t STATX_CTIME  = 0x0080U;
+    constexpr uint16_t S_DEFAULTL   = 0x01A4U;
+    constexpr uint16_t S_IFREG      = 0x8000U;
+    constexpr uint16_t S_IFDIR      = 0x4000U;
+    constexpr uint16_t S_IFLNK      = 0xA000U;
+    // 占位符, 以后再引入真实时间
+    constexpr int64_t FIXED_TIME    = 0x114514;
 
     struct DirFdState {
         bool used         = false;
@@ -377,6 +426,39 @@ namespace {
                 return ResolvedNodeType::FILE;
             default: return ResolvedNodeType::ERROR;
         }
+    }
+
+    [[nodiscard]]
+    uint16_t node_meta_to_mode(const NodeMeta &meta) {
+        switch (meta.type) {
+            case EntryType::DIR:     return static_cast<uint16_t>(S_IFDIR | S_DEFAULTL);
+            case EntryType::SYMLINK: return static_cast<uint16_t>(S_IFLNK | S_DEFAULTL);
+            case EntryType::FILE:
+            default:                 return static_cast<uint16_t>(S_IFREG | S_DEFAULTL);
+        }
+    }
+
+    void fill_fixed_time(linux_statx_timestamp &ts) {
+        ts.tv_sec = FIXED_TIME;
+        ts.tv_nsec = 0;
+        ts.__reserved = 0;
+    }
+
+    void fill_statx_from_node_meta(const NodeMeta &meta, linux_statx &stx) {
+        memset(&stx, 0, sizeof(stx));
+        stx.stx_mask = STATX_TYPE | STATX_MODE | STATX_NLINK | STATX_UID |
+                       STATX_GID | STATX_ATIME | STATX_INO | STATX_SIZE |
+                       STATX_BLOCKS | STATX_MTIME | STATX_CTIME;
+        stx.stx_blksize = 4096;
+        stx.stx_nlink = static_cast<uint32_t>(meta.links);
+        stx.stx_mode = node_meta_to_mode(meta);
+        stx.stx_ino = meta.inode;
+        stx.stx_size = meta.size;
+        stx.stx_blocks = (meta.size + 511) / 512;
+        fill_fixed_time(stx.stx_atime);
+        fill_fixed_time(stx.stx_btime);
+        fill_fixed_time(stx.stx_ctime);
+        fill_fixed_time(stx.stx_mtime);
     }
 
     void copy_dir_fd_state(int oldfd, int newfd, bool pinned) {
@@ -834,4 +916,32 @@ size_t linux_sys_getdents64(int fd, void *dirp, size_t count) {
         dir_state->next_index = entry_index;
     }
     return pos;
+}
+
+size_t linux_sys_statx(int dirfd, const char *pathname, int flags,
+                       unsigned mask, void *statxbuf) {
+    (void)mask;
+    if (statxbuf == nullptr) {
+        return -EINVAL;
+    }
+    if (dirfd < 0 || pathname == nullptr || pathname[0] != '\0' ||
+        (flags & AT_EMPTY_PATH) == 0)
+    {
+        return -ENOSYS;
+    }
+
+    CapIdx cap = fd_to_cap(dirfd);
+    if (cap == cap::error || cap == cap::null) {
+        return -EBADF;
+    }
+
+    NodeMeta meta{};
+    if (!sys_vfs_fstat(cap, &meta)) {
+        return -EIO;
+    }
+
+    linux_statx stx{};
+    fill_statx_from_node_meta(meta, stx);
+    memcpy(statxbuf, &stx, sizeof(stx));
+    return 0;
 }

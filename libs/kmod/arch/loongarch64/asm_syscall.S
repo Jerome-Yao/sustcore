@@ -314,6 +314,12 @@ sys_vfs_lstat:
     li.d $a7, SYS_VFS_LSTAT
     do_syscall
 
+    .global sys_vfs_fstat
+    .type sys_vfs_fstat, @function
+sys_vfs_fstat:
+    li.d $a7, SYS_VFS_FSTAT
+    do_syscall
+
     .global sys_vfs_readlink
     .type sys_vfs_readlink, @function
 sys_vfs_readlink:

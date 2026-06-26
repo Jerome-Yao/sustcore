@@ -318,6 +318,19 @@ namespace syscall {
         return out.commit_to_user(sizeof(st));
     }
 
+    Result<void> vfs_fstat(CapIdx file_cap, UBuffer &&out) {
+        if (out.kbuf() == nullptr || out.len() < sizeof(NodeMeta)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto file_res = lookup_current_cap(file_cap);
+        propagate(file_res);
+        NodeMeta st{};
+        auto stat_res = VFS::inst().fstat(*file_res.value(), st);
+        propagate(stat_res);
+        memcpy(out.kbuf(), &st, sizeof(st));
+        return out.commit_to_user(sizeof(st));
+    }
+
     Result<size_t> vfs_readlink(CapIdx parent_dir_cap, const UString &relpath,
                                  UBuffer &&buf, size_t bufsiz) {
         auto parent_res = lookup_current_cap(parent_dir_cap);

@@ -70,6 +70,8 @@ namespace syscall {
     Result<void> vfs_lstat(CapIdx parent_dir_cap, const UString &relpath,
                            UBuffer &&out);
     [[nodiscard]]
+    Result<void> vfs_fstat(CapIdx file_cap, UBuffer &&out);
+    [[nodiscard]]
     Result<size_t> vfs_readlink(CapIdx parent_dir_cap, const UString &relpath,
                                  UBuffer &&buf, size_t bufsiz);
     [[nodiscard]]

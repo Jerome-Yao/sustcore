@@ -409,6 +409,12 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             reinterpret_cast<void *>(a1), a2);
         case __NR_getcwd:
             return linux_sys_getcwd(reinterpret_cast<char *>(a0), a1);
+        case __NR_statx:
+            return linux_sys_statx(static_cast<int>(a0),
+                                   reinterpret_cast<const char *>(a1),
+                                   static_cast<int>(a2),
+                                   static_cast<unsigned>(a3),
+                                   reinterpret_cast<void *>(a4));
         case __NR_exit: linux_sys_exit(a0); return 0;
         case __NR_close: return linux_sys_close(static_cast<int>(a0));
         case __NR_dup: return linux_sys_dup(static_cast<int>(a0));

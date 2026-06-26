@@ -480,6 +480,7 @@ public:
                               const char *mntpath, uint64_t attachflags);
     Result<void> mount_detach(VMount &mount, uint64_t flags);
     Result<CapIdx> mount_root(VMount &mount, cap::CHolder &holder);
+    Result<void> fstat(cap::Capability &cap, NodeMeta &out) const;
     // 打开文件并直接插入到指定 holder 中
     Result<CapIdx> open(const char *filepath, cap::CHolder &holder);
     [[nodiscard]]

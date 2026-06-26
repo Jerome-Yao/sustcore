@@ -110,6 +110,7 @@ bool sys_vfs_symlink(CapIdx parent_dir_cap, const char *name,
 bool sys_vfs_link(CapIdx parent_dir_cap, const char *name, CapIdx target);
 bool sys_vfs_stat(CapIdx parent_dir_cap, const char *name, NodeMeta *out);
 bool sys_vfs_lstat(CapIdx parent_dir_cap, const char *name, NodeMeta *out);
+bool sys_vfs_fstat(CapIdx file_cap, NodeMeta *out);
 size_t sys_vfs_readlink(CapIdx parent_dir_cap, const char *name, char *buf,
                         size_t bufsiz);
 CapIdx sys_mnt_create(CapIdx devfile_cap, const char *fs_name,

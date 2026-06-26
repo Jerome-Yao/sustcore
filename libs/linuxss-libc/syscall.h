@@ -109,6 +109,7 @@ extern "C" bool sys_vfs_stat(CapIdx parent_dir_cap, const char *name,
                              NodeMeta *out);
 extern "C" bool sys_vfs_lstat(CapIdx parent_dir_cap, const char *name,
                               NodeMeta *out);
+extern "C" bool sys_vfs_fstat(CapIdx file_cap, NodeMeta *out);
 extern "C" size_t sys_vfs_readlink(CapIdx parent_dir_cap, const char *name,
                                    char *buf, size_t bufsiz);
 extern "C" size_t sys_vfs_read(CapIdx file_cap, size_t offset, void *buf,
