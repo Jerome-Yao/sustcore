@@ -25,13 +25,16 @@ namespace contest_runner {
         [[nodiscard]]
         CapIdx spawn_linux_program(int fd, CapIdx root_dir_cap,
                                    CapIdx cwd_dir_cap, const char *cwd_path,
+                                   const char *program_path,
                                    const char *argv[]) {
             if (fd < 0 || root_dir_cap == cap::null || root_dir_cap == cap::error ||
                 cwd_dir_cap == cap::null || cwd_dir_cap == cap::error)
             {
                 return cap::error;
             }
-            if (cwd_path == nullptr || cwd_path[0] == '\0') {
+            if (cwd_path == nullptr || cwd_path[0] == '\0' ||
+                program_path == nullptr || program_path[0] == '\0')
+            {
                 return cap::error;
             }
 
@@ -126,6 +129,18 @@ namespace contest_runner {
                 return cap::error;
             }
 
+            char exe_desc[256]{};
+            int exe_desc_len = snprintf(exe_desc, sizeof(exe_desc), "#exe:%s",
+                                        program_path);
+            if (exe_desc_len <= 0 ||
+                static_cast<size_t>(exe_desc_len) >= sizeof(exe_desc))
+            {
+                (void)sys_cap_remove(child_root_cap).to_result();
+                (void)sys_cap_remove(child_cwd_dir_cap).to_result();
+                (void)sys_cap_remove(child_parent_pcb_cap).to_result();
+                return cap::error;
+            }
+
             alignas(bsheader) char cwd_path_bootstrap[sizeof(bsheader) +
                                                       sizeof(cwd_desc)]{};
             auto *cwd_header = reinterpret_cast<bsheader *>(cwd_path_bootstrap);
@@ -135,6 +150,15 @@ namespace contest_runner {
             memcpy(cwd_path_bootstrap + sizeof(bsheader), cwd_desc,
                    static_cast<size_t>(cwd_desc_len) + 1);
 
+            alignas(bsheader) char exe_path_bootstrap[sizeof(bsheader) +
+                                                      sizeof(exe_desc)]{};
+            auto *exe_header = reinterpret_cast<bsheader *>(exe_path_bootstrap);
+            exe_header->size =
+                sizeof(bsheader) + static_cast<size_t>(exe_desc_len) + 1;
+            exe_header->type = boot::TYPE_PATHEXP;
+            memcpy(exe_path_bootstrap + sizeof(bsheader), exe_desc,
+                   static_cast<size_t>(exe_desc_len) + 1);
+
             CapIdx initial_caps[] = {child_root_cap, child_cwd_dir_cap,
                                      child_parent_pcb_cap, cap::null};
             const char *bsargv[]  = {
@@ -142,6 +166,7 @@ namespace contest_runner {
                 reinterpret_cast<const char *>(&cwd_bootstrap_cap),
                 reinterpret_cast<const char *>(&parent_bootstrap),
                 cwd_path_bootstrap,
+                exe_path_bootstrap,
                 nullptr,
             };
             auto child_pcb_res    = sys_create_linux_process(
@@ -214,17 +239,44 @@ namespace contest_runner {
                                 const OpenDirHandle &cwd,
                                 const char *program_path, const char *argv[],
                                 int &status) {
-        status = 0;
         int fd = kmod_fopen(program_path, "x");
         if (fd < 0) {
             return RunProgramError::OPEN_FAILED;
         }
 
         CapIdx child_pcb = spawn_linux_program(fd, ctx.root_dir_cap, cwd.cap,
-                                               cwd.path, argv);
+                                               cwd.path, program_path, argv);
         kmod_fclose(fd);
         if (child_pcb == cap::null || child_pcb == cap::error) {
             return RunProgramError::SPAWN_FAILED;
+        }
+
+        return wait_program(child_pcb, status);
+    }
+
+    RunProgramError spawn_program(const RunnerContext &ctx,
+                                  const OpenDirHandle &cwd,
+                                  const char *program_path,
+                                  const char *argv[], CapIdx &child_pcb) {
+        child_pcb = cap::null;
+        int fd    = kmod_fopen(program_path, "x");
+        if (fd < 0) {
+            return RunProgramError::OPEN_FAILED;
+        }
+
+        child_pcb = spawn_linux_program(fd, ctx.root_dir_cap, cwd.cap, cwd.path,
+                                        program_path, argv);
+        kmod_fclose(fd);
+        if (child_pcb == cap::null || child_pcb == cap::error) {
+            return RunProgramError::SPAWN_FAILED;
+        }
+        return RunProgramError::NONE;
+    }
+
+    RunProgramError wait_program(CapIdx child_pcb, int &status) {
+        status = 0;
+        if (child_pcb == cap::null || child_pcb == cap::error) {
+            return RunProgramError::WAIT_FAILED;
         }
 
         CapIdx wait_caps[] = {child_pcb, cap::null};

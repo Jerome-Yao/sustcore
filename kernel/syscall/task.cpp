@@ -439,6 +439,28 @@ namespace syscall {
         return thread_res.value();
     }
 
+    Result<bool> tcb_kill(CapIdx tcb_cap, int exit_code) {
+        cap::Capability *cap = nullptr;
+        auto tcb_res         = lookup_tcb(tcb_cap, &cap);
+        propagate(tcb_res);
+        task::TCB *tcb = tcb_res.value()->tcb;
+        if (tcb == nullptr || tcb->task == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        if (tcb->task->main_tcb_cap != cap::null &&
+            tcb->task->main_tcb_cap != cap::error &&
+            tcb->task->main_tcb_cap == tcb_cap)
+        {
+            return pcb_kill(tcb->task->pcb_cap, exit_code);
+        }
+
+        cap::TCBObject obj(util::nnullforce(cap));
+        auto kill_res = obj.kill(exit_code);
+        propagate(kill_res);
+        return true;
+    }
+
     Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
                             UBuffer *status_buf, size_t options) {
         if (options != 0 && options != TCB_WAIT_WNOHANG) {

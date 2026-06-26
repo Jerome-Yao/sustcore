@@ -135,6 +135,11 @@ namespace {
         std::string relative_path{};
     };
 
+    struct ReadlinkTarget {
+        CapIdx parent_cap = cap::null;
+        std::string relative_path{};
+    };
+
     enum class ResolvedNodeType {
         FILE,
         DIRECTORY,
@@ -364,6 +369,73 @@ namespace {
             .parent_cap    = base.cap,
             .absolute_path = path_to_string(absolute_path),
             .relative_path = path_to_string(path),
+        };
+    }
+
+    [[nodiscard]]
+    bool is_proc_self_exe_path(const std::string &absolute_path) noexcept {
+        return absolute_path == "/proc/self/exe";
+    }
+
+    [[nodiscard]]
+    bool resolve_proc_self_exe_path(ResolvedPath &resolved) {
+        if (!is_proc_self_exe_path(resolved.absolute_path)) {
+            return true;
+        }
+        if (__prog_image_path.empty()) {
+            resolved = {};
+            return false;
+        }
+        resolved = resolve_path_at(AT_FDCWD, __prog_image_path.c_str());
+        return resolved.parent_cap != cap::null && !resolved.relative_path.empty();
+    }
+
+    [[nodiscard]]
+    ReadlinkTarget resolve_empty_path_readlink_target(int dirfd) {
+        if (dirfd == AT_FDCWD) {
+            dirfd = CWD_FD;
+        }
+
+        auto *state = find_dir_fd_state(dirfd);
+        if (state == nullptr || state->abs_path == nullptr) {
+            return {};
+        }
+
+        auto abs_path = normalize_path(util::Path::from(*state->abs_path));
+        if (!abs_path.is_absolute()) {
+            return {};
+        }
+
+        auto text = path_to_string(abs_path);
+        if (text == "/") {
+            return {};
+        }
+
+        auto slash_pos = text.find_last_of('/');
+        if (slash_pos == std::string::npos) {
+            return {};
+        }
+
+        std::string rel_path = absolute_path_to_relpath(abs_path);
+        if (rel_path.empty() || rel_path == ".") {
+            return {};
+        }
+
+        if (slash_pos == 0) {
+            return ReadlinkTarget{
+                .parent_cap    = __prog_root_dir_cap,
+                .relative_path = rel_path,
+            };
+        }
+
+        auto parent = resolve_path_at(AT_FDCWD, text.substr(0, slash_pos).c_str());
+        if (parent.parent_cap == cap::null || parent.parent_cap == cap::error) {
+            return {};
+        }
+
+        return ReadlinkTarget{
+            .parent_cap    = parent.parent_cap,
+            .relative_path = text.substr(slash_pos + 1),
         };
     }
 
@@ -826,6 +898,9 @@ size_t linux_sys_openat(int dirfd, const char *pathname, int flags, int mode) {
     if (resolved.parent_cap == cap::null || resolved.relative_path.empty()) {
         return -ENOENT;
     }
+    if (!resolve_proc_self_exe_path(resolved)) {
+        return -ENOENT;
+    }
     return do_open_resolved(resolved, flags);
 }
 
@@ -881,6 +956,59 @@ size_t linux_sys_getcwd(char *buf, size_t size) {
 
     memcpy(buf, __prog_cwd.c_str(), cwd_len);
     return reinterpret_cast<size_t>(buf);
+}
+
+size_t linux_sys_readlinkat(int dirfd, const char *pathname, char *buf,
+                            size_t bufsiz) {
+    if (pathname == nullptr) {
+        return -EINVAL;
+    }
+    if (buf == nullptr && bufsiz != 0) {
+        return -EFAULT;
+    }
+    if (bufsiz == 0) {
+        return 0;
+    }
+
+    CapIdx parent_cap           = cap::null;
+    std::string relative_path{};
+    if (pathname[0] == '\0') {
+        auto target = resolve_empty_path_readlink_target(dirfd);
+        parent_cap  = target.parent_cap;
+        relative_path = std::move(target.relative_path);
+    } else {
+        auto resolved = resolve_path_at(dirfd, pathname);
+        if (is_proc_self_exe_path(resolved.absolute_path)) {
+            size_t len = __prog_image_path.size() + 1;
+            if (len > bufsiz) {
+                len = bufsiz;
+            }
+            memcpy(buf, __prog_image_path.data(), len);
+            return len;
+        }
+        parent_cap = resolved.parent_cap;
+        relative_path = std::move(resolved.relative_path);
+    }
+
+    if (parent_cap == cap::null || parent_cap == cap::error ||
+        relative_path.empty())
+    {
+        return pathname[0] == '\0' ? -EBADF : -ENOENT;
+    }
+
+    auto readlink_res =
+        sys_vfs_readlink(parent_cap, relative_path.c_str(), buf, bufsiz)
+            .to_result();
+    if (!readlink_res.has_value()) {
+        if (readlink_res.error() == ErrCode::ENTRY_NOT_FOUND) {
+            loggers::LXSC::ERROR("readlinkat failed: path not found dirfd=%d path=%s",
+                                 dirfd, pathname);
+            return -ENOENT;
+        }
+        return readlink_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT
+                                                                : -EIO;
+    }
+    return readlink_res.value();
 }
 
 size_t linux_sys_chdir(const char *pathname) {

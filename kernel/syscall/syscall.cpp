@@ -246,6 +246,7 @@ namespace syscall {
             case SYS_TIME_NOW_NS:         return "SYS_TIME_NOW_NS";
             case SYS_TCB_NANOSLEEP:       return "SYS_TCB_NANOSLEEP";
             case SYS_PCB_KILL:            return "SYS_PCB_KILL";
+            case SYS_TCB_KILL:            return "SYS_TCB_KILL";
             case SYS_PCB_FORK:            return "SYS_PCB_FORK";
             case SYS_PCB_GETPID:          return "SYS_PCB_GETPID";
             case SYS_PCB_CREATE_THREAD:   return "SYS_PCB_CREATE_THREAD";
@@ -714,6 +715,11 @@ namespace syscall {
             case SYS_PCB_KILL: {
                 ret = result_bool_ret("pcb_kill",
                                       pcb_kill(capidx, static_cast<int>(arg0)));
+                break;
+            }
+            case SYS_TCB_KILL: {
+                ret = result_bool_ret("tcb_kill",
+                                      tcb_kill(capidx, static_cast<int>(arg0)));
                 break;
             }
             case SYS_PCB_GETPID: {

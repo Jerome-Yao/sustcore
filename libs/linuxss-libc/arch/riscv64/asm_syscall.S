@@ -25,6 +25,13 @@ sys_tcb_nanosleep:
     ecall
     ret
 
+    .global sys_tcb_kill
+    .type   sys_tcb_kill, @function
+sys_tcb_kill:
+    li a7, SYS_TCB_KILL
+    ecall
+    ret
+
     .global sys_pcb_kill
     .type   sys_pcb_kill, @function
 sys_pcb_kill:

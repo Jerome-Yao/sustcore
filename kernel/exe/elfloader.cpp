@@ -116,22 +116,42 @@ namespace loader::elf {
             return len;
         }
 
-        Result<void> load_file_into_memory(VFile &file, cap::MemoryPayload &memory,
-                                           off_t file_offset,
-                                           size_t mem_offset, size_t len) {
+        // 当段大小超过阈值时, 不选择打印 ELF段文件写入, 而是以 INFO
+        // 级别打印百分比(每10%)
+        constexpr static size_t LOADPROG_LOGGING_MIN_SIZE = 256 * 1024;
+
+        Result<void> load_file_into_memory(VFile &file,
+                                           cap::MemoryPayload &memory,
+                                           off_t file_offset, size_t mem_offset,
+                                           size_t len) {
             char buffer[SEGMENT_IO_CHUNK_SIZE];
-            size_t loaded = 0;
+            size_t loaded       = 0;
+            int last_percent = -10;
             while (loaded < len) {
                 size_t chunk = min_size(len - loaded, sizeof(buffer));
-                auto read_res = read_exact(file, file_offset + loaded, buffer,
-                                           chunk);
+                auto read_res =
+                    read_exact(file, file_offset + loaded, buffer, chunk);
                 propagate(read_res);
-                auto write_res = memory.write(mem_offset + loaded, buffer, chunk);
+                auto write_res =
+                    memory.write(mem_offset + loaded, buffer, chunk);
                 propagate(write_res);
-                loggers::ELFLOADER::DEBUG(
-                    "ELF段文件写入: file_off=%lu mem_off=%lu chunk=%lu",
-                    static_cast<unsigned long>(file_offset + loaded),
-                    mem_offset + loaded, chunk);
+                // len >
+                if (len < LOADPROG_LOGGING_MIN_SIZE) {
+                    loggers::ELFLOADER::DEBUG(
+                        "ELF段文件写入: file_off=%lu mem_off=%lu chunk=%lu",
+                        static_cast<unsigned long>(file_offset + loaded),
+                        mem_offset + loaded, chunk);
+                } else {
+                    int percent = (loaded + chunk) * 100 / len;
+                    if (percent - last_percent >= 10 || percent == 100) {
+                        loggers::ELFLOADER::INFO(
+                            "ELF段文件写入: file_off=%lu mem_off=%lu chunk=%lu "
+                            "当前进度: %d%%",
+                            static_cast<unsigned long>(file_offset + loaded),
+                            mem_offset + loaded, chunk, percent);
+                        last_percent = percent;
+                    }
+                }
                 loaded += chunk;
             }
             void_return();
@@ -154,9 +174,8 @@ namespace loader::elf {
                 auto write_res =
                     memory.write(mem_offset + filled, zeros, chunk);
                 propagate(write_res);
-                loggers::ELFLOADER::DEBUG(
-                    "ELF段清零: mem_off=%lu chunk=%lu", mem_offset + filled,
-                    chunk);
+                loggers::ELFLOADER::DEBUG("ELF段清零: mem_off=%lu chunk=%lu",
+                                          mem_offset + filled, chunk);
                 filled += chunk;
             }
             void_return();
@@ -189,10 +208,10 @@ namespace loader::elf {
             }
 
             loggers::ELFLOADER::DEBUG("  VMA类型: %s, 起始地址: %p",
-                                     to_string(vma.type),
-                                     vma.varea.begin.addr());
+                                      to_string(vma.type),
+                                      vma.varea.begin.addr());
             loggers::ELFLOADER::DEBUG("    前%u字节: %s", actual_size,
-                                     hex_dump.c_str());
+                                      hex_dump.c_str());
             void_return();
         }
     }  // namespace
@@ -204,7 +223,7 @@ namespace loader::elf {
     }
 
     constexpr VMA::Type phdr_to_vma_type(Elf64_Word flags) noexcept {
-        const bool exec  = (flags & PF_X) != 0;
+        const bool exec = (flags & PF_X) != 0;
         return exec ? VMA::Type::CODE : VMA::Type::DATA;
     }
 
@@ -246,13 +265,11 @@ namespace loader::elf {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
 
-        if (ehdr.e_type != ET_EXEC &&
-            !(accept_dyn && ehdr.e_type == ET_DYN))
-        {
+        if (ehdr.e_type != ET_EXEC && !(accept_dyn && ehdr.e_type == ET_DYN)) {
             unexpect_return(ErrCode::NOT_SUPPORTED);
         }
 
-        // 检查程序头表是否越界. 
+        // 检查程序头表是否越界.
         const uint64_t ph_bytes =
             static_cast<uint64_t>(ehdr.e_phnum) * sizeof(Elf64_Phdr);
         if (overflow_add_u64(ehdr.e_phoff, ph_bytes)) {
@@ -276,14 +293,14 @@ namespace loader::elf {
                 tmm, segment.map_begin,
                 static_cast<size_t>(segment.map_end - segment.map_begin));
             propagate(vma_res);
-            VMA &vma = vma_res.value().get();
+            VMA &vma          = vma_res.value().get();
             size_t mem_offset = vma.mem_offset + segment.page_prefix;
 
             loggers::ELFLOADER::DEBUG(
                 "加载ELF段: idx=%u map=[%p,%p) vaddr=%p filesz=%lu memsz=%lu "
                 "prefix=%lu mem_off=%lu",
-                segment.index, segment.map_begin.addr(),
-                segment.map_end.addr(), segment.runtime_vaddr.addr(),
+                segment.index, segment.map_begin.addr(), segment.map_end.addr(),
+                segment.runtime_vaddr.addr(),
                 static_cast<unsigned long>(segment.phdr.p_filesz),
                 static_cast<unsigned long>(segment.phdr.p_memsz),
                 static_cast<unsigned long>(segment.page_prefix), mem_offset);
@@ -292,17 +309,15 @@ namespace loader::elf {
             if (memory == nullptr) {
                 unexpect_return(ErrCode::NULLPTR);
             }
-            auto load_res = load_file_into_memory(
-                file, *memory, segment.phdr.p_offset, mem_offset,
-                segment.phdr.p_filesz);
+            auto load_res =
+                load_file_into_memory(file, *memory, segment.phdr.p_offset,
+                                      mem_offset, segment.phdr.p_filesz);
             propagate(load_res);
 
             if (segment.phdr.p_memsz > segment.phdr.p_filesz) {
-                size_t zero_sz =
-                    segment.phdr.p_memsz - segment.phdr.p_filesz;
-                auto zero_res =
-                    zero_fill_memory(*memory, mem_offset + segment.phdr.p_filesz,
-                                     zero_sz);
+                size_t zero_sz = segment.phdr.p_memsz - segment.phdr.p_filesz;
+                auto zero_res  = zero_fill_memory(
+                    *memory, mem_offset + segment.phdr.p_filesz, zero_sz);
                 propagate(zero_res);
             }
             auto first_page_res = memory->lookup_page(mem_offset);
@@ -359,11 +374,11 @@ namespace loader::elf {
         auto valid_res = validate_elf64(ehdr, file_size, accept_dyn);
         propagate(valid_res);
         const bool dyn_image = ehdr.e_type == ET_DYN;
-        spec.dyn            = dyn_image;
-        spec.load_base      = dyn_image ? load_base
-                                        : VirAddr(static_cast<addr_t>(0));
-        spec.phdr_num       = ehdr.e_phnum;
-        spec.phdr_entsize   = ehdr.e_phentsize;
+        spec.dyn             = dyn_image;
+        spec.load_base =
+            dyn_image ? load_base : VirAddr(static_cast<addr_t>(0));
+        spec.phdr_num     = ehdr.e_phnum;
+        spec.phdr_entsize = ehdr.e_phentsize;
         spec.program_entrypoint =
             dyn_image ? VirAddr(load_base.arith() + ehdr.e_entry)
                       : VirAddr(ehdr.e_entry);
@@ -378,15 +393,13 @@ namespace loader::elf {
         for (size_t i = 0; i < ehdr.e_phnum; ++i) {
             Elf64_Phdr phdr{};
             off_t offset       = ehdr.e_phoff + i * sizeof(Elf64_Phdr);
-            auto read_phdr_res = read_exact(*file, offset, &phdr,
-                                            sizeof(phdr));
+            auto read_phdr_res = read_exact(*file, offset, &phdr, sizeof(phdr));
             propagate(read_phdr_res);
 
             if (is_interp_segment(phdr) && interp_path != nullptr) {
                 std::string interp(phdr.p_filesz, '\0');
-                auto interp_read_res =
-                    read_exact(*file, phdr.p_offset, interp.data(),
-                               phdr.p_filesz);
+                auto interp_read_res = read_exact(*file, phdr.p_offset,
+                                                  interp.data(), phdr.p_filesz);
                 propagate(interp_read_res);
                 if (!interp.empty() && interp.back() == '\0') {
                     interp.pop_back();
@@ -395,10 +408,10 @@ namespace loader::elf {
             }
 
             if (is_phdr_segment(phdr)) {
-                has_pt_phdr   = true;
-                spec.phdr_vaddr = dyn_image
-                                      ? VirAddr(load_base.arith() + phdr.p_vaddr)
-                                      : VirAddr(phdr.p_vaddr);
+                has_pt_phdr = true;
+                spec.phdr_vaddr =
+                    dyn_image ? VirAddr(load_base.arith() + phdr.p_vaddr)
+                              : VirAddr(phdr.p_vaddr);
             }
 
             if (!is_load_segment(phdr)) {
@@ -420,8 +433,8 @@ namespace loader::elf {
             VirAddr aligned_segvaddr = segvaddr.page_align_down();
             size_t page_prefix =
                 static_cast<size_t>(segvaddr - aligned_segvaddr);
-            size_t map_memsz = page_align_up(
-                static_cast<size_t>(phdr.p_memsz) + page_prefix);
+            size_t map_memsz =
+                page_align_up(static_cast<size_t>(phdr.p_memsz) + page_prefix);
             VirAddr segvend = aligned_segvaddr + map_memsz;
 
             // 确认该空间地址是用户空间地址
@@ -432,26 +445,26 @@ namespace loader::elf {
             // 为该段在TM中添加一个VMA
             VMA::Type vma_type = phdr_to_vma_type(phdr.p_flags);
             VMA::Prot vma_prot = phdr_to_vma_prot(phdr.p_flags);
-            auto *segment_mem  = new cap::MemoryPayload(
-                map_memsz, false, false, VMA::Growth::FIXED);
-            auto add_res = spec.tmm->add_vma(
-                vma_type, VMA::Growth::FIXED,
-                VirArea(aligned_segvaddr, segvend),
-                segment_mem, vma_prot);
+            auto *segment_mem  = new cap::MemoryPayload(map_memsz, false, false,
+                                                        VMA::Growth::FIXED);
+            auto add_res       = spec.tmm->add_vma(vma_type, VMA::Growth::FIXED,
+                                                   VirArea(aligned_segvaddr, segvend),
+                                                   segment_mem, vma_prot);
             if (!add_res.has_value()) {
                 delete segment_mem;
                 loggers::ELFLOADER::ERROR("无法为段%d添加VMA: %d", i,
-                                         add_res.error());
+                                          add_res.error());
                 while (true);
             }
             loggers::ELFLOADER::DEBUG(
-                "创建ELF VMA: type=%s area=[%p,%p) mem=%p memsz=%lu mem_off=%lu",
+                "创建ELF VMA: type=%s area=[%p,%p) mem=%p memsz=%lu "
+                "mem_off=%lu",
                 to_string(vma_type), aligned_segvaddr.addr(), segvend.addr(),
                 segment_mem, static_cast<unsigned long>(map_memsz), 0UL);
 
             runtime_segments.push_back(RuntimeLoadSegment{
-                .index        = i,
-                .phdr         = phdr,
+                .index         = i,
+                .phdr          = phdr,
                 .runtime_vaddr = segvaddr,
                 .map_begin     = aligned_segvaddr,
                 .map_end       = segvend,
@@ -490,13 +503,13 @@ namespace loader::elf {
                 delete heap_mem;
                 propagate_return(heap_cap_res);
             }
-            auto heap_res = spec.tmm->add_vma(
-                VMA::Type::HEAP, VMA::Growth::FLEXUP,
-                VirArea(heap_start, heap_start), heap_mem,
-                VMA::PROT_R | VMA::PROT_W);
+            auto heap_res =
+                spec.tmm->add_vma(VMA::Type::HEAP, VMA::Growth::FLEXUP,
+                                  VirArea(heap_start, heap_start), heap_mem,
+                                  VMA::PROT_R | VMA::PROT_W);
             if (!heap_res.has_value()) {
                 loggers::ELFLOADER::ERROR("无法初始化堆VMA: %d",
-                                         heap_res.error());
+                                          heap_res.error());
                 propagate_return(heap_res);
             }
             loggers::ELFLOADER::DEBUG(
@@ -508,9 +521,9 @@ namespace loader::elf {
 
         loggers::ELFLOADER::DEBUG("ELF加载完成, TM中的VMA列表:");
         for (const auto &vma : spec.tmm->vmas()) {
-            loggers::ELFLOADER::DEBUG("  VMA类型: %s, 地址: %p~%p, 大小: %u B",
-                                    to_string(vma.type), vma.varea.begin.addr(),
-                                    vma.varea.end.addr(), vma.size());
+            loggers::ELFLOADER::DEBUG(
+                "  VMA类型: %s, 地址: %p~%p, 大小: %u B", to_string(vma.type),
+                vma.varea.begin.addr(), vma.varea.end.addr(), vma.size());
         }
 
         auto load_res = loadsegs(*file, *spec.tmm, runtime_segments);

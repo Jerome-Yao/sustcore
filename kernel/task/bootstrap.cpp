@@ -55,35 +55,6 @@ namespace task {
         }
 
         [[nodiscard]]
-        bool valid_cap_explain(CapIdx cap_idx, PayloadType cap_type,
-                               const char *cap_desc) noexcept {
-            return cap_idx != cap::null && cap_idx != cap::error &&
-                   cap_type != PayloadType::NONE && cap_desc != nullptr &&
-                   cap_desc[0] != '\0';
-        }
-
-        [[nodiscard]]
-        bool valid_vaddr_explain(VirAddr vaddr,
-                                 const char *vaddr_desc) noexcept {
-            return vaddr.nonnull() && vaddr_desc != nullptr &&
-                   vaddr_desc[0] != '\0';
-        }
-
-        [[nodiscard]]
-        bool valid_path_explain(const char *path_desc) noexcept {
-            if (path_desc == nullptr || path_desc[0] != '#') {
-                return false;
-            }
-            if (strncmp(path_desc, "#cwd:", 5) == 0) {
-                return path_desc[5] == '/';
-            }
-            if (strncmp(path_desc, "#stdout:", 8) == 0) {
-                return path_desc[8] == '/';
-            }
-            return false;
-        }
-
-        [[nodiscard]]
         TaskSpec::BootstrapRecordData make_bootstrap_record(
             uint32_t type, const void *payload, size_t payload_size) {
             TaskSpec::BootstrapRecordData record{
@@ -152,54 +123,13 @@ namespace task {
         return image_cap;
     }
 
-    Result<void> TaskManager::validate_bootstrap_record(
-        const TaskSpec::BootstrapRecordData &record) noexcept {
-        if (record.bytes.size() < sizeof(bsheader)) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        auto *header = reinterpret_cast<const bsheader *>(record.bytes.data());
-        if (header->size != record.bytes.size() || header->type == 0) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        BootstrapRecordView view{};
-        if (!bootstrap_make_view(header, view)) {
-            unexpect_return(ErrCode::INVALID_PARAM);
-        }
-
-        if (header->type == boot::TYPE_CAPEXP) {
-            BootstrapCapExplainView cap_explain{};
-            if (!bootstrap_parse_cap_explain(view, cap_explain) ||
-                !valid_cap_explain(cap_explain.cap_idx, cap_explain.cap_type,
-                                   cap_explain.cap_desc))
-            {
-                unexpect_return(ErrCode::INVALID_PARAM);
-            }
-        } else if (header->type == boot::TYPE_VADDREXP) {
-            BootstrapVaddrExplainView vaddr_explain{};
-            if (!bootstrap_parse_vaddr_explain(view, vaddr_explain) ||
-                !valid_vaddr_explain(vaddr_explain.vaddr,
-                                     vaddr_explain.vaddr_desc))
-            {
-                unexpect_return(ErrCode::INVALID_PARAM);
-            }
-        } else if (header->type == boot::TYPE_PATHEXP) {
-            BootstrapPathExplainView path_view{};
-            if (!bootstrap_parse_path_explain(view, path_view) ||
-                !valid_path_explain(path_view.path_desc))
-            {
-                unexpect_return(ErrCode::INVALID_PARAM);
-            }
-        }
-
-        void_return();
-    }
-
     Result<void> TaskManager::append_bootstrap_cap_explain_record(
         TaskSpec &spec, CapIdx cap_idx, PayloadType cap_type, b64 cap_perm,
         const char *cap_desc) {
-        if (!valid_cap_explain(cap_idx, cap_type, cap_desc)) {
+        if (cap_idx == cap::null || cap_idx == cap::error ||
+            cap_type == PayloadType::NONE || cap_desc == nullptr ||
+            cap_desc[0] == '\0')
+        {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
@@ -218,7 +148,8 @@ namespace task {
 
     Result<void> TaskManager::append_bootstrap_vaddr_explain_record(
         TaskSpec &spec, VirAddr vaddr, const char *vaddr_desc) {
-        if (!valid_vaddr_explain(vaddr, vaddr_desc)) {
+        if (!vaddr.nonnull() || vaddr_desc == nullptr || vaddr_desc[0] == '\0')
+        {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
@@ -236,7 +167,7 @@ namespace task {
 
     Result<void> TaskManager::append_bootstrap_path_explain_record(
         TaskSpec &spec, const char *path_desc) {
-        if (!valid_path_explain(path_desc)) {
+        if (path_desc == nullptr || path_desc[0] == '\0') {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
@@ -272,8 +203,6 @@ namespace task {
         spec.bsargv.clear();
         spec.auxv.clear();
         for (const auto &record : bsargv) {
-            auto validate_res = validate_bootstrap_record(record);
-            propagate(validate_res);
             spec.bsargv.push_back(record);
         }
         void_return();
@@ -389,8 +318,6 @@ namespace task {
         }
         spec.bsargv.clear();
         for (const auto &record : bsargv) {
-            auto validate_res = validate_bootstrap_record(record);
-            propagate(validate_res);
             spec.bsargv.push_back(record);
         }
         auto *platform = device::DeviceModel::inst().platform();

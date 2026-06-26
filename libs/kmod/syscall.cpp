@@ -17,7 +17,7 @@
 
 extern "C" {
 void exit(int exit_code) {
-    (void)sys_pcb_kill(__pcb_cap, exit_code);
+    (void)sys_tcb_kill(__main_tcb_cap, exit_code);
     while (true) {}
 }
 

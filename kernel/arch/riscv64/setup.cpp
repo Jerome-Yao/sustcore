@@ -88,6 +88,22 @@ extern "C" void c_setup(void) {
 
 void Initialization::pre_init(void) {}
 
+void Initialization::init_fpu(void) {
+    csr_sstatus_t sstatus = csr_get_sstatus();
+    sstatus.fs            = XSStatus::INITIAL;
+    csr_set_sstatus(sstatus);
+    loggers::SUSTCORE::INFO(
+        "已启用 RISC-V 浮点指令支持(FS=INITIAL), 当前尚未支持上下文保存");
+}
+
+void Initialization::init_simd(void) {
+    csr_sstatus_t sstatus = csr_get_sstatus();
+    sstatus.vs            = XSStatus::INITIAL;
+    csr_set_sstatus(sstatus);
+    loggers::SUSTCORE::INFO(
+        "已启用 RISC-V 向量指令支持(VS=INITIAL), 当前尚未支持上下文保存");
+}
+
 void Idle::idle()
 {
     while(true);
@@ -95,4 +111,6 @@ void Idle::idle()
 
 void Initialization::post_init(void) 
 {
+    init_fpu();
+    init_simd();
 }

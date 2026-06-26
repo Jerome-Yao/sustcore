@@ -140,6 +140,97 @@ namespace exception {
         return csr_get_prmd().pplv == PLV_USER;
     }
 
+    enum class UserInstructionReadError {
+        NONE,
+        INVALID_PC,
+        NO_PGD,
+        QUERY_FAILED,
+        NOT_PRESENT,
+        NOT_USER,
+        NOT_EXECUTABLE,
+    };
+
+    [[nodiscard]]
+    const char *user_instruction_read_error_name(
+        UserInstructionReadError error) noexcept {
+        switch (error) {
+            case UserInstructionReadError::NONE:           return "none";
+            case UserInstructionReadError::INVALID_PC:     return "invalid-pc";
+            case UserInstructionReadError::NO_PGD:         return "no-pgd";
+            case UserInstructionReadError::QUERY_FAILED:   return "query-failed";
+            case UserInstructionReadError::NOT_PRESENT:    return "not-present";
+            case UserInstructionReadError::NOT_USER:       return "not-user";
+            case UserInstructionReadError::NOT_EXECUTABLE: return "not-executable";
+            default:                                       return "unknown";
+        }
+    }
+
+    [[nodiscard]]
+    bool read_user_instruction_bytes(PhyAddr pgd, VirAddr pc, byte (&bytes)[4],
+                                     UserInstructionReadError &error) noexcept {
+        error = UserInstructionReadError::NONE;
+        if (!is_user_vaddr(pc)) {
+            error = UserInstructionReadError::INVALID_PC;
+            return false;
+        }
+        if (!pgd.nonnull()) {
+            error = UserInstructionReadError::NO_PGD;
+            return false;
+        }
+
+        PageMan pman(pgd);
+        for (size_t i = 0; i < sizeof(bytes); ++i) {
+            VirAddr byte_addr = pc + i;
+            auto query_res    = pman.query_page(byte_addr);
+            if (!query_res.has_value()) {
+                error = UserInstructionReadError::QUERY_FAILED;
+                return false;
+            }
+
+            auto qres        = query_res.value();
+            PageMan::PTE pte = *qres.pte;
+            if (!PageMan::is_present(pte)) {
+                error = UserInstructionReadError::NOT_PRESENT;
+                return false;
+            }
+            if (!PageMan::is_user_accessible(pte)) {
+                error = UserInstructionReadError::NOT_USER;
+                return false;
+            }
+            if (!PageMan::is_executable(PageMan::rwx(pte))) {
+                error = UserInstructionReadError::NOT_EXECUTABLE;
+                return false;
+            }
+
+            size_t mapped_size = PageMan::psize(qres.size);
+            VirAddr mapped_base = byte_addr.align_down(mapped_size);
+            size_t page_offset  = byte_addr - mapped_base;
+            PhyAddr byte_pa = PageMan::get_physical_address(pte) + page_offset;
+            KpaAddr byte_kpa = convert<KpaAddr>(byte_pa);
+            bytes[i]         = *byte_kpa.as<const byte>();
+        }
+
+        return true;
+    }
+
+    void log_user_illegal_instruction_bytes(PhyAddr pgd, VirAddr pc) {
+        byte bytes[4]{};
+        UserInstructionReadError error{};
+        if (!read_user_instruction_bytes(pgd, pc, bytes, error)) {
+            loggers::INTERRUPT::ERROR(
+                "illegal instruction bytes unavailable: pc=%p, reason=%s",
+                pc.addr(), user_instruction_read_error_name(error));
+            return;
+        }
+
+        loggers::INTERRUPT::ERROR(
+            "illegal instruction bytes: pc=%p, bytes=%02x %02x %02x %02x",
+            pc.addr(), static_cast<unsigned int>(bytes[0]),
+            static_cast<unsigned int>(bytes[1]),
+            static_cast<unsigned int>(bytes[2]),
+            static_cast<unsigned int>(bytes[3]));
+    }
+
     void log_current_task_error() {
         if (!schd::Scheduler::initialized()) {
             loggers::INTERRUPT::ERROR("task: scheduler not initialized");
@@ -516,7 +607,26 @@ namespace exception {
         return true;
     }
 
+    void illegal_instruction(umb_t cause, Context *ctx) {
+        if (!from_umode() || ctx == nullptr) {
+            return;
+        }
+        if (cause != INSTRUCTION_NOT_EXIST) {
+            return;
+        }
+
+        VirAddr fault_pc(ctx->pc());
+        if (!is_user_vaddr(fault_pc)) {
+            return;
+        }
+
+        log_user_illegal_instruction_bytes(env::inst().pgd(), fault_pc);
+    }
+
     void exception(umb_t cause, csr_estat_t estat, Context *ctx) {
+        if (cause == INSTRUCTION_NOT_EXIST) {
+            illegal_instruction(cause, ctx);
+        }
         switch (cause) {
             case SYSTEM_CALL:
                 if (!system_call(estat, ctx)) {

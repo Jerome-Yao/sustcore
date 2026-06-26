@@ -253,9 +253,6 @@ namespace task {
         Result<CapIdx> preload_into(CapIdx image_cap, cap::CHolder *holder,
                                     TaskSpec &spec, LoadPrm &prm);
         [[nodiscard]]
-        Result<void> validate_bootstrap_record(
-            const TaskSpec::BootstrapRecordData &record) noexcept;
-        [[nodiscard]]
         Result<void> append_bootstrap_cap_explain_record(
             TaskSpec &spec, CapIdx cap_idx, PayloadType cap_type, b64 cap_perm,
             const char *cap_desc);

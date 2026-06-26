@@ -292,13 +292,13 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
                            const Elf64_auxv_t *auxv, size_t bsargc,
                            const bsheader *bsargv[]) {
     g_linux_initialized = true;
-    init_prog_data(bsargc, bsargv);
+    init_prog_data(argc, argv, bsargc, bsargv);
     // puts("linux-subsystem: initialized");
     // printf("stack dump:\n");
     // stack_dump(stack_sp, auxv);
-    // printf("argc & argv:\n");
-    // printf("argc = %u\n", static_cast<unsigned>(argc));
-    // dump_vector("argv", argv);
+    printf("argc & argv:\n");
+    printf("argc = %u\n", static_cast<unsigned>(argc));
+    dump_vector("argv", argv);
     // printf("\nenvp:\n");
     // dump_vector("envp", envp);
     // printf("\nauxv:\n");
@@ -422,8 +422,15 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_getdents64:
             return linux_sys_getdents64(static_cast<int>(a0),
             reinterpret_cast<void *>(a1), a2);
+        case __NR_readlinkat:
+            return linux_sys_readlinkat(static_cast<int>(a0),
+                                        reinterpret_cast<const char *>(a1),
+                                        reinterpret_cast<char *>(a2), a3);
         case __NR_getcwd:
             return linux_sys_getcwd(reinterpret_cast<char *>(a0), a1);
+        case __NR_getrandom:
+            return linux_sys_getrandom(reinterpret_cast<void *>(a0), a1,
+                                       static_cast<unsigned>(a2));
         case __NR_fstat:
             return linux_sys_fstat(static_cast<int>(a0),
                                    reinterpret_cast<void *>(a1));
@@ -434,6 +441,7 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                    static_cast<unsigned>(a3),
                                    reinterpret_cast<void *>(a4));
         case __NR_exit: linux_sys_exit(a0); return 0;
+        case __NR_exit_group: linux_sys_exit_group(a0); return 0;
         case __NR_close: return linux_sys_close(static_cast<int>(a0));
         case __NR_dup: return linux_sys_dup(static_cast<int>(a0));
         case __NR_dup3:
@@ -456,16 +464,32 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                      reinterpret_cast<const char *>(a1),
                                      static_cast<int>(a2));
             return -ENOSYS;
-        case __NR_set_tid_address:
-            // 未实现
-            return -ENOSYS;
-        case __NR_set_robust_list:
-            // 未实现
-            return -ENOSYS;
         case __NR_mount:
         case __NR_umount2:
             // 占位符
             // 等后面支持分区 + vfat 了再写入实际的实现
+            return 0;
+        case __NR_mprotect:
+            // 占位符
+            // 我假设其总是把内存页的权限设置为可读可写可执行之后再缩减权限
+            // 那么我先不缩减权限应该也不会影响程序的运行
+            return 0;
+        case __NR_getuid:
+        case __NR_setuid:
+        case __NR_getgid:
+        case __NR_setgid:
+        case __NR_geteuid:
+        case __NR_getegid:
+        case __NR_getresuid:
+        case __NR_setresuid:
+        case __NR_getresgid:
+        case __NR_setresgid:
+            // 占位符
+            // 先假设所有的 uid/gid 都是 0
+            return 0;
+        case __NR_prlimit64:
+            // 占位符
+            // 先假设所有的资源限制都是无限制的
             return 0;
         default:
             loggers::LXSC::ERROR("unsupported syscall %s (%lu)",

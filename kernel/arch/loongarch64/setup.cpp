@@ -68,7 +68,26 @@ extern "C" void c_setup_main(size_t boot_hart_id, BootInfoHeader *bootinfo) {
 
 void Initialization::pre_init(void) {}
 
-void Initialization::post_init(void) {}
+void Initialization::init_fpu(void) {
+    auto euen = csr_get_euen();
+    euen.fpe  = 1;
+    csr_set_euen(euen);
+    loggers::SUSTCORE::INFO(
+        "已启用 LoongArch64 浮点指令支持(FPE), 当前尚未支持上下文保存");
+}
+
+void Initialization::init_simd(void) {
+    auto euen = csr_get_euen();
+    euen.sxe  = 1;
+    csr_set_euen(euen);
+    loggers::SUSTCORE::INFO(
+        "已启用 LoongArch64 LSX 向量指令支持(SXE), 当前尚未支持上下文保存");
+}
+
+void Initialization::post_init(void) {
+    init_fpu();
+    init_simd();
+}
 
 Result<void> Initialization::init_clock() {
     auto &device_model = device::DeviceModel::inst();

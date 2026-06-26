@@ -56,6 +56,15 @@ namespace contest_runner {
                                 const char *argv[], int &status);
 
     [[nodiscard]]
+    RunProgramError spawn_program(const RunnerContext &ctx,
+                                  const OpenDirHandle &cwd,
+                                  const char *program_path,
+                                  const char *argv[], CapIdx &child_pcb);
+
+    [[nodiscard]]
+    RunProgramError wait_program(CapIdx child_pcb, int &status);
+
+    [[nodiscard]]
     bool run_status_success(int status);
 
     [[nodiscard]]

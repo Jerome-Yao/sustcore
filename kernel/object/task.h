@@ -132,5 +132,7 @@ namespace cap {
 
         [[nodiscard]]
         Result<task::TCB *> require_current() const;
+        [[nodiscard]]
+        Result<void> kill(int exit_code) const;
     };
 }  // namespace cap

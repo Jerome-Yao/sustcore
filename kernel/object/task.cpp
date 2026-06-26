@@ -255,4 +255,24 @@ namespace cap {
         }
         return _obj->tcb;
     }
+
+    Result<void> TCBObject::kill(int exit_code) const {
+        (void)exit_code;
+        auto current_res = require_current();
+        propagate(current_res);
+
+        task::TCB *tcb = current_res.value();
+        if (tcb->task == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        auto *runtime_tcb = schd::Scheduler::inst().current_tcb();
+        tcb->basic_entity.state = ThreadState::DYING;
+        tcb->basic_entity
+            .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
+        if (runtime_tcb == tcb) {
+            schd::Scheduler::inst().schedule();
+        }
+        void_return();
+    }
 }  // namespace cap

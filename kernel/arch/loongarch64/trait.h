@@ -33,6 +33,8 @@ namespace la64 {
         static void pre_init(void);
         static void post_init(void);
         static Result<void> init_clock();
+        static void init_fpu(void);
+        static void init_simd(void);
     };
 
     static_assert(InitializationTrait<Initialization>);

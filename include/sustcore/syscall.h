@@ -14,6 +14,7 @@
 #define SYSCALL_BASE (0xFFFF0000)
 
 #define SYS_PCB_KILL          (SYSCALL_BASE + 0x01)
+#define SYS_TCB_KILL          (SYSCALL_BASE + 0x02)
 
 #define SYS_PCB_FORK          (SYSCALL_BASE + 0x04)
 #define SYS_PCB_GETPID        (SYSCALL_BASE + 0x05)

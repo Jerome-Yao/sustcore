@@ -21,6 +21,12 @@ sys_shutdown:
     li.d $a7, SYS_SHUTDOWN
     do_syscall
 
+    .global sys_tcb_kill
+    .type sys_tcb_kill, @function
+sys_tcb_kill:
+    li.d $a7, SYS_TCB_KILL
+    do_syscall
+
     .global sys_pcb_kill
     .type sys_pcb_kill, @function
 sys_pcb_kill:

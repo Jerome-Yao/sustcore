@@ -31,11 +31,15 @@ extern CapIdx __prog_root_dir_cap;
 extern CapIdx __prog_cwd_dir_cap;
 extern std::vector<CapIdx> __prog_children;
 extern std::string __prog_cwd;
+extern std::string __prog_image_path;
 
-void init_prog_data(size_t bsargc, const bsheader *bsargv[]);
+void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
+                    const bsheader *bsargv[]);
 size_t linux_sys_brk(size_t newbrk);
 [[noreturn]]
 void linux_sys_exit(int exitcode);
+[[noreturn]]
+void linux_sys_exit_group(int exitcode);
 size_t linux_sys_getpid();
 size_t linux_sys_getppid();
 size_t linux_sys_sched_yield();
@@ -44,6 +48,7 @@ size_t linux_sys_uname(void *buf);
 size_t linux_sys_gettimeofday(void *tv, void *tz);
 size_t linux_sys_nanosleep(const void *req, void *rem);
 size_t linux_sys_times(void *buf);
+size_t linux_sys_getrandom(void *buf, size_t buflen, unsigned flags);
 size_t linux_sys_wait4(int pid, int *status, int options, void *rusage);
 size_t linux_sys_clone(size_t flags, addr_t newsp, int *parent_tid,
                        int *child_tid, addr_t tls,

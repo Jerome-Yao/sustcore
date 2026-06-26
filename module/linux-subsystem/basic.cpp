@@ -26,6 +26,8 @@ namespace {
     constexpr size_t UTSNAME_FIELD_SIZE = 65;
     constexpr int LINUX_O_WRONLY        = 1;
     constexpr long LINUX_TIMES_STAMP    = 114514;
+    constexpr byte GETRANDOM_PATTERN[]  = {0x11, 0x41, 0x51, 0x41,
+                                           0x19, 0x19, 0x81, 0x00};
 
     struct linux_utsname {
         char sysname[UTSNAME_FIELD_SIZE];
@@ -107,8 +109,10 @@ CapIdx __prog_root_dir_cap = cap::null;
 CapIdx __prog_cwd_dir_cap  = cap::null;
 std::vector<CapIdx> __prog_children{};
 std::string __prog_cwd     = "/";
+std::string __prog_image_path{};
 
-void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
+void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
+                    const bsheader *bsargv[]) {
     __prog_heap_base    = 0;
     __prog_brk          = 0;
     __prog_pcb_cap      = cap::null;
@@ -119,6 +123,7 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
     __prog_cwd_dir_cap  = cap::null;
     __prog_children.clear();
     __prog_cwd          = "/";
+    __prog_image_path.clear();
 
     for (size_t i = 0; i < bsargc; ++i) {
         BootstrapRecordView view{};
@@ -190,8 +195,16 @@ void init_prog_data(size_t bsargc, const bsheader *bsargv[]) {
             }
             if (strncmp(path_view.path_desc, "#cwd:", 5) == 0) {
                 __prog_cwd = path_view.path_desc + 5;
+            } else if (strncmp(path_view.path_desc, "#exe:", 5) == 0) {
+                __prog_image_path = path_view.path_desc + 5;
             }
         }
+    }
+
+    if (__prog_image_path.empty() && argc != 0 && argv != nullptr &&
+        argv[0] != nullptr)
+    {
+        __prog_image_path = argv[0];
     }
 
     if (__prog_cwd_dir_cap == cap::null || __prog_cwd_dir_cap == cap::error) {
@@ -276,6 +289,23 @@ size_t linux_sys_times(void *buf) {
     return now_res.value() / 1000000ULL;
 }
 
+size_t linux_sys_getrandom(void *buf, size_t buflen, unsigned flags) {
+    (void)flags;
+
+    if (buf == nullptr && buflen != 0) {
+        return INVALID_VALUE;
+    }
+    if (buflen == 0) {
+        return 0;
+    }
+
+    auto *bytes = reinterpret_cast<byte *>(buf);
+    for (size_t i = 0; i < buflen; ++i) {
+        bytes[i] = GETRANDOM_PATTERN[i % sizeof(GETRANDOM_PATTERN)];
+    }
+    return buflen;
+}
+
 size_t linux_sys_nanosleep(const void *req, void *rem) {
     if (req == nullptr) {
         return INVALID_VALUE;
@@ -296,8 +326,16 @@ size_t linux_sys_nanosleep(const void *req, void *rem) {
 }
 [[noreturn]]
 void linux_sys_exit(int exitcode) {
-    (void)sys_pcb_kill(__prog_pcb_cap, exitcode).to_result();
+    (void)sys_tcb_kill(__prog_main_tcb_cap, exitcode).to_result();
     loggers::LXRT::ERROR("sys_exit 返回到不应执行的位置: exitcode=%d",
+                         exitcode);
+    while (true);
+}
+
+[[noreturn]]
+void linux_sys_exit_group(int exitcode) {
+    (void)sys_pcb_kill(__prog_pcb_cap, exitcode).to_result();
+    loggers::LXRT::ERROR("sys_exit_group 返回到不应执行的位置: exitcode=%d",
                          exitcode);
     while (true);
 }
