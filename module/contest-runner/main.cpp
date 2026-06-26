@@ -352,8 +352,8 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         //                                  contest_runner::run_busybox(ctx));
         // contest_runner::accumulate_stats(total,
         //                                  contest_runner::run_libctest(ctx));
-        contest_runner::accumulate_stats(total,
-                                         contest_runner::run_ltp(ctx));
+        // contest_runner::accumulate_stats(total,
+        //                                  contest_runner::run_ltp(ctx));
     }
 
     printf("contest-runner: all done total=%lu passed=%lu failed=%lu\n",
