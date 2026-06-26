@@ -4,15 +4,14 @@
  * @brief 文件操作
  * @version alpha-1.0.0
  * @date 2026-06-23
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
-
-#include <file.h>
 
 #include <errno.h>
 #include <fdtable.h>
+#include <file.h>
 #include <logger.h>
 #include <prog.h>
 #include <sus/path.h>
@@ -24,13 +23,13 @@
 #include <utility>
 
 namespace {
-    constexpr size_t INVALID_VALUE = 0xFFFF'FFFF'FFFF'FFFF;
-    constexpr int AT_FDCWD         = -100;
-    constexpr int AT_EMPTY_PATH    = 0x1000;
-    constexpr int LINUX_O_RDONLY   = 0;
-    constexpr int LINUX_O_WRONLY   = 1;
-    constexpr int LINUX_O_RDWR     = 2;
-    constexpr int LINUX_O_CREAT    = 0100;   // octal
+    constexpr size_t INVALID_VALUE  = 0xFFFF'FFFF'FFFF'FFFF;
+    constexpr int AT_FDCWD          = -100;
+    constexpr int AT_EMPTY_PATH     = 0x1000;
+    constexpr int LINUX_O_RDONLY    = 0;
+    constexpr int LINUX_O_WRONLY    = 1;
+    constexpr int LINUX_O_RDWR      = 2;
+    constexpr int LINUX_O_CREAT     = 0100;     // octal
     constexpr int LINUX_O_DIRECTORY = 0200000;  // octal
     constexpr int AT_REMOVEDIR      = 0x200;
     constexpr size_t MAX_DIR_FDS    = 128;
@@ -77,14 +76,36 @@ namespace {
         uint64_t __spare2[14];
     };
 
-    constexpr uint32_t STATX_TYPE  = 0x0001U;
-    constexpr uint32_t STATX_MODE  = 0x0002U;
-    constexpr uint32_t STATX_NLINK = 0x0004U;
-    constexpr uint32_t STATX_UID   = 0x0008U;
-    constexpr uint32_t STATX_GID   = 0x0010U;
-    constexpr uint32_t STATX_ATIME = 0x0020U;
-    constexpr uint32_t STATX_INO   = 0x0100U;
-    constexpr uint32_t STATX_SIZE  = 0x0200U;
+    struct linux_kstat {
+        uint64_t st_dev;
+        uint64_t st_ino;
+        uint32_t st_mode;
+        uint32_t st_nlink;
+        uint32_t st_uid;
+        uint32_t st_gid;
+        uint64_t st_rdev;
+        unsigned long __pad;
+        long st_size;
+        uint32_t st_blksize;
+        int __pad2;
+        uint64_t st_blocks;
+        long st_atime_sec;
+        long st_atime_nsec;
+        long st_mtime_sec;
+        long st_mtime_nsec;
+        long st_ctime_sec;
+        long st_ctime_nsec;
+        unsigned __unused[2];
+    };
+
+    constexpr uint32_t STATX_TYPE   = 0x0001U;
+    constexpr uint32_t STATX_MODE   = 0x0002U;
+    constexpr uint32_t STATX_NLINK  = 0x0004U;
+    constexpr uint32_t STATX_UID    = 0x0008U;
+    constexpr uint32_t STATX_GID    = 0x0010U;
+    constexpr uint32_t STATX_ATIME  = 0x0020U;
+    constexpr uint32_t STATX_INO    = 0x0100U;
+    constexpr uint32_t STATX_SIZE   = 0x0200U;
     constexpr uint32_t STATX_BLOCKS = 0x0400U;
     constexpr uint32_t STATX_MTIME  = 0x0040U;
     constexpr uint32_t STATX_CTIME  = 0x0080U;
@@ -96,10 +117,10 @@ namespace {
     constexpr int64_t FIXED_TIME    = 0x114514;
 
     struct DirFdState {
-        bool used         = false;
-        bool pinned       = false;
-        int fd            = -1;
-        size_t next_index = 0;
+        bool used             = false;
+        bool pinned           = false;
+        int fd                = -1;
+        size_t next_index     = 0;
         std::string *abs_path = nullptr;
     };
 
@@ -189,7 +210,7 @@ namespace {
 
     void free_dir_fd_state(DirFdState &state) {
         delete state.abs_path;
-        state = {};
+        state    = {};
         state.fd = -1;
     }
 
@@ -234,7 +255,8 @@ namespace {
     }
 
     [[nodiscard]]
-    CapIdx open_dir_cap_at(CapIdx parent_cap, const std::string &relative_path) {
+    CapIdx open_dir_cap_at(CapIdx parent_cap,
+                           const std::string &relative_path) {
         if (parent_cap == cap::null || parent_cap == cap::error) {
             return cap::error;
         }
@@ -246,7 +268,8 @@ namespace {
 
     [[nodiscard]]
     bool ensure_cwd_fd_bound() {
-        if (__prog_cwd_dir_cap == cap::null || __prog_cwd_dir_cap == cap::error) {
+        if (__prog_cwd_dir_cap == cap::null || __prog_cwd_dir_cap == cap::error)
+        {
             return false;
         }
 
@@ -257,7 +280,7 @@ namespace {
             state != nullptr && state->abs_path != nullptr &&
             *state->abs_path == __prog_cwd)
         {
-            entry->offset = 0;
+            entry->offset     = 0;
             state->next_index = 0;
             state->pinned     = true;
             return true;
@@ -314,9 +337,9 @@ namespace {
         if (path.is_absolute()) {
             auto absolute_path = path_to_string(path);
             return ResolvedPath{
-                .parent_cap     = __prog_root_dir_cap,
-                .absolute_path  = absolute_path,
-                .relative_path  = absolute_path_to_relpath(path),
+                .parent_cap    = __prog_root_dir_cap,
+                .absolute_path = absolute_path,
+                .relative_path = absolute_path_to_relpath(path),
             };
         }
 
@@ -331,7 +354,9 @@ namespace {
         }
 
         auto absolute_path = normalize_path(base_path / path);
-        if (!valid_normalized_path(absolute_path) || !absolute_path.is_absolute()) {
+        if (!valid_normalized_path(absolute_path) ||
+            !absolute_path.is_absolute())
+        {
             return {};
         }
 
@@ -355,8 +380,8 @@ namespace {
     [[nodiscard]]
     size_t linux_dirent64_record_size(const char *name) {
         size_t name_len = strlen(name) + 1;
-        size_t size = sizeof(linux_dirent64) + name_len;
-        size_t align = alignof(uint64_t);
+        size_t size     = sizeof(linux_dirent64) + name_len;
+        size_t align    = alignof(uint64_t);
         return (size + align - 1) & ~(align - 1);
     }
 
@@ -369,12 +394,12 @@ namespace {
             return false;
         }
 
-        auto *entry = reinterpret_cast<linux_dirent64 *>(
-            static_cast<char *>(buf) + pos);
-        entry->d_ino = meta.inode;
-        entry->d_off = static_cast<int64_t>(next_index);
+        auto *entry =
+            reinterpret_cast<linux_dirent64 *>(static_cast<char *>(buf) + pos);
+        entry->d_ino    = meta.inode;
+        entry->d_off    = static_cast<int64_t>(next_index);
         entry->d_reclen = static_cast<unsigned short>(reclen);
-        entry->d_type = entry_type_to_dtype(meta.type);
+        entry->d_type   = entry_type_to_dtype(meta.type);
         strcpy(entry->d_name, name);
         memset(reinterpret_cast<char *>(entry) + sizeof(linux_dirent64) +
                    strlen(name) + 1,
@@ -394,7 +419,8 @@ namespace {
             return false;
         }
 
-        if (__prog_cwd_dir_cap != cap::null && __prog_cwd_dir_cap != cap::error) {
+        if (__prog_cwd_dir_cap != cap::null && __prog_cwd_dir_cap != cap::error)
+        {
             sys_cap_remove(__prog_cwd_dir_cap);
             __prog_cwd_dir_cap = cap::null;
         }
@@ -412,38 +438,45 @@ namespace {
     [[nodiscard]]
     ResolvedNodeType stat_resolved_path(const ResolvedPath &resolved,
                                         NodeMeta &meta) {
-        if (resolved.parent_cap == cap::null || resolved.parent_cap == cap::error ||
-            resolved.relative_path.empty())
+        if (resolved.parent_cap == cap::null ||
+            resolved.parent_cap == cap::error || resolved.relative_path.empty())
         {
             return ResolvedNodeType::ERROR;
         }
-        if (!sys_vfs_stat(resolved.parent_cap, resolved.relative_path.c_str(),
-                          &meta))
-        {
+        Result<void> stat_res =
+            sys_vfs_stat(resolved.parent_cap, resolved.relative_path.c_str(),
+                         &meta)
+                .to_result();
+        if (stat_res.has_value()) {
+            switch (meta.type) {
+                case EntryType::DIR:     return ResolvedNodeType::DIRECTORY;
+                case EntryType::FILE:
+                case EntryType::SYMLINK: return ResolvedNodeType::FILE;
+                default:                 return ResolvedNodeType::ERROR;
+            }
+        }
+        ErrCode err = stat_res.error();
+        if (err == ErrCode::ENTRY_NOT_FOUND) {
             return ResolvedNodeType::MISSING;
         }
-        switch (meta.type) {
-            case EntryType::DIR:  return ResolvedNodeType::DIRECTORY;
-            case EntryType::FILE:
-            case EntryType::SYMLINK:
-                return ResolvedNodeType::FILE;
-            default: return ResolvedNodeType::ERROR;
-        }
+        return ResolvedNodeType::ERROR;
     }
 
     [[nodiscard]]
     uint16_t node_meta_to_mode(const NodeMeta &meta) {
         switch (meta.type) {
-            case EntryType::DIR:     return static_cast<uint16_t>(S_IFDIR | S_DEFAULTL);
-            case EntryType::SYMLINK: return static_cast<uint16_t>(S_IFLNK | S_DEFAULTL);
+            case EntryType::DIR:
+                return static_cast<uint16_t>(S_IFDIR | S_DEFAULTL);
+            case EntryType::SYMLINK:
+                return static_cast<uint16_t>(S_IFLNK | S_DEFAULTL);
             case EntryType::FILE:
-            default:                 return static_cast<uint16_t>(S_IFREG | S_DEFAULTL);
+            default:              return static_cast<uint16_t>(S_IFREG | S_DEFAULTL);
         }
     }
 
     void fill_fixed_time(linux_statx_timestamp &ts) {
-        ts.tv_sec = FIXED_TIME;
-        ts.tv_nsec = 0;
+        ts.tv_sec     = FIXED_TIME;
+        ts.tv_nsec    = 0;
         ts.__reserved = 0;
     }
 
@@ -453,15 +486,28 @@ namespace {
                        STATX_GID | STATX_ATIME | STATX_INO | STATX_SIZE |
                        STATX_BLOCKS | STATX_MTIME | STATX_CTIME;
         stx.stx_blksize = 4096;
-        stx.stx_nlink = static_cast<uint32_t>(meta.links);
-        stx.stx_mode = node_meta_to_mode(meta);
-        stx.stx_ino = meta.inode;
-        stx.stx_size = meta.size;
-        stx.stx_blocks = (meta.size + 511) / 512;
+        stx.stx_nlink   = static_cast<uint32_t>(meta.links);
+        stx.stx_mode    = node_meta_to_mode(meta);
+        stx.stx_ino     = meta.inode;
+        stx.stx_size    = meta.size;
+        stx.stx_blocks  = (meta.size + 511) / 512;
         fill_fixed_time(stx.stx_atime);
         fill_fixed_time(stx.stx_btime);
         fill_fixed_time(stx.stx_ctime);
         fill_fixed_time(stx.stx_mtime);
+    }
+
+    void fill_kstat_from_node_meta(const NodeMeta &meta, linux_kstat &kst) {
+        memset(&kst, 0, sizeof(kst));
+        kst.st_ino        = meta.inode;
+        kst.st_mode       = node_meta_to_mode(meta);
+        kst.st_nlink      = static_cast<uint32_t>(meta.links);
+        kst.st_size       = static_cast<long>(meta.size);
+        kst.st_blksize    = 4096;
+        kst.st_blocks     = (meta.size + 511) / 512;
+        kst.st_atime_sec  = FIXED_TIME;
+        kst.st_mtime_sec  = FIXED_TIME;
+        kst.st_ctime_sec  = FIXED_TIME;
     }
 
     void copy_dir_fd_state(int oldfd, int newfd, bool pinned) {
@@ -510,59 +556,89 @@ namespace {
         return static_cast<size_t>(fd);
     }
 
-    size_t do_open_resolved(const ResolvedPath &resolved, int flags) {
-        if (resolved.parent_cap == cap::null || resolved.parent_cap == cap::error ||
-            resolved.relative_path.empty())
-        {
-            return -ENOENT;
-        }
-
-        flags::oflg_t sustcore_flags = linux_oflags_to_sustcore(flags);
-        bool want_directory          = (flags & LINUX_O_DIRECTORY) != 0;
-        NodeMeta meta{};
-        auto node_type               = stat_resolved_path(resolved, meta);
-        if (node_type == ResolvedNodeType::ERROR) {
-            return -EIO;
-        }
-        if (node_type == ResolvedNodeType::DIRECTORY) {
-            want_directory = true;
-        } else if (node_type == ResolvedNodeType::MISSING &&
-                   (flags & LINUX_O_CREAT) == 0)
-        {
-            return -ENOENT;
-        }
-
-        CapIdx file_cap = cap::error;
-        if (want_directory) {
+    [[nodiscard]]
+    ResolvedNodeType create_resolved_node(const ResolvedPath &resolved,
+                                          flags::oflg_t sustcore_flags,
+                                          bool flg_directory,
+                                          CapIdx &file_cap) {
+        file_cap = cap::error;
+        if (flg_directory) {
             auto dir_res =
-                sys_vfs_opendir(resolved.parent_cap,
-                                resolved.relative_path.c_str(),
-                                sustcore_flags)
+                sys_vfs_mkdir(resolved.parent_cap, resolved.relative_path.c_str(),
+                              sustcore_flags)
                     .to_result();
             file_cap = dir_res.has_value() ? dir_res.value() : cap::error;
-        } else {
+            return ResolvedNodeType::DIRECTORY;
+        }
+
+        auto file_res =
+            sys_vfs_mkfile(resolved.parent_cap, resolved.relative_path.c_str(),
+                           sustcore_flags)
+                .to_result();
+        file_cap = file_res.has_value() ? file_res.value() : cap::error;
+        return ResolvedNodeType::FILE;
+    }
+
+    size_t do_open_resolved(const ResolvedPath &resolved, int flags) {
+        if (!cap::valid(resolved.parent_cap) || resolved.relative_path.empty())
+        {
+            return -ENOENT;
+        }
+
+        bool flg_create    = (flags & LINUX_O_CREAT) != 0;
+        bool flg_directory = (flags & LINUX_O_DIRECTORY) != 0;
+
+        flags::oflg_t sustcore_flags = linux_oflags_to_sustcore(flags);
+        NodeMeta meta{};
+        auto node_type               = stat_resolved_path(resolved, meta);
+        CapIdx file_cap              = cap::error;
+
+        if (node_type == ResolvedNodeType::ERROR) {
+            return -EIO;
+        } else if (node_type == ResolvedNodeType::MISSING) {
+            if (!flg_create) {
+                return -ENOENT;
+            }
+            loggers::LXSC::INFO("openat create path=%s type=%s",
+                                resolved.absolute_path.c_str(),
+                                flg_directory ? "directory" : "file");
+            node_type =
+                create_resolved_node(resolved, sustcore_flags, flg_directory,
+                                     file_cap);
+        } else if (node_type == ResolvedNodeType::DIRECTORY) {
+            auto dir_res =
+                sys_vfs_opendir(resolved.parent_cap,
+                                resolved.relative_path.c_str(), sustcore_flags)
+                    .to_result();
+            file_cap = dir_res.has_value() ? dir_res.value() : cap::error;
+        } else if (node_type == ResolvedNodeType::FILE) {
+            if (flg_directory) {
+                return -ENOTDIR;
+            }
             auto file_res =
                 sys_vfs_open(resolved.parent_cap,
-                             resolved.relative_path.c_str(),
-                             sustcore_flags)
+                             resolved.relative_path.c_str(), sustcore_flags)
                     .to_result();
             file_cap = file_res.has_value() ? file_res.value() : cap::error;
         }
-        if (file_cap == cap::null || file_cap == cap::error) {
-            loggers::LXSC::ERROR("Invalid path: %s", resolved.absolute_path.c_str());
-            return want_directory ? -ENOTDIR : -ENOENT;
+
+        if (!cap::valid(file_cap)) {
+            loggers::LXSC::ERROR("invalid open result path=%s type=%s",
+                                 resolved.absolute_path.c_str(),
+                                 node_type == ResolvedNodeType::DIRECTORY
+                                     ? "directory"
+                                     : "file");
+            return node_type == ResolvedNodeType::DIRECTORY ? -ENOTDIR
+                                                            : -ENOENT;
         }
 
-        if (want_directory && register_dir_fd_state(CWD_FD, resolved.absolute_path, true),
-            false)
-        {
-        }
         int fd = alloc_fd(file_cap);
         if (fd < 0) {
             sys_cap_remove(file_cap);
             return -EMFILE;
         }
-        if (want_directory &&
+
+        if (node_type == ResolvedNodeType::DIRECTORY &&
             register_dir_fd_state(fd, resolved.absolute_path, false) ==
                 static_cast<size_t>(-1))
         {
@@ -580,10 +656,9 @@ size_t linux_open_fd(const char *pathname, int fd, int flags) {
     }
 
     flags::oflg_t sustcore_flags = linux_oflags_to_sustcore(flags);
-    auto file_res =
-        sys_vfs_open(resolved.parent_cap, resolved.relative_path.c_str(),
-                     sustcore_flags)
-            .to_result();
+    auto file_res                = sys_vfs_open(resolved.parent_cap,
+                                                resolved.relative_path.c_str(), sustcore_flags)
+                        .to_result();
     CapIdx file_cap = file_res.has_value() ? file_res.value() : cap::error;
     if (file_cap == cap::null || file_cap == cap::error) {
         return -ENOENT;
@@ -765,8 +840,7 @@ size_t linux_sys_lseek(int fd, size_t offset, int whence) {
                 dir_state->next_index += offset;
                 return dir_state->next_index;
             case 2:
-            default:
-                return -EINVAL;
+            default: return -EINVAL;
         }
     }
 
@@ -777,23 +851,18 @@ size_t linux_sys_lseek(int fd, size_t offset, int whence) {
 
     size_t new_offset = 0;
     switch (whence) {
-        case 0:
-            new_offset = offset;
-            break;
-        case 1:
-            new_offset = fd_offset(fd) + offset;
-            break;
+        case 0: new_offset = offset; break;
+        case 1: new_offset = fd_offset(fd) + offset; break;
         case 2: {
             auto file_size_res = sys_vfs_size(file_cap).to_result();
             if (!file_size_res.has_value()) {
                 return -EIO;
             }
             size_t file_size = file_size_res.value();
-            new_offset = file_size + offset;
+            new_offset       = file_size + offset;
             break;
         }
-        default:
-            return -EINVAL;
+        default: return -EINVAL;
     }
 
     set_fd_offset(fd, new_offset);
@@ -845,10 +914,9 @@ size_t linux_sys_mkdirat(int dirfd, const char *pathname, int mode) {
         return -ENOENT;
     }
 
-    auto dir_res =
-        sys_vfs_mkdir(resolved.parent_cap, resolved.relative_path.c_str(),
-                      flags::O_READ)
-            .to_result();
+    auto dir_res = sys_vfs_mkdir(resolved.parent_cap,
+                                 resolved.relative_path.c_str(), flags::O_READ)
+                       .to_result();
     CapIdx dir_cap = dir_res.has_value() ? dir_res.value() : cap::error;
     if (dir_cap == cap::null || dir_cap == cap::error) {
         return -EIO;
@@ -870,12 +938,11 @@ size_t linux_sys_unlinkat(int dirfd, const char *pathname, int flags) {
         return -ENOENT;
     }
 
-    bool ok =
-        ((flags & AT_REMOVEDIR) != 0
-             ? sys_vfs_rmdir(resolved.parent_cap,
-                             resolved.relative_path.c_str())
-             : sys_vfs_unlink(resolved.parent_cap,
-                              resolved.relative_path.c_str()));
+    bool ok = ((flags & AT_REMOVEDIR) != 0
+                   ? sys_vfs_rmdir(resolved.parent_cap,
+                                   resolved.relative_path.c_str())
+                   : sys_vfs_unlink(resolved.parent_cap,
+                                    resolved.relative_path.c_str()));
     return ok ? 0 : -EIO;
 }
 
@@ -892,7 +959,7 @@ size_t linux_sys_getdents64(int fd, void *dirp, size_t count) {
         return -EBADF;
     }
 
-    auto *dir_state = find_dir_fd_state(fd);
+    auto *dir_state   = find_dir_fd_state(fd);
     size_t next_index = 0;
     if (dir_state != nullptr) {
         next_index = dir_state->next_index;
@@ -911,8 +978,8 @@ size_t linux_sys_getdents64(int fd, void *dirp, size_t count) {
         return 0;
     }
 
-    size_t pos = 0;
-    size_t raw_pos = 0;
+    size_t pos         = 0;
+    size_t raw_pos     = 0;
     size_t entry_index = next_index;
     while (raw_pos + sizeof(dir_entry_header) <= raw_size) {
         auto *header =
@@ -923,8 +990,7 @@ size_t linux_sys_getdents64(int fd, void *dirp, size_t count) {
             break;
         }
 
-        const char *name =
-            raw_entries + raw_pos + sizeof(dir_entry_header);
+        const char *name = raw_entries + raw_pos + sizeof(dir_entry_header);
         NodeMeta meta{};
         if (!sys_vfs_lstat(dir_cap, name, &meta)) {
             return -EIO;
@@ -973,5 +1039,26 @@ size_t linux_sys_statx(int dirfd, const char *pathname, int flags,
     linux_statx stx{};
     fill_statx_from_node_meta(meta, stx);
     memcpy(statxbuf, &stx, sizeof(stx));
+    return 0;
+}
+
+size_t linux_sys_fstat(int fd, void *statbuf) {
+    if (statbuf == nullptr) {
+        return -EINVAL;
+    }
+
+    CapIdx cap = fd_to_cap(fd);
+    if (cap == cap::error || cap == cap::null) {
+        return -EBADF;
+    }
+
+    NodeMeta meta{};
+    if (!sys_vfs_fstat(cap, &meta)) {
+        return -EIO;
+    }
+
+    linux_kstat kst{};
+    fill_kstat_from_node_meta(meta, kst);
+    memcpy(statbuf, &kst, sizeof(kst));
     return 0;
 }

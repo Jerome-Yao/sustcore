@@ -417,6 +417,9 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             reinterpret_cast<void *>(a1), a2);
         case __NR_getcwd:
             return linux_sys_getcwd(reinterpret_cast<char *>(a0), a1);
+        case __NR_fstat:
+            return linux_sys_fstat(static_cast<int>(a0),
+                                   reinterpret_cast<void *>(a1));
         case __NR_statx:
             return linux_sys_statx(static_cast<int>(a0),
                                    reinterpret_cast<const char *>(a1),
