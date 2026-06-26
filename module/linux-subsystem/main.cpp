@@ -469,25 +469,46 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         static_cast<unsigned long>(prot), prot_str.c_str(),
         static_cast<unsigned long>(flags), flags_str.c_str(),
         static_cast<long>(fd), static_cast<unsigned long>(offset));
+    
+    bool is_anonymous = (flags & MAP_ANONYMOUS) != 0;
+    bool is_fixed     = (flags & MAP_FIXED) != 0;
+    bool is_private   = (flags & MAP_PRIVATE) != 0;
+    bool is_shared    = (flags & MAP_SHARED) != 0;
 
-    if ((flags & MAP_ANONYMOUS) == 0 || (flags & MAP_PRIVATE) == 0) {
+    if (! is_anonymous && fd == static_cast<size_t>(-1)) {
         loggers::LXSC::ERROR(
-            "mmap only supports MAP_ANONYMOUS | MAP_PRIVATE, flags=0x%lx",
+            "mmap requires either MAP_ANONYMOUS or a valid fd, flags=0x%lx, "
+            "fd=%ld",
+            static_cast<unsigned long>(flags), static_cast<long>(fd));
+        return INVALID_VALUE;
+    }
+
+    if (! (is_private ^ is_shared)) {
+        loggers::LXSC::ERROR(
+            "mmap requires either MAP_PRIVATE or MAP_SHARED, flags=0x%lx",
             static_cast<unsigned long>(flags));
         return INVALID_VALUE;
     }
 
-    if (fd != static_cast<size_t>(-1) || offset != 0 || length == 0) {
+    if (is_shared) {
+        loggers::LXSC::WARN(
+            "mmap MAP_SHARED is currently treated as MAP_PRIVATE");
+    }
+
+    if ((offset % PAGESIZE) != 0) {
         loggers::LXSC::ERROR(
-            "mmap only supports fd=-1, offset=0, length>0, got fd=%ld, "
-            "offset=%lu, length=%lu",
-            static_cast<long>(fd), static_cast<unsigned long>(offset),
-            static_cast<unsigned long>(length));
+            "mmap requires page-aligned offset, offset=%lu",
+            static_cast<unsigned long>(offset));
+        return INVALID_VALUE;
+    }
+
+    if (length == 0) {
+        loggers::LXSC::ERROR("mmap requires length > 0");
         return INVALID_VALUE;
     }
 
     size_t aligned_length = page_align_up_user(length);
-    size_t target_addr    = (flags & MAP_FIXED) != 0
+    size_t target_addr    = is_fixed
                                 ? reinterpret_cast<size_t>(addr)
                                 : choose_mmap_base(aligned_length);
     if ((target_addr % PAGESIZE) != 0) {
@@ -497,9 +518,29 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         return INVALID_VALUE;
     }
 
-    auto mem_cap_res = sys_mem_create(cap::null, aligned_length, false, false,
-                                      MEMORY_GROWTH_FIXED, 0)
-                           .to_result();
+    CapIdx backing_file_cap = cap::null;
+    size_t file_offset      = 0;
+    if (is_anonymous) {
+        if (fd != static_cast<size_t>(-1)) {
+            loggers::LXSC::ERROR(
+                "anonymous mmap requires fd=-1, got fd=%ld",
+                static_cast<long>(fd));
+            return INVALID_VALUE;
+        }
+    } else {
+        backing_file_cap = fd_to_cap(static_cast<int>(fd));
+        if (backing_file_cap == cap::null || backing_file_cap == cap::error) {
+            loggers::LXSC::ERROR("file-backed mmap invalid fd=%ld",
+                                 static_cast<long>(fd));
+            return INVALID_VALUE;
+        }
+        file_offset = offset;
+    }
+
+    auto mem_cap_res =
+        sys_mem_create(backing_file_cap, aligned_length, false, false,
+                       MEMORY_GROWTH_FIXED, file_offset)
+            .to_result();
     if (!mem_cap_res.has_value()) {
         loggers::LXSC::ERROR("mmap failed to create memory capability");
         return INVALID_VALUE;
