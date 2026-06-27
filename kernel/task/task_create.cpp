@@ -37,13 +37,14 @@ namespace task {
         extern "C" [[noreturn]] void new_utask_trampoline();
 
         void init_user_context(Context *ctx, void *entrypoint, void *stack_top,
-                               void *kstack_top,
+                               void *kstack_top, umb_t tls,
                                umb_t linuxproc_entrypoint = 0) noexcept {
             assert(ctx != nullptr);
             *ctx = {};
             ctx->setup_regs<SetupCase::USER_THREAD>();
             ctx->pc()         = reinterpret_cast<umb_t>(entrypoint);
             ctx->sp()         = reinterpret_cast<umb_t>(stack_top);
+            ctx->tls()        = tls;
             ctx->linux_ra()   = linuxproc_entrypoint;
             ctx->kstack_top() = reinterpret_cast<umb_t>(kstack_top);
         }
@@ -68,12 +69,12 @@ namespace task {
         }
 
         void build_user_contexts(util::nonnull<TCB *> tcb, void *entrypoint,
-                                 void *user_stack_top,
+                                 void *user_stack_top, umb_t tls,
                                  umb_t linuxproc_entrypoint = 0) noexcept {
             tcb->reset_kstack();
             auto *user_ctx = tcb->push<Context>();
             init_user_context(user_ctx, entrypoint, user_stack_top,
-                              tcb->kstack_top(), linuxproc_entrypoint);
+                              tcb->kstack_top(), tls, linuxproc_entrypoint);
             init_kernel_context<SetupCase::UTHREAD_TRAMPOLINE>(
                 tcb->kernel_context_ptr(),
                 reinterpret_cast<void *>(&new_utask_trampoline), user_ctx,
@@ -90,12 +91,16 @@ namespace task {
         void prepare_user_thread(util::nonnull<TCB *> tcb, void *entrypoint,
                                  void *user_stack_top,
                                  schd::ClassType schd_class,
+                                 umb_t tls,
                                  umb_t linuxproc_entrypoint = 0) noexcept {
             tcb->is_kernel  = false;
             tcb->boot_role  = BootThreadRole::NONE;
             tcb->schd_class = schd_class;
             reset_thread_runtime(tcb);
-            build_user_contexts(tcb, entrypoint, user_stack_top,
+            assert(tcb->ext_ctx != nullptr);
+            init_ext_context(*tcb->ext_ctx);
+            tcb->ext_ctx_live = false;
+            build_user_contexts(tcb, entrypoint, user_stack_top, tls,
                                 linuxproc_entrypoint);
         }
 
@@ -106,6 +111,9 @@ namespace task {
             tcb->boot_role  = BootThreadRole::NONE;
             tcb->schd_class = schd_class;
             reset_thread_runtime(tcb);
+            assert(tcb->ext_ctx != nullptr);
+            init_ext_context(*tcb->ext_ctx);
+            tcb->ext_ctx_live = false;
             build_kernel_context(tcb, entrypoint, arg0);
         }
 
@@ -116,6 +124,8 @@ namespace task {
             tcb->is_kernel = false;
             reset_thread_runtime(tcb);
             tcb->reset_kstack();
+            assert(tcb->ext_ctx != nullptr);
+            tcb->ext_ctx_live = false;
             auto *child_user_ctx = tcb->push<Context>();
             *child_user_ctx      = parent_ctx;
             child_user_ctx->kstack_top() =
@@ -353,6 +363,19 @@ namespace task {
         }
 
         [[nodiscard]]
+        Result<void> patch_auxv_value(StartupStackBuilder &builder,
+                                      uint64_t key, uint64_t value) {
+            for (size_t i = 0; i + 1 < builder.auxv_entries.size(); i += 2) {
+                if (builder.auxv_entries[i] != key) {
+                    continue;
+                }
+                builder.auxv_entries[i + 1] = value;
+                void_return();
+            }
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+
+        [[nodiscard]]
         Result<void> build_bsargv(
             StartupStackBuilder &builder,
             const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
@@ -395,6 +418,9 @@ namespace task {
                 .phdr_vaddr           = VirAddr::null,
                 .phdr_num             = 0,
                 .phdr_entsize         = 0,
+                .tls_vaddr            = VirAddr::null,
+                .tls_memsz            = 0,
+                .image_end_vaddr      = VirAddr::null,
                 .linuxss_heap_vaddr   = VirAddr::null,
                 .linuxss_heap_mem_cap = cap::null,
             };
@@ -467,10 +493,6 @@ namespace task {
                 push_bytes(builder, spec.linux_execfn.c_str(),
                            spec.linux_execfn.size() + 1, alignof(char));
             propagate(execfn_sp_res);
-            auto null_pos = std::find(spec.auxv.begin(), spec.auxv.end(), AT_NULL);
-            if (null_pos != spec.auxv.end()) {
-                spec.auxv.erase(null_pos, spec.auxv.end());
-            }
             spec.auxv.push_back(AT_EXECFN);
             spec.auxv.push_back(execfn_sp_res.value().arith());
         }
@@ -485,8 +507,6 @@ namespace task {
 #endif
         spec.auxv.push_back(AT_RANDOM);
         spec.auxv.push_back(random_sp_res.value().arith());
-        spec.auxv.push_back(AT_NULL);
-        spec.auxv.push_back(0);
         auto pcb_explain_res = append_bootstrap_cap_explain_record(
             spec, pcb_cap, PayloadType::PCB, perm::allperm(), "#self:0");
         propagate(pcb_explain_res);
@@ -556,14 +576,27 @@ namespace task {
         propagate(auxv_res);
         propagate(bsargv_res);
 
+        if (spec.phdr.stack_copy_required) {
+            if (spec.phdr.bytes.empty()) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            auto phdr_sp_res =
+                push_bytes(builder, spec.phdr.bytes.data(), spec.phdr.bytes.size(), 8);
+            propagate(phdr_sp_res);
+            auto patch_res =
+                patch_auxv_value(builder, AT_PHDR, phdr_sp_res.value().arith());
+            propagate(patch_res);
+        }
+
         std::vector<uint64_t> layout{};
         layout.reserve(1 + builder.argv_ptrs.size() + 1 +
                        builder.envp_ptrs.size() + 1 +
                        builder.auxv_entries.size() * 2 + 1 +
                        builder.bsargv_ptrs.size() + 1);
         const size_t argc        = builder.argv_ptrs.size();
-        const size_t argv_offset = layout.size();
         layout.push_back(argc);
+        // layout[0] 是 argc，argv 必须指向紧随其后的 argv[0] 指针表。push 以后再取 size。
+        const size_t argv_offset = layout.size();
         for (auto ptr : builder.argv_ptrs) {
             layout.push_back(ptr.arith());
         }
@@ -642,7 +675,9 @@ namespace task {
         loggers::TASK::DEBUG("栈内存分配: pid=%lu 栈内存地址=%p 已分配=%lu",
                              pcb->pid, stack_mem, stack_mem->allocated_size());
         prepare_user_thread(tcb, pcb->entrypoint.addr(), init_layout.sp.addr(),
-                            tcb->schd_class, spec.linuxproc_entrypoint.arith());
+                            tcb->schd_class,
+                            spec.tls_vaddr.arith() + spec.tls_memsz,
+                            spec.linuxproc_entrypoint.arith());
 
         tcb->context()->set_init_regs(static_cast<umb_t>(init_layout.argc),
                                       init_layout.argv.arith(),
@@ -666,7 +701,26 @@ namespace task {
         if (kernel_thread) {
             prepare_kernel_thread(tcb, entrypoint, nullptr, schd_class);
         } else {
-            prepare_user_thread(tcb, entrypoint, stack_top, schd_class);
+            if (pcb->tmm.get() == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+            VirAddr tls_base =
+                VirAddr(reinterpret_cast<addr_t>(stack_top)).page_align_up();
+            auto *tls_mem = new cap::MemoryPayload(PAGESIZE, false, false,
+                                                   VMA::Growth::FIXED);
+            if (tls_mem == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            auto add_res = pcb->tmm->add_vma(
+                VMA::Type::DATA, VMA::Growth::FIXED,
+                VirArea(tls_base, tls_base + PAGESIZE), tls_mem,
+                VMA::PROT_R | VMA::PROT_W);
+            if (!add_res.has_value()) {
+                delete tls_mem;
+                propagate_return(add_res);
+            }
+            prepare_user_thread(tcb, entrypoint, stack_top, schd_class,
+                                (tls_base + PAGESIZE).arith());
         }
 
         pcb->threads.push_back(*tcb);
@@ -863,10 +917,11 @@ namespace task {
         CapIdx image_cap, cap::CHolder *holder, schd::ClassType schd_class,
         bool wakeup, const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
-        const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
+        const std::string &execfn) {
         auto spec_res =
             load_task_spec_impl(*this, &TaskManager::load_task_spec, image_cap,
-                                holder, argv, envp, bsargv);
+                                holder, argv, envp, bsargv, execfn);
         propagate(spec_res);
         TaskSpec spec = std::move(spec_res.value());
         TaskSpecGuard spec_guard(spec);
@@ -881,10 +936,11 @@ namespace task {
         schd::ClassType schd_class, bool wakeup,
         const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
-        const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
+        const std::string &execfn) {
         auto spec_res = load_task_spec_impl(
             *this, &TaskManager::load_linux_task_spec, image_cap, holder,
-            subsystem_image_cap, argv, envp, bsargv);
+            subsystem_image_cap, argv, envp, bsargv, execfn);
         propagate(spec_res);
         TaskSpec spec = std::move(spec_res.value());
         TaskSpecGuard spec_guard(spec);
@@ -903,18 +959,21 @@ namespace task {
         CapIdx image_cap, cap::CHolder *holder, schd::ClassType schd_class,
         const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
-        const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
+        const std::string &execfn) {
         return load_task_image(image_cap, holder, schd_class, true, argv, envp,
-                               bsargv);
+                               bsargv, execfn);
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_linux_elf_into(
         CapIdx image_cap, cap::CHolder *holder, CapIdx subsystem_image_cap,
         schd::ClassType schd_class, const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
-        const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
+        const std::string &execfn) {
         return load_linux_task_image(image_cap, holder, subsystem_image_cap,
-                                     schd_class, true, argv, envp, bsargv);
+                                     schd_class, true, argv, envp, bsargv,
+                                     execfn);
     }
 
     Result<util::nonnull<PCB *>> TaskManager::load_init(const char *path) {
@@ -993,7 +1052,8 @@ namespace task {
         }
         auto loaded_spec_res = load_task_spec_impl(
             *this, &TaskManager::load_task_spec, image_res.value(), holder,
-            std::vector<std::string>{}, std::vector<std::string>{}, bsargv);
+            std::vector<std::string>{}, std::vector<std::string>{}, bsargv,
+            std::string{"<cap>"});
         propagate(loaded_spec_res);
 
         TaskSpec loaded_spec = std::move(loaded_spec_res.value());
@@ -1084,6 +1144,10 @@ namespace task {
 
         prepare_forked_thread(child_tcb, *parent_ctx, parent_tcb->schd_class,
                               parent_tcb->boot_role);
+        assert(parent_tcb->ext_ctx != nullptr);
+        assert(child_tcb->ext_ctx != nullptr);
+        save_ext_context(*parent_tcb->ext_ctx);
+        copy_ext_context(*child_tcb->ext_ctx, *parent_tcb->ext_ctx);
         child_pcb->threads.push_back(*child_tcb);
         tcb_guard.release();
 
@@ -1211,7 +1275,8 @@ namespace task {
         const CapIdx *reserved_caps, size_t reserved_count,
         const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
-        const std::vector<TaskSpec::BootstrapRecordData> &bsargv) {
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
+        const std::string &execfn) {
         PCB *pcb = target.get();
         if (pcb->is_kernel) {
             unexpect_return(ErrCode::INVALID_PARAM);
@@ -1235,7 +1300,7 @@ namespace task {
         TaskSpecGuard spec_guard(spec);
         LoadPrm load_prm{};
         auto load_spec_res = load_task_spec(image_cap, pcb->cholder, argv, envp,
-                                            bsargv, spec, load_prm);
+                                            bsargv, execfn, spec, load_prm);
         propagate(load_spec_res);
 
         auto prune_res = remove_unreserved_caps(pcb->cholder, reserved);
@@ -1287,6 +1352,106 @@ namespace task {
 
         loggers::SUSTCORE::DEBUG("execve成功: image_cap=%p pid=%d", image_cap,
                                  pcb->pid);
+        void_return();
+    }
+
+    Result<void> TaskManager::exec_linux_pcb(
+        util::nonnull<PCB *> target, CapIdx image_cap, CapIdx subsystem_image_cap,
+        const CapIdx *reserved_caps, size_t reserved_count,
+        const std::vector<std::string> &argv,
+        const std::vector<std::string> &envp,
+        const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
+        const std::string &execfn) {
+        PCB *pcb = target.get();
+        if (pcb->is_kernel) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        if (pcb->tmm == nullptr || pcb->cholder == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto *current_tcb = schd::Scheduler::inst().current_tcb();
+        bool target_current =
+            current_tcb != nullptr && current_tcb->task == pcb;
+        schd::ClassType schd_class =
+            exec_sched_class(pcb, current_tcb, target_current);
+        TCB *reuse_tcb = target_current ? current_tcb : nullptr;
+
+        auto subsystem_cap_guard = util::Guard([&]() {
+            auto remove_res = pcb->cholder->remove(subsystem_image_cap);
+            (void)remove_res;
+        });
+
+        auto reserved_res = collect_reserved_caps(
+            pcb->cholder, pcb->pcb_cap, reserved_caps, reserved_count);
+        propagate(reserved_res);
+        auto reserved = std::move(reserved_res.value());
+
+        TaskSpec spec = make_empty_task_spec();
+        TaskSpecGuard spec_guard(spec);
+        LoadPrm load_prm{};
+        auto load_spec_res =
+            load_linux_task_spec(image_cap, pcb->cholder, subsystem_image_cap,
+                                 argv, envp, bsargv, execfn, spec, load_prm);
+        propagate(load_spec_res);
+        if (spec.heap_mem_cap != cap::null && spec.heap_mem_cap != cap::error) {
+            reserved.caps.insert(spec.heap_mem_cap);
+        }
+        if (spec.linuxss_heap_mem_cap != cap::null &&
+            spec.linuxss_heap_mem_cap != cap::error)
+        {
+            reserved.caps.insert(spec.linuxss_heap_mem_cap);
+        }
+
+        auto prune_res = remove_unreserved_caps(pcb->cholder, reserved);
+        propagate(prune_res);
+        subsystem_cap_guard.release();
+
+        TaskMemoryManager *old_tmm = pcb->tmm;
+        while (!pcb->threads.empty()) {
+            TCB *tcb = &pcb->threads.front();
+            pcb->threads.pop_front();
+            if (tcb == reuse_tcb) {
+                continue;
+            }
+            if (tcb->basic_entity.state == ThreadState::READY) {
+                auto dequeue_res =
+                    schd::Scheduler::inst().dequeue(util::nnullforce(tcb));
+                propagate(dequeue_res);
+            }
+            auto recycle_res = recycle_tcb(util::nnullforce(tcb));
+            propagate(recycle_res);
+        }
+        pcb->tmm          = util::owner<TaskMemoryManager *>(nullptr);
+        pcb->entrypoint   = VirAddr::null;
+        pcb->main_tcb_cap = cap::null;
+
+        auto populate_res =
+            populate_task(util::nnullforce(pcb), spec, schd_class, reuse_tcb);
+        propagate(populate_res);
+
+        if (target_current) {
+            current_tcb->basic_entity.state = ThreadState::RUNNING;
+            current_tcb->basic_entity.flags = 0;
+            current_tcb->rr_entity          = {};
+        } else if (!schd::Scheduler::inst().wakeup_new(populate_res.value())) {
+            unexpect_return(ErrCode::CREATION_FAILED);
+        }
+
+        spec_guard.release();
+
+        if (target_current) {
+            schd::switch_pgd(pcb->tmm);
+        }
+
+        TaskSpec old_spec{
+            .tmm        = util::owner(old_tmm),
+            .holder     = nullptr,
+            .entrypoint = VirAddr::null,
+        };
+        cleanup_task_spec(old_spec);
+
+        loggers::SUSTCORE::DEBUG("POSIX execve成功: image_cap=%p pid=%d",
+                                 image_cap, pcb->pid);
         void_return();
     }
 }  // namespace task

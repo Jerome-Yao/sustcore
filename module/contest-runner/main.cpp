@@ -19,17 +19,43 @@
 
 namespace contest_runner {
     namespace {
-        constexpr uint64_t PERM_BASIC_MIGRATE_ONCE = 0x0008;
-        constexpr uint64_t PERM_PCB_GETPID         = 0x01'0000;
+        [[nodiscard]]
+        bool prepare_cloned_cap(CapIdx source_cap, uint64_t new_perm,
+                                CapIdx &prepared_cap) {
+            prepared_cap = cap::null;
+            if (source_cap == cap::null || source_cap == cap::error) {
+                return false;
+            }
+
+            auto cap_res = sys_cap_clone(source_cap).to_result();
+            if (!cap_res.has_value()) {
+                return false;
+            }
+
+            prepared_cap = cap_res.value();
+            auto downgrade_res =
+                sys_cap_downgrade(prepared_cap, new_perm).to_result();
+            if (!downgrade_res.has_value()) {
+                (void)sys_cap_remove(prepared_cap).to_result();
+                prepared_cap = cap::null;
+                return false;
+            }
+            return true;
+        }
 
         [[nodiscard]]
-        CapIdx spawn_linux_program(int fd, CapIdx root_dir_cap,
-                                   CapIdx cwd_dir_cap, const char *cwd_path,
+        CapIdx spawn_linux_program(int fd, CapIdx prepared_root_dir_cap,
+                                   CapIdx prepared_cwd_dir_cap,
+                                   CapIdx prepared_parent_pcb_cap,
+                                   const char *cwd_path,
                                    const char *program_path,
                                    const char *argv[]) {
-            if (fd < 0 || root_dir_cap == cap::null ||
-                root_dir_cap == cap::error || cwd_dir_cap == cap::null ||
-                cwd_dir_cap == cap::error)
+            if (fd < 0 || prepared_root_dir_cap == cap::null ||
+                prepared_root_dir_cap == cap::error ||
+                prepared_cwd_dir_cap == cap::null ||
+                prepared_cwd_dir_cap == cap::error ||
+                prepared_parent_pcb_cap == cap::null ||
+                prepared_parent_pcb_cap == cap::error)
             {
                 return cap::error;
             }
@@ -38,28 +64,6 @@ namespace contest_runner {
             {
                 return cap::error;
             }
-
-            auto child_root_res = sys_cap_clone(root_dir_cap).to_result();
-            if (!child_root_res.has_value()) {
-                return cap::error;
-            }
-            CapIdx child_root_cap = child_root_res.value();
-            auto child_cwd_res    = sys_cap_clone(cwd_dir_cap).to_result();
-            if (!child_cwd_res.has_value()) {
-                (void)sys_cap_remove(child_root_cap).to_result();
-                return cap::error;
-            }
-            CapIdx child_cwd_dir_cap = child_cwd_res.value();
-            auto child_parent_res =
-                sys_cap_derive(__pcb_cap,
-                               PERM_PCB_GETPID | PERM_BASIC_MIGRATE_ONCE)
-                    .to_result();
-            if (!child_parent_res.has_value()) {
-                (void)sys_cap_remove(child_root_cap).to_result();
-                (void)sys_cap_remove(child_cwd_dir_cap).to_result();
-                return cap::error;
-            }
-            CapIdx child_parent_pcb_cap = child_parent_res.value();
 
             struct RootDirBootstrap {
                 bsheader header;
@@ -73,7 +77,7 @@ namespace contest_runner {
                     },
                 .explain =
                     BootstrapCapExplainPayloadHead{
-                        .cap_idx  = child_root_cap,
+                        .cap_idx  = prepared_root_dir_cap,
                         .cap_type = PayloadType::VDIR,
                         .cap_perm = ~b64(0),
                     },
@@ -92,7 +96,7 @@ namespace contest_runner {
                     },
                 .explain =
                     BootstrapCapExplainPayloadHead{
-                        .cap_idx  = child_cwd_dir_cap,
+                        .cap_idx  = prepared_cwd_dir_cap,
                         .cap_type = PayloadType::VDIR,
                         .cap_perm = ~b64(0),
                     },
@@ -111,9 +115,9 @@ namespace contest_runner {
                     },
                 .explain =
                     BootstrapCapExplainPayloadHead{
-                        .cap_idx  = child_parent_pcb_cap,
+                        .cap_idx  = prepared_parent_pcb_cap,
                         .cap_type = PayloadType::PCB,
-                        .cap_perm = PERM_PCB_GETPID | PERM_BASIC_MIGRATE_ONCE,
+                        .cap_perm = PERM_PCB_GETPID | PERM_BASIC_CLONE,
                     },
                 .desc = "#parent",
             };
@@ -124,9 +128,6 @@ namespace contest_runner {
             if (cwd_desc_len <= 0 ||
                 static_cast<size_t>(cwd_desc_len) >= sizeof(cwd_desc))
             {
-                (void)sys_cap_remove(child_root_cap).to_result();
-                (void)sys_cap_remove(child_cwd_dir_cap).to_result();
-                (void)sys_cap_remove(child_parent_pcb_cap).to_result();
                 return cap::error;
             }
 
@@ -136,9 +137,6 @@ namespace contest_runner {
             if (exe_desc_len <= 0 ||
                 static_cast<size_t>(exe_desc_len) >= sizeof(exe_desc))
             {
-                (void)sys_cap_remove(child_root_cap).to_result();
-                (void)sys_cap_remove(child_cwd_dir_cap).to_result();
-                (void)sys_cap_remove(child_parent_pcb_cap).to_result();
                 return cap::error;
             }
 
@@ -160,8 +158,8 @@ namespace contest_runner {
             memcpy(exe_path_bootstrap + sizeof(bsheader), exe_desc,
                    static_cast<size_t>(exe_desc_len) + 1);
 
-            CapIdx initial_caps[] = {child_root_cap, child_cwd_dir_cap,
-                                     child_parent_pcb_cap, cap::null};
+            CapIdx initial_caps[] = {prepared_root_dir_cap, prepared_cwd_dir_cap,
+                                     prepared_parent_pcb_cap, cap::null};
             const char *bsargv[]  = {
                 reinterpret_cast<const char *>(&root_bootstrap),
                 reinterpret_cast<const char *>(&cwd_bootstrap_cap),
@@ -170,14 +168,18 @@ namespace contest_runner {
                 exe_path_bootstrap,
                 nullptr,
             };
-            auto child_pcb_res =
-                sys_create_linux_process(kmod_getcap(fd), SCHED_CLASS_FCFS,
-                                         initial_caps, argv, nullptr, bsargv)
-                    .to_result();
-            (void)sys_cap_remove(child_root_cap).to_result();
-            (void)sys_cap_remove(child_cwd_dir_cap).to_result();
+            ExecveRequest request{
+                .image_cap = kmod_getcap(fd),
+                .execfn    = program_path,
+                .caps      = initial_caps,
+                .argv      = argv,
+                .envp      = nullptr,
+                .bsargv    = bsargv,
+            };
+            auto child_pcb_res    = sys_create_linux_process(
+                SCHED_CLASS_FCFS, &request)
+                                        .to_result();
             if (!child_pcb_res.has_value()) {
-                (void)sys_cap_remove(child_parent_pcb_cap).to_result();
                 return cap::error;
             }
             return child_pcb_res.value();
@@ -209,6 +211,51 @@ namespace contest_runner {
         return ok && found ? cap : cap::null;
     }
 
+    bool init_runner_context_caps(RunnerContext &ctx) {
+        cleanup_runner_context_caps(ctx);
+        if (ctx.root_dir_cap == cap::null || ctx.root_dir_cap == cap::error) {
+            return false;
+        }
+
+        CapInfo root_info{};
+        auto root_lookup_res =
+            sys_cap_lookup(ctx.root_dir_cap, &root_info).to_result();
+        if (!root_lookup_res.has_value()) {
+            return false;
+        }
+
+        if (!prepare_cloned_cap(ctx.root_dir_cap, root_info.permissions,
+                                ctx.prepared_root_dir_cap))
+        {
+            cleanup_runner_context_caps(ctx);
+            return false;
+        }
+
+        auto parent_res = sys_cap_derive(
+            __pcb_cap, PERM_PCB_GETPID | PERM_BASIC_CLONE).to_result();
+        if (!parent_res.has_value()) {
+            cleanup_runner_context_caps(ctx);
+            return false;
+        }
+        ctx.prepared_parent_pcb_cap = parent_res.value();
+        return true;
+    }
+
+    void cleanup_runner_context_caps(RunnerContext &ctx) {
+        if (ctx.prepared_root_dir_cap != cap::null &&
+            ctx.prepared_root_dir_cap != cap::error)
+        {
+            (void)sys_cap_remove(ctx.prepared_root_dir_cap).to_result();
+        }
+        if (ctx.prepared_parent_pcb_cap != cap::null &&
+            ctx.prepared_parent_pcb_cap != cap::error)
+        {
+            (void)sys_cap_remove(ctx.prepared_parent_pcb_cap).to_result();
+        }
+        ctx.prepared_root_dir_cap   = cap::null;
+        ctx.prepared_parent_pcb_cap = cap::null;
+    }
+
     bool open_cwd_dir(const char *path, OpenDirHandle &cwd) {
         cwd    = {};
         cwd.fd = kmod_opendir(path);
@@ -225,11 +272,26 @@ namespace contest_runner {
             return false;
         }
 
+        CapInfo cwd_info{};
+        auto cwd_lookup_res = sys_cap_lookup(cwd.cap, &cwd_info).to_result();
+        if (!cwd_lookup_res.has_value() ||
+            !prepare_cloned_cap(cwd.cap, cwd_info.permissions,
+                                cwd.prepared_cap))
+        {
+            printf("contest-runner: cwd prepared cap invalid %s\n", path);
+            kmod_fclose(cwd.fd);
+            cwd = {};
+            return false;
+        }
+
         cwd.path = path;
         return true;
     }
 
     void close_cwd_dir(OpenDirHandle &cwd) {
+        if (cwd.prepared_cap != cap::null && cwd.prepared_cap != cap::error) {
+            (void)sys_cap_remove(cwd.prepared_cap).to_result();
+        }
         if (cwd.fd >= 0) {
             kmod_fclose(cwd.fd);
         }
@@ -245,8 +307,9 @@ namespace contest_runner {
             return RunProgramError::OPEN_FAILED;
         }
 
-        CapIdx child_pcb = spawn_linux_program(fd, ctx.root_dir_cap, cwd.cap,
-                                               cwd.path, program_path, argv);
+        CapIdx child_pcb = spawn_linux_program(
+            fd, ctx.prepared_root_dir_cap, cwd.prepared_cap,
+            ctx.prepared_parent_pcb_cap, cwd.path, program_path, argv);
         kmod_fclose(fd);
         if (child_pcb == cap::null || child_pcb == cap::error) {
             return RunProgramError::SPAWN_FAILED;
@@ -265,8 +328,9 @@ namespace contest_runner {
             return RunProgramError::OPEN_FAILED;
         }
 
-        child_pcb = spawn_linux_program(fd, ctx.root_dir_cap, cwd.cap, cwd.path,
-                                        program_path, argv);
+        child_pcb = spawn_linux_program(
+            fd, ctx.prepared_root_dir_cap, cwd.prepared_cap,
+            ctx.prepared_parent_pcb_cap, cwd.path, program_path, argv);
         kmod_fclose(fd);
         if (child_pcb == cap::null || child_pcb == cap::error) {
             return RunProgramError::SPAWN_FAILED;
@@ -346,6 +410,11 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
             .libc_root    = LIBC_TARGETS[i].root,
             .libc_name    = LIBC_TARGETS[i].name,
         };
+        if (!contest_runner::init_runner_context_caps(ctx)) {
+            printf("contest-runner: failed to prepare runner caps %s\n",
+                   ctx.libc_name);
+            return 1;
+        }
 
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
         // contest_runner::accumulate_stats(total,
@@ -354,12 +423,13 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         //                                  contest_runner::run_libctest(ctx));
         // contest_runner::accumulate_stats(total,
         // contest_runner::run_ltp(ctx));
+        contest_runner::cleanup_runner_context_caps(ctx);
     }
 
     printf("contest-runner: all done total=%lu passed=%lu failed=%lu\n",
            static_cast<unsigned long>(total.total),
            static_cast<unsigned long>(total.passed),
            static_cast<unsigned long>(total.failed));
-    (void)sys_shutdown().to_result();
+    (void)sys_shutdown();
     return total.failed == 0 ? 0 : 1;
 }

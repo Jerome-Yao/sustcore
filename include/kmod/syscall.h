@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <sustcore/bootstrap.h>
 #include <sustcore/capability.h>
+#include <sustcore/execve.h>
 #include <sustcore/files.h>
 #include <sustcore/msg.h>
 #include <sustcore/sysret.h>
@@ -54,6 +55,7 @@ SysRet<void> sys_write_serial(size_t __always_zero, const char *str, size_t len)
 SysRet<void> sys_shutdown();
 SysRet<size_t> sys_time_now_ns();
 SysRet<void> sys_tcb_nanosleep(size_t ns);
+SysRet<size_t> sys_tcb_get_tid(CapIdx tcb_cap);
 SysRet<void> sys_tcb_kill(CapIdx tcb_cap, int exit_code);
 SysRet<void> sys_pcb_kill(CapIdx pcb_cap, int exit_code);
 SysRet<void> sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset, void *vaddr,
@@ -62,22 +64,14 @@ SysRet<void> sys_pcb_unmap(CapIdx pcb_cap, void *vaddr, size_t sz);
 SysRet<size_t> sys_pcb_query_vaddr(CapIdx pcb_cap, void *vaddr, VMAInfo *info);
 SysRet<size_t> sys_pcb_query_vspace(CapIdx pcb_cap, size_t offset, VMAInfo *info_array,
                             size_t max_entries);
-SysRet<CapIdx> sys_pcb_create_process(CapIdx pcb_cap, CapIdx image_cap,
-                                      size_t sched_class, CapIdx caps[],
-                                      const char *argv[], const char *envp[],
-                                      const char *bsargv[]);
-SysRet<CapIdx> sys_pcb_create_linux_process(CapIdx pcb_cap, CapIdx image_cap,
-                                            size_t sched_class, CapIdx caps[],
-                                            const char *argv[], const char *envp[],
-                                            const char *bsargv[]);
-SysRet<CapIdx> sys_create_process(CapIdx image_cap, size_t sched_class, CapIdx caps[],
-                          const char *argv[] = nullptr,
-                          const char *envp[] = nullptr,
-                          const char *bsargv[] = nullptr);
-SysRet<CapIdx> sys_create_linux_process(CapIdx image_cap, size_t sched_class,
-                                CapIdx caps[], const char *argv[] = nullptr,
-                                const char *envp[] = nullptr,
-                                const char *bsargv[] = nullptr);
+SysRet<CapIdx> sys_pcb_create_process(CapIdx pcb_cap, size_t sched_class,
+                                      const ExecveRequest *request);
+SysRet<CapIdx> sys_pcb_create_linux_process(CapIdx pcb_cap, size_t sched_class,
+                                            const ExecveRequest *request);
+SysRet<CapIdx> sys_create_process(size_t sched_class,
+                                  const ExecveRequest *request);
+SysRet<CapIdx> sys_create_linux_process(size_t sched_class,
+                                        const ExecveRequest *request);
 SysRet<CapIdx> sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
                                      void *stack_addr, size_t stack_size);
 SysRet<CapIdx> sys_create_thread(void (*entry)(), void *stack_addr, size_t stack_size);
@@ -85,15 +79,11 @@ SysRet<CapIdx> sys_tcb_wait(CapIdx tcb_cap, CapIdx pcbs_idx[], int *status,
                             size_t options);
 SysRet<size_t> sys_pcb_fork(CapIdx pcb_cap, CapIdx *child_pcb_cap);
 SysRet<size_t> fork(CapIdx *child_pcb_cap);
-SysRet<void> sys_pcb_execve(CapIdx pcb_cap, CapIdx image_cap, CapIdx rsvdlst[],
-                            const char *argv[], const char *envp[],
-                            const char *bsargv[]);
-SysRet<void> sys_execve(CapIdx image_cap, CapIdx rsvdlst[],
-                const char *argv[] = nullptr,
-                const char *envp[] = nullptr,
-                const char *bsargv[] = nullptr);
-SysRet<void> execve(CapIdx image_cap, CapIdx rsvdlst[], const char *argv[] = nullptr,
-            const char *envp[] = nullptr, const char *bsargv[] = nullptr);
+SysRet<void> sys_pcb_execve(CapIdx pcb_cap, const ExecveRequest *request);
+SysRet<void> sys_pcb_execve_linux(CapIdx pcb_cap,
+                                  const ExecveRequest *request);
+SysRet<void> sys_execve(const ExecveRequest *request);
+SysRet<void> execve(const ExecveRequest *request);
 
 SysRet<CapIdx> sys_vfs_opendir(CapIdx parent_dir_cap, const char *path,
                                flags::oflg_t oflags);

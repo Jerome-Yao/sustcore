@@ -16,6 +16,9 @@
 #include <cstddef>
 
 namespace contest_runner {
+    constexpr uint64_t PERM_BASIC_CLONE        = 0x0002;
+    constexpr uint64_t PERM_PCB_GETPID         = 0x01'0000;
+
     struct TestRunStats {
         size_t total  = 0;
         size_t passed = 0;
@@ -23,15 +26,18 @@ namespace contest_runner {
     };
 
     struct RunnerContext {
-        CapIdx root_dir_cap   = cap::null;
-        const char *libc_root = nullptr;
-        const char *libc_name = nullptr;
+        CapIdx root_dir_cap          = cap::null;
+        CapIdx prepared_root_dir_cap = cap::null;
+        CapIdx prepared_parent_pcb_cap = cap::null;
+        const char *libc_root        = nullptr;
+        const char *libc_name        = nullptr;
     };
 
     struct OpenDirHandle {
-        int fd         = -1;
-        CapIdx cap     = cap::null;
-        const char *path = nullptr;
+        int fd                  = -1;
+        CapIdx cap              = cap::null;
+        CapIdx prepared_cap     = cap::null;
+        const char *path        = nullptr;
     };
 
     enum class RunProgramError {
@@ -43,6 +49,11 @@ namespace contest_runner {
 
     [[nodiscard]]
     CapIdx bootstrap_root_dir();
+
+    [[nodiscard]]
+    bool init_runner_context_caps(RunnerContext &ctx);
+
+    void cleanup_runner_context_caps(RunnerContext &ctx);
 
     [[nodiscard]]
     bool open_cwd_dir(const char *path, OpenDirHandle &cwd);

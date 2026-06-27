@@ -33,9 +33,16 @@ namespace {
 
     CapIdx spawn_child(CapIdx image_cap, const char *mode) {
         const char *argv[] = {"test-elf-demand-perf-child", mode, nullptr};
-        auto create_res =
-            sys_create_process(image_cap, SCHED_CLASS_FCFS, nullptr, argv)
-                .to_result();
+        ExecveRequest request{
+            .image_cap = image_cap,
+            .execfn    = CHILD_PATH,
+            .caps      = nullptr,
+            .argv      = argv,
+            .envp      = nullptr,
+            .bsargv    = nullptr,
+        };
+        auto create_res = sys_create_process(SCHED_CLASS_FCFS, &request)
+                              .to_result();
         return create_res.has_value() ? create_res.value() : cap::error;
     }
 

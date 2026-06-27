@@ -318,7 +318,7 @@ namespace syscall {
         // 2) 使用已预配置的 CHolder 加载子进程 ELF
         auto load_res = task::TaskManager::inst().load_elf_into(
             child_image_cap_res.value(), child_holder, sched_res.value(),
-            startup.argv, startup.envp, startup.bsargv);
+            startup.argv, startup.envp, startup.bsargv, startup.execfn);
         propagate(load_res);
         holder_guard.release();
         auto pcb_guard = util::Guard([&]() {
@@ -404,7 +404,8 @@ namespace syscall {
 
         auto create_res = task::TaskManager::inst().load_linux_elf_into(
             child_image_cap_res.value(), child_holder, subsystem_cap_res.value(),
-            sched_res.value(), startup.argv, startup.envp, startup.bsargv);
+            sched_res.value(), startup.argv, startup.envp, startup.bsargv,
+            startup.execfn);
         propagate(create_res);
         holder_guard.release();
 
@@ -439,6 +440,19 @@ namespace syscall {
             entry, stack_addr, stack_size);
         propagate(thread_res);
         return thread_res.value();
+    }
+
+    Result<size_t> tcb_get_tid(CapIdx tcb_cap) {
+        cap::Capability *cap = nullptr;
+        auto tcb_res         = lookup_tcb(tcb_cap, &cap);
+        propagate(tcb_res);
+        cap::TCBObject obj(util::nnullforce(cap));
+        auto current_res = obj.require_current();
+        propagate(current_res);
+        if (current_res.value() == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        return current_res.value()->tid;
     }
 
     Result<bool> tcb_kill(CapIdx tcb_cap, int exit_code) {
@@ -645,7 +659,35 @@ namespace syscall {
         auto exec_res = task::TaskManager::inst().exec_pcb(
             util::nnullforce(target_res.value()), image_cap,
             startup.caps.data(), startup.caps.size(), startup.argv,
-            startup.envp, startup.bsargv);
+            startup.envp, startup.bsargv, startup.execfn);
+        propagate(exec_res);
+        return true;
+    }
+
+    Result<bool> pcb_execve_linux(CapIdx pcb_cap, CapIdx image_cap,
+                                  const StartupArguments &startup) {
+        cap::Capability *cap = nullptr;
+        auto pcb_res         = lookup_pcb(pcb_cap, &cap);
+        propagate(pcb_res);
+        cap::PCBObject obj(util::nnullforce(cap));
+        auto target_res = obj.require_execute();
+        propagate(target_res);
+        auto image_res = lookup_vfile(image_cap);
+        propagate(image_res);
+
+        task::PCB *target_pcb = target_res.value();
+        if (target_pcb->cholder == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        auto subsystem_cap_res =
+            VFS::inst().open(POSIX_SUBSYSTEM_IMAGE, *target_pcb->cholder);
+        propagate(subsystem_cap_res);
+
+        auto exec_res = task::TaskManager::inst().exec_linux_pcb(
+            util::nnullforce(target_pcb), image_cap, subsystem_cap_res.value(),
+            startup.caps.data(), startup.caps.size(), startup.argv,
+            startup.envp, startup.bsargv, startup.execfn);
         propagate(exec_res);
         return true;
     }

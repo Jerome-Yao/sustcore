@@ -21,6 +21,14 @@
 #include <cstddef>
 
 namespace rv64 {
+    struct ExtContext {
+        umb_t f[32];
+        b32 fcsr;
+        b32 reserved;
+    };
+
+    static_assert(sizeof(ExtContext) == 32 * sizeof(umb_t) + sizeof(b32) * 2);
+
     struct Context {
         umb_t _ra;
         umb_t _sp;
@@ -101,6 +109,17 @@ namespace rv64 {
         [[nodiscard]]
         constexpr const umb_t &sp() const {
             return _sp;
+        }
+
+        [[nodiscard]]
+        constexpr umb_t &tls()
+        {
+            return tp;
+        }
+
+        [[nodiscard]]
+        constexpr const umb_t &tls() const {
+            return tp;
         }
 
         constexpr void set_init_regs(umb_t arg0, umb_t arg1, umb_t arg2) noexcept {

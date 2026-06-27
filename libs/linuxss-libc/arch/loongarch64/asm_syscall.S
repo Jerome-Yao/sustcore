@@ -75,6 +75,13 @@ sys_tcb_wait:
     syscall 0
     ret
 
+    .global sys_tcb_get_tid
+    .type sys_tcb_get_tid, @function
+sys_tcb_get_tid:
+    li.d $a7, SYS_TCB_GET_TID
+    syscall 0
+    ret
+
     .global sys_pcb_fork
     .type sys_pcb_fork, @function
 sys_pcb_fork:
@@ -92,6 +99,13 @@ sys_pcb_fork:
     .type sys_pcb_execve, @function
 sys_pcb_execve:
     li.d $a7, SYS_PCB_EXECVE
+    syscall 0
+    ret
+
+    .global sys_pcb_execve_linux
+    .type sys_pcb_execve_linux, @function
+sys_pcb_execve_linux:
+    li.d $a7, SYS_PCB_EXECVE_POSIX
     syscall 0
     ret
 

@@ -27,6 +27,7 @@ namespace syscall {
         std::vector<std::string> argv{};
         std::vector<std::string> envp{};
         std::vector<TaskSpec::BootstrapRecordData> bsargv{};
+        std::string execfn{};
     };
 
     /**
@@ -47,6 +48,8 @@ namespace syscall {
     [[nodiscard]]
     Result<CapIdx> pcb_create_thread(CapIdx pcb_cap, VirAddr entry,
                                      VirAddr stack_addr, size_t stack_size);
+    [[nodiscard]]
+    Result<size_t> tcb_get_tid(CapIdx tcb_cap);
     [[nodiscard]]
     Result<bool> tcb_kill(CapIdx tcb_cap, int exit_code);
     [[nodiscard]]
@@ -103,6 +106,9 @@ namespace syscall {
     [[nodiscard]]
     Result<bool> pcb_execve(CapIdx pcb_cap, CapIdx image_cap,
                             const StartupArguments &startup);
+    [[nodiscard]]
+    Result<bool> pcb_execve_linux(CapIdx pcb_cap, CapIdx image_cap,
+                                  const StartupArguments &startup);
 
     /**
      * @brief 判断目标 PCB 是否为当前进程.

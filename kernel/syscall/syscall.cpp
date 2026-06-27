@@ -18,6 +18,7 @@
 #include <object/task.h>
 #include <env.h>
 #include <sustcore/addr.h>
+#include <sustcore/execve.h>
 #include <sustcore/syscall.h>
 #include <syscall/cap.h>
 #include <syscall/endpoint.h>
@@ -237,6 +238,44 @@ namespace syscall {
 
     constexpr size_t MAX_SYSCALL_PATH = 256;
 
+    [[nodiscard]]
+    Result<StartupArguments> copy_execve_startup(
+        const ExecveRequest *request) {
+        if (request == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+
+        StartupArguments startup{};
+        auto caps_res = copy_terminated_values<CapIdx>(
+            VirAddr(reinterpret_cast<addr_t>(request->caps)), cap::null);
+        propagate(caps_res);
+        startup.caps = std::move(caps_res.value());
+
+        if (request->execfn == nullptr) {
+            startup.execfn = "<cap>";
+        } else {
+            UString execfn(VirAddr(reinterpret_cast<addr_t>(request->execfn)),
+                           MAX_SYSCALL_PATH);
+            startup.execfn = execfn.kbuf();
+        }
+
+        auto argv_res = copy_terminated_strings(
+            VirAddr(reinterpret_cast<addr_t>(request->argv)));
+        propagate(argv_res);
+        startup.argv = std::move(argv_res.value());
+
+        auto envp_res = copy_terminated_strings(
+            VirAddr(reinterpret_cast<addr_t>(request->envp)));
+        propagate(envp_res);
+        startup.envp = std::move(envp_res.value());
+
+        auto bsargv_res = copy_bootstrap_records(
+            VirAddr(reinterpret_cast<addr_t>(request->bsargv)));
+        propagate(bsargv_res);
+        startup.bsargv = std::move(bsargv_res.value());
+        return startup;
+    }
+
     const char *name_of(b64 sysno) {
         switch (sysno) {
             case SYS_WRITE_SERIAL:        return "SYS_WRITE_SERIAL";
@@ -253,6 +292,7 @@ namespace syscall {
             case SYS_TCB_YIELD:           return "SYS_TCB_YIELD";
             case SYS_PCB_EXECVE:          return "SYS_PCB_EXECVE";
             case SYS_TCB_WAIT:            return "SYS_TCB_WAIT";
+            case SYS_TCB_GET_TID:         return "SYS_TCB_GET_TID";
             case SYS_PCB_MAP:             return "SYS_PCB_MAP";
             case SYS_PCB_UNMAP:           return "SYS_PCB_UNMAP";
             case SYS_PCB_QUERY_VADDR:     return "SYS_PCB_QUERY_VADDR";
@@ -304,6 +344,7 @@ namespace syscall {
             case SYS_MNT_STATE:          return "SYS_MNT_STATE";
             case SYS_VFS_PAGE_CACHE_STATS:
                 return "SYS_VFS_PAGE_CACHE_STATS";
+            case SYS_PCB_EXECVE_POSIX:  return "SYS_PCB_EXECVE_POSIX";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -371,8 +412,31 @@ namespace syscall {
             }
             case SYS_CREATE_PROCESS: {
                 StartupArguments startup{};
+                UBuffer req_buf((VirAddr)arg1, sizeof(ExecveRequest));
+                auto req_sync_res = req_buf.sync_from_user();
+                if (!req_sync_res.has_value()) {
+                    ret = result_void_ret("同步创建进程请求", req_sync_res);
+                    break;
+                }
+                auto *request =
+                    reinterpret_cast<const ExecveRequest *>(req_buf.kbuf());
+                if (request == nullptr) {
+                    ret = RetPack{.processed = true,
+                                  .ret0      = false,
+                                  .ret1      = static_cast<b64>(ErrCode::NULLPTR)};
+                    break;
+                }
+                if (request->execfn == nullptr) {
+                    startup.execfn = "<cap>";
+                } else {
+                    UString execfn(
+                        VirAddr(reinterpret_cast<addr_t>(request->execfn)),
+                        MAX_SYSCALL_PATH);
+                    startup.execfn = execfn.kbuf();
+                }
                 auto caps_res = copy_terminated_values<CapIdx>(
-                    VirAddr(arg2), cap::null);
+                    VirAddr(reinterpret_cast<addr_t>(request->caps)),
+                    cap::null);
                 if (!caps_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步进程能力列表失败: err=%s",
                                             to_cstring(caps_res.error()));
@@ -382,7 +446,8 @@ namespace syscall {
                     break;
                 }
                 startup.caps = std::move(caps_res.value());
-                auto argv_res = copy_terminated_strings(VirAddr(arg3));
+                auto argv_res = copy_terminated_strings(
+                    VirAddr(reinterpret_cast<addr_t>(request->argv)));
                 if (!argv_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步进程argv失败: err=%s",
                                             to_cstring(argv_res.error()));
@@ -392,7 +457,8 @@ namespace syscall {
                     break;
                 }
                 startup.argv = std::move(argv_res.value());
-                auto envp_res = copy_terminated_strings(VirAddr(arg4));
+                auto envp_res = copy_terminated_strings(
+                    VirAddr(reinterpret_cast<addr_t>(request->envp)));
                 if (!envp_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步进程envp失败: err=%s",
                                             to_cstring(envp_res.error()));
@@ -402,7 +468,8 @@ namespace syscall {
                     break;
                 }
                 startup.envp = std::move(envp_res.value());
-                auto bsargv_res = copy_bootstrap_records(VirAddr(arg5));
+                auto bsargv_res = copy_bootstrap_records(
+                    VirAddr(reinterpret_cast<addr_t>(request->bsargv)));
                 if (!bsargv_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步进程bsargv失败: err=%s",
                                             to_cstring(bsargv_res.error()));
@@ -415,13 +482,37 @@ namespace syscall {
                 startup.bsargv = std::move(bsargv_res.value());
                 ret = result_value_ret(
                     "创建进程",
-                    pcb_create_process(capidx, arg0, arg1, startup));
+                    pcb_create_process(capidx, request->image_cap, arg0,
+                                       startup));
                 break;
             }
             case SYS_CREATE_POSIX_PROCESS: {
                 StartupArguments startup{};
+                UBuffer req_buf((VirAddr)arg1, sizeof(ExecveRequest));
+                auto req_sync_res = req_buf.sync_from_user();
+                if (!req_sync_res.has_value()) {
+                    ret = result_void_ret("同步创建POSIX进程请求", req_sync_res);
+                    break;
+                }
+                auto *request =
+                    reinterpret_cast<const ExecveRequest *>(req_buf.kbuf());
+                if (request == nullptr) {
+                    ret = RetPack{.processed = true,
+                                  .ret0      = false,
+                                  .ret1      = static_cast<b64>(ErrCode::NULLPTR)};
+                    break;
+                }
+                if (request->execfn == nullptr) {
+                    startup.execfn = "<cap>";
+                } else {
+                    UString execfn(
+                        VirAddr(reinterpret_cast<addr_t>(request->execfn)),
+                        MAX_SYSCALL_PATH);
+                    startup.execfn = execfn.kbuf();
+                }
                 auto caps_res = copy_terminated_values<CapIdx>(
-                    VirAddr(arg2), cap::null);
+                    VirAddr(reinterpret_cast<addr_t>(request->caps)),
+                    cap::null);
                 if (!caps_res.has_value()) {
                     loggers::SYSCALL::ERROR(
                         "同步POSIX进程能力列表失败: err=%s",
@@ -432,7 +523,8 @@ namespace syscall {
                     break;
                 }
                 startup.caps = std::move(caps_res.value());
-                auto argv_res = copy_terminated_strings(VirAddr(arg3));
+                auto argv_res = copy_terminated_strings(
+                    VirAddr(reinterpret_cast<addr_t>(request->argv)));
                 if (!argv_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步POSIX进程argv失败: err=%s",
                                             to_cstring(argv_res.error()));
@@ -442,7 +534,8 @@ namespace syscall {
                     break;
                 }
                 startup.argv = std::move(argv_res.value());
-                auto envp_res = copy_terminated_strings(VirAddr(arg4));
+                auto envp_res = copy_terminated_strings(
+                    VirAddr(reinterpret_cast<addr_t>(request->envp)));
                 if (!envp_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步POSIX进程envp失败: err=%s",
                                             to_cstring(envp_res.error()));
@@ -452,7 +545,8 @@ namespace syscall {
                     break;
                 }
                 startup.envp = std::move(envp_res.value());
-                auto bsargv_res = copy_bootstrap_records(VirAddr(arg5));
+                auto bsargv_res = copy_bootstrap_records(
+                    VirAddr(reinterpret_cast<addr_t>(request->bsargv)));
                 if (!bsargv_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步POSIX进程bsargv失败: err=%s",
                                             to_cstring(bsargv_res.error()));
@@ -465,7 +559,8 @@ namespace syscall {
                 startup.bsargv = std::move(bsargv_res.value());
                 ret = result_value_ret(
                     "创建POSIX进程",
-                    pcb_create_linux_process(capidx, arg0, arg1, startup));
+                    pcb_create_linux_process(capidx, request->image_cap, arg0,
+                                             startup));
                 break;
             }
             case SYS_PCB_CREATE_THREAD: {
@@ -504,6 +599,10 @@ namespace syscall {
                                                 status_buf_ptr, arg2));
                 break;
             }
+            case SYS_TCB_GET_TID: {
+                ret = result_value_ret("获取线程tid", tcb_get_tid(capidx));
+                break;
+            }
             case SYS_PCB_FORK: {
                 UBuffer child_cap_buf((VirAddr)arg0, sizeof(CapIdx));
                 auto sync_res = child_cap_buf.sync_from_user();
@@ -517,8 +616,23 @@ namespace syscall {
             }
             case SYS_PCB_EXECVE: {
                 StartupArguments startup{};
+                UBuffer req_buf((VirAddr)arg0, sizeof(ExecveRequest));
+                auto req_sync_res = req_buf.sync_from_user();
+                if (!req_sync_res.has_value()) {
+                    ret = result_void_ret("同步execve请求", req_sync_res);
+                    break;
+                }
+                auto *request =
+                    reinterpret_cast<const ExecveRequest *>(req_buf.kbuf());
+                if (request == nullptr) {
+                    ret = RetPack{.processed = true,
+                                  .ret0      = false,
+                                  .ret1      = static_cast<b64>(ErrCode::NULLPTR)};
+                    break;
+                }
                 auto caps_res = copy_terminated_values<CapIdx>(
-                    VirAddr(arg1), cap::null);
+                    VirAddr(reinterpret_cast<addr_t>(request->caps)),
+                    cap::null);
                 if (!caps_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步execve保留能力列表失败: err=%s",
                                             to_cstring(caps_res.error()));
@@ -528,7 +642,16 @@ namespace syscall {
                     break;
                 }
                 startup.caps = std::move(caps_res.value());
-                auto argv_res = copy_terminated_strings(VirAddr(arg2));
+                if (request->execfn == nullptr) {
+                    startup.execfn = "<cap>";
+                } else {
+                    UString execfn(
+                        VirAddr(reinterpret_cast<addr_t>(request->execfn)),
+                        MAX_SYSCALL_PATH);
+                    startup.execfn = execfn.kbuf();
+                }
+                auto argv_res = copy_terminated_strings(
+                    VirAddr(reinterpret_cast<addr_t>(request->argv)));
                 if (!argv_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步execve argv失败: err=%s",
                                             to_cstring(argv_res.error()));
@@ -538,7 +661,8 @@ namespace syscall {
                     break;
                 }
                 startup.argv = std::move(argv_res.value());
-                auto envp_res = copy_terminated_strings(VirAddr(arg3));
+                auto envp_res = copy_terminated_strings(
+                    VirAddr(reinterpret_cast<addr_t>(request->envp)));
                 if (!envp_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步execve envp失败: err=%s",
                                             to_cstring(envp_res.error()));
@@ -548,7 +672,8 @@ namespace syscall {
                     break;
                 }
                 startup.envp = std::move(envp_res.value());
-                auto bsargv_res = copy_bootstrap_records(VirAddr(arg4));
+                auto bsargv_res = copy_bootstrap_records(
+                    VirAddr(reinterpret_cast<addr_t>(request->bsargv)));
                 if (!bsargv_res.has_value()) {
                     loggers::SYSCALL::ERROR("同步execve bsargv失败: err=%s",
                                             to_cstring(bsargv_res.error()));
@@ -560,7 +685,37 @@ namespace syscall {
                 }
                 startup.bsargv = std::move(bsargv_res.value());
                 ret = result_bool_ret(
-                    "execve", pcb_execve(capidx, arg0, startup));
+                    "execve", pcb_execve(capidx, request->image_cap, startup));
+                break;
+            }
+            case SYS_PCB_EXECVE_POSIX: {
+                UBuffer req_buf((VirAddr)arg0, sizeof(ExecveRequest));
+                auto req_sync_res = req_buf.sync_from_user();
+                if (!req_sync_res.has_value()) {
+                    ret = result_void_ret("同步POSIX execve请求", req_sync_res);
+                    break;
+                }
+                auto *request =
+                    reinterpret_cast<const ExecveRequest *>(req_buf.kbuf());
+                auto startup_res = copy_execve_startup(request);
+                if (!startup_res.has_value()) {
+                    loggers::SYSCALL::ERROR(
+                        "同步POSIX execve启动参数失败: err=%s",
+                        to_cstring(startup_res.error()));
+                    ret = RetPack{.processed = true,
+                                  .ret0      = false,
+                                  .ret1 =
+                                      static_cast<b64>(startup_res.error())};
+                    break;
+                }
+                const bool target_current = pcb_is_current(capidx);
+                ret = result_bool_ret(
+                    "POSIX execve",
+                    pcb_execve_linux(capidx, request->image_cap,
+                                     startup_res.value()));
+                if (ret.ret0 != 0 && target_current) {
+                    return ret;
+                }
                 break;
             }
             case SYS_VFS_OPENDIR: {

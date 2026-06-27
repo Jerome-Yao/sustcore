@@ -62,6 +62,11 @@ namespace loader::elf {
             return phdr.p_type == PT_PHDR;
         }
 
+        [[nodiscard]]
+        constexpr bool is_tls_segment(const Elf64_Phdr &phdr) noexcept {
+            return phdr.p_type == PT_TLS;
+        }
+
         /**
          * @brief 读取文件数据并分块写入 MemoryPayload.
          *
@@ -209,19 +214,31 @@ namespace loader::elf {
         auto valid_res = validate_elf64(ehdr, file_size, accept_dyn);
         propagate(valid_res);
         const bool dyn_image = ehdr.e_type == ET_DYN;
+        if (dyn_image) {
+            loggers::ELFLOADER::INFO("加载动态ELF文件: %s", prm.src_path.data());
+        }
         spec.dyn             = dyn_image;
         spec.load_base =
             dyn_image ? load_base : VirAddr(static_cast<addr_t>(0));
         spec.phdr_num     = ehdr.e_phnum;
         spec.phdr_entsize = ehdr.e_phentsize;
+        spec.phdr         = {};
         spec.program_entrypoint =
             dyn_image ? VirAddr(load_base.arith() + ehdr.e_entry)
                       : VirAddr(ehdr.e_entry);
         spec.entrypoint = spec.program_entrypoint;
 
-        addr_t max_pload_end = 0;
-        bool has_pt_phdr     = false;
-        bool phdr_covered    = false;
+        const uint64_t ph_bytes =
+            static_cast<uint64_t>(ehdr.e_phnum) * sizeof(Elf64_Phdr);
+        spec.phdr.bytes.resize(ph_bytes);
+        auto read_phdr_table_res =
+            read_exact(*file, ehdr.e_phoff, spec.phdr.bytes.data(), ph_bytes);
+        propagate(read_phdr_table_res);
+
+        addr_t max_pload_end   = 0;
+        addr_t min_pload_start = MAX_ADDR;
+        bool has_pt_phdr       = false;
+        bool phdr_covered      = false;
         std::vector<RuntimeLoadSegment> runtime_segments{};
 
         // 解析程序头表并为TM添加相应的VMA
@@ -239,6 +256,7 @@ namespace loader::elf {
                 if (!interp.empty() && interp.back() == '\0') {
                     interp.pop_back();
                 }
+                spec.has_interp = true;
                 *interp_path = std::move(interp);
             }
 
@@ -247,6 +265,13 @@ namespace loader::elf {
                 spec.phdr_vaddr =
                     dyn_image ? VirAddr(load_base.arith() + phdr.p_vaddr)
                               : VirAddr(phdr.p_vaddr);
+            }
+
+            if (is_tls_segment(phdr)) {
+                spec.tls_vaddr = dyn_image
+                    ? VirAddr(load_base.arith() + phdr.p_vaddr)
+                    : VirAddr(phdr.p_vaddr);
+                spec.tls_memsz = phdr.p_memsz;
             }
 
             if (!is_load_segment(phdr)) {
@@ -401,21 +426,84 @@ namespace loader::elf {
             if (segvend.arith() > max_pload_end) {
                 max_pload_end = segvend.arith();
             }
+            if (aligned_segvaddr.arith() < min_pload_start) {
+                min_pload_start = aligned_segvaddr.arith();
+            }
         }
 
-        if (dyn_image && has_pt_phdr && !phdr_covered) {
+        if (min_pload_start == MAX_ADDR) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        if (create_heap) {
-            spec.heap_vaddr = VirAddr(max_pload_end).page_align_up();
+        if (!spec.phdr_vaddr.nonnull()) {
+            spec.phdr_vaddr = VirAddr(min_pload_start + ehdr.e_phoff);
         }
+
+        spec.phdr.vaddr = spec.phdr_vaddr;
+
+        if (has_pt_phdr && !phdr_covered) {
+            spec.phdr.stack_copy_required = true;
+        } else if (!has_pt_phdr) {
+            bool fallback_covered = false;
+            for (const auto &segment : runtime_segments) {
+                if (spec.phdr_vaddr >= segment.map_begin &&
+                    spec.phdr_vaddr + ph_bytes <= segment.map_end)
+                {
+                    fallback_covered = true;
+                    break;
+                }
+            }
+            spec.phdr.stack_copy_required = !fallback_covered;
+        }
+
+        VirAddr image_end = VirAddr(max_pload_end).page_align_up();
+
+        if (spec.tls_memsz != 0) {
+            bool tls_covered = false;
+            for (const auto &vma : spec.tmm->vmas()) {
+                if (spec.tls_vaddr >= vma.varea.begin &&
+                    spec.tls_vaddr + spec.tls_memsz <= vma.varea.end)
+                {
+                    tls_covered = true;
+                    break;
+                }
+            }
+            if (!tls_covered) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            VirAddr tls_end = (spec.tls_vaddr + spec.tls_memsz).page_align_up();
+            if (tls_end > image_end) {
+                image_end = tls_end;
+            }
+        } else {
+            VirAddr tls_base = image_end;
+            auto *tls_mem =
+                new cap::MemoryPayload(PAGESIZE, false, false, VMA::Growth::FIXED);
+            if (tls_mem == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            auto tls_res = spec.tmm->add_vma(
+                VMA::Type::DATA, VMA::Growth::FIXED,
+                VirArea(tls_base, tls_base + PAGESIZE), tls_mem,
+                VMA::PROT_R | VMA::PROT_W);
+            if (!tls_res.has_value()) {
+                delete tls_mem;
+                propagate_return(tls_res);
+            }
+            spec.tls_vaddr = tls_base;
+            spec.tls_memsz = PAGESIZE;
+            image_end      = tls_base + PAGESIZE;
+        }
+
+        spec.image_end_vaddr = image_end;
+
         if (!create_heap) {
-            spec.linuxss_image_end = VirAddr(max_pload_end).page_align_up();
+            spec.linuxss_image_end = image_end;
         }
 
         if (create_heap) {
-            VirAddr heap_start = spec.heap_vaddr;
+            VirAddr heap_start = image_end;
+            spec.heap_vaddr = heap_start;
             auto *heap_mem =
                 new cap::MemoryPayload(0, false, false, VMA::Growth::FLEXUP);
             auto heap_cap_res = spec.holder->insert_to_free(heap_mem);

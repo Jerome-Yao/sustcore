@@ -38,6 +38,7 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
 
 namespace {
     constexpr size_t LINUX_MMAP_QUERY_BATCH = 64;
+    constexpr size_t LINUX_MMAP_GAP         = 0x40000000ULL;
     constexpr size_t PROT_READ              = 0x1;
     constexpr size_t PROT_WRITE             = 0x2;
     constexpr size_t PROT_EXEC              = 0x4;
@@ -205,8 +206,31 @@ namespace {
     [[nodiscard]]
     size_t choose_mmap_base(size_t length) {
         VMAInfo infos[LINUX_MMAP_QUERY_BATCH]{};
-        size_t offset = 0;
-        size_t cursor = page_align_up_user(__linuxss_ssheap_base + PAGESIZE);
+        size_t offset  = 0;
+        size_t max_end = 0;
+        while (true) {
+            auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                                  LINUX_MMAP_QUERY_BATCH)
+                                 .to_result();
+            if (!count_res.has_value()) {
+                break;
+            }
+            size_t count = count_res.value();
+            if (count == 0) {
+                break;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                size_t start = reinterpret_cast<size_t>(infos[i].vma_start);
+                size_t end   = start + infos[i].vma_size;
+                if (end > max_end) {
+                    max_end = end;
+                }
+            }
+            offset += count;
+        }
+
+        size_t cursor = page_align_up_user(max_end + LINUX_MMAP_GAP);
+        offset        = 0;
         while (true) {
             auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
                                                   LINUX_MMAP_QUERY_BATCH)
@@ -226,6 +250,37 @@ namespace {
                 }
                 if (cursor < end) {
                     cursor = page_align_up_user(end);
+                }
+            }
+            offset += count;
+        }
+    }
+
+    [[nodiscard]]
+    bool mmap_range_conflicts(size_t begin, size_t length) {
+        if (length == 0) {
+            return false;
+        }
+
+        VMAInfo infos[LINUX_MMAP_QUERY_BATCH]{};
+        size_t offset = 0;
+        size_t end    = begin + length;
+        while (true) {
+            auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                                  LINUX_MMAP_QUERY_BATCH)
+                                 .to_result();
+            if (!count_res.has_value()) {
+                return false;
+            }
+            size_t count = count_res.value();
+            if (count == 0) {
+                return false;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                size_t vma_begin = reinterpret_cast<size_t>(infos[i].vma_start);
+                size_t vma_end   = vma_begin + infos[i].vma_size;
+                if (begin < vma_end && vma_begin < end) {
+                    return true;
                 }
             }
             offset += count;
@@ -430,8 +485,8 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
     dump_vector("argv", argv);
     // printf("\nenvp:\n");
     // dump_vector("envp", envp);
-    // printf("\nauxv:\n");
-    // dump_auxv(auxv);
+    printf("\nauxv:\n");
+    dump_auxv(auxv);
     // printf("\nbsargc & bsargv:\n");
     // printf("bsargc = %u\n", static_cast<unsigned>(bsargc));
     // dump_bsargv(bsargc, bsargv);
@@ -469,13 +524,14 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         static_cast<unsigned long>(prot), prot_str.c_str(),
         static_cast<unsigned long>(flags), flags_str.c_str(),
         static_cast<long>(fd), static_cast<unsigned long>(offset));
-    
+
     bool is_anonymous = (flags & MAP_ANONYMOUS) != 0;
     bool is_fixed     = (flags & MAP_FIXED) != 0;
+    bool no_replace   = (flags & MAP_FIXED_NOREPLACE) != 0;
     bool is_private   = (flags & MAP_PRIVATE) != 0;
     bool is_shared    = (flags & MAP_SHARED) != 0;
 
-    if (! is_anonymous && fd == static_cast<size_t>(-1)) {
+    if (!is_anonymous && fd == static_cast<size_t>(-1)) {
         loggers::LXSC::ERROR(
             "mmap requires either MAP_ANONYMOUS or a valid fd, flags=0x%lx, "
             "fd=%ld",
@@ -483,7 +539,7 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         return INVALID_VALUE;
     }
 
-    if (! (is_private ^ is_shared)) {
+    if (!(is_private ^ is_shared)) {
         loggers::LXSC::ERROR(
             "mmap requires either MAP_PRIVATE or MAP_SHARED, flags=0x%lx",
             static_cast<unsigned long>(flags));
@@ -496,9 +552,8 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     }
 
     if ((offset % PAGESIZE) != 0) {
-        loggers::LXSC::ERROR(
-            "mmap requires page-aligned offset, offset=%lu",
-            static_cast<unsigned long>(offset));
+        loggers::LXSC::ERROR("mmap requires page-aligned offset, offset=%lu",
+                             static_cast<unsigned long>(offset));
         return INVALID_VALUE;
     }
 
@@ -508,23 +563,55 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     }
 
     size_t aligned_length = page_align_up_user(length);
-    size_t target_addr    = is_fixed
-                                ? reinterpret_cast<size_t>(addr)
-                                : choose_mmap_base(aligned_length);
+    size_t target_addr    = is_fixed ? reinterpret_cast<size_t>(addr)
+                                     : choose_mmap_base(aligned_length);
+
+    if (!is_fixed) {
+        loggers::LXSC::INFO(
+            "mmap chose target address=[%p, %p) for length=%lu",
+            reinterpret_cast<void *>(target_addr),
+            reinterpret_cast<void *>(target_addr + aligned_length),
+            static_cast<unsigned long>(aligned_length));
+    }
+
     if ((target_addr % PAGESIZE) != 0) {
-        loggers::LXSC::ERROR(
-            "mmap target address is not page-aligned, addr=%p",
-            reinterpret_cast<void *>(target_addr));
+        loggers::LXSC::ERROR("mmap target address is not page-aligned, addr=%p",
+                             reinterpret_cast<void *>(target_addr));
         return INVALID_VALUE;
+    }
+
+    if (is_fixed) {
+        bool conflict = mmap_range_conflicts(target_addr, aligned_length);
+        if (conflict && no_replace) {
+            loggers::LXSC::ERROR(
+                "mmap MAP_FIXED_NOREPLACE conflicts with existing VMA, "
+                "range=[%p, %p)",
+                reinterpret_cast<void *>(target_addr),
+                reinterpret_cast<void *>(target_addr + aligned_length));
+            return INVALID_VALUE;
+        }
+        if (conflict) {
+            loggers::LXSC::INFO(
+                "mmap MAP_FIXED removes conflicting range=[%p, %p)",
+                reinterpret_cast<void *>(target_addr),
+                reinterpret_cast<void *>(target_addr + aligned_length));
+            if (!sys_pcb_unmap(__prog_pcb_cap,
+                               reinterpret_cast<void *>(target_addr),
+                               aligned_length))
+            {
+                loggers::LXSC::ERROR(
+                    "mmap MAP_FIXED failed to unmap conflicting range");
+                return INVALID_VALUE;
+            }
+        }
     }
 
     CapIdx backing_file_cap = cap::null;
     size_t file_offset      = 0;
     if (is_anonymous) {
         if (fd != static_cast<size_t>(-1)) {
-            loggers::LXSC::ERROR(
-                "anonymous mmap requires fd=-1, got fd=%ld",
-                static_cast<long>(fd));
+            loggers::LXSC::ERROR("anonymous mmap requires fd=-1, got fd=%ld",
+                                 static_cast<long>(fd));
             return INVALID_VALUE;
         }
     } else {
@@ -537,10 +624,9 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         file_offset = offset;
     }
 
-    auto mem_cap_res =
-        sys_mem_create(backing_file_cap, aligned_length, false, false,
-                       MEMORY_GROWTH_FIXED, file_offset)
-            .to_result();
+    auto mem_cap_res = sys_mem_create(backing_file_cap, aligned_length, false,
+                                      false, MEMORY_GROWTH_FIXED, file_offset)
+                           .to_result();
     if (!mem_cap_res.has_value()) {
         loggers::LXSC::ERROR("mmap failed to create memory capability");
         return INVALID_VALUE;
@@ -565,6 +651,8 @@ size_t linux_sys_munmap(void *addr, size_t length) {
     if ((target_addr % PAGESIZE) != 0) {
         return INVALID_VALUE;
     }
+    loggers::LXSC::INFO("munmap addr=%p length=%lu", addr,
+                        static_cast<unsigned long>(length));
     return sys_pcb_unmap(__prog_pcb_cap, addr, aligned_length) ? 0
                                                                : INVALID_VALUE;
 }
@@ -572,6 +660,7 @@ size_t linux_sys_munmap(void *addr, size_t length) {
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                  size_t a4, size_t a5, size_t a6, size_t a7,
                                  addr_t dispatch_frame_sp) {
+    printf("linux syscall %s (%lu)\n", syscall_to_string(a7), a7);
     switch (a7) {
         case __NR_write:
             return linux_sys_write(a0, reinterpret_cast<const void *>(a1), a2);
@@ -590,6 +679,10 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             return linux_sys_clone(a0, a1, reinterpret_cast<int *>(a2),
                                    reinterpret_cast<int *>(a3), a4,
                                    dispatch_frame_sp);
+        case __NR_execve:
+            return linux_sys_execve(reinterpret_cast<const char *>(a0),
+                                    reinterpret_cast<const char *const *>(a1),
+                                    reinterpret_cast<const char *const *>(a2));
         case __NR_brk:   return linux_sys_brk(a0);
         case __NR_uname: return linux_sys_uname(reinterpret_cast<void *>(a0));
         case __NR_faccessat:
@@ -662,12 +755,10 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_umount2:
             // 占位符
             // 等后面支持分区 + vfat 了再写入实际的实现
-            return 0;
         case __NR_mprotect:
             // 占位符
             // 我假设其总是把内存页的权限设置为可读可写可执行之后再缩减权限
             // 那么我先不缩减权限应该也不会影响程序的运行
-            return 0;
         case __NR_getuid:
         case __NR_setuid:
         case __NR_getgid:
@@ -680,11 +771,25 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_setresgid:
             // 占位符
             // 先假设所有的 uid/gid 都是 0
-            return 0;
         case __NR_prlimit64:
             // 占位符
             // 先假设所有的资源限制都是无限制的
+        case __NR_set_robust_list:
+            loggers::LXSC::ERROR("unsupported syscall %s (%lu), but returning 0 for compatibility",
+                                 syscall_to_string(a7), a7);
             return 0;
+        case __NR_set_tid_address: {
+            loggers::LXSC::ERROR(
+                "unsupported syscall %s (%lu), ignoring ptr=%p and forwarding to main tcb tid",
+                syscall_to_string(a7), a7, reinterpret_cast<void *>(a0));
+            auto tid_res = sys_tcb_get_tid(__prog_main_tcb_cap).to_result();
+            if (!tid_res.has_value()) {
+                loggers::LXSC::ERROR("sys_tcb_get_tid(main_tcb) failed: err=%s",
+                                     to_cstring(tid_res.error()));
+                return -EINVAL;
+            }
+            return tid_res.value();
+        }
         default:
             loggers::LXSC::ERROR("unsupported syscall %s (%lu)",
                                  syscall_to_string(a7), a7);

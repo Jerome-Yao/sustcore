@@ -181,7 +181,7 @@ namespace task {
         const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
         const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
-        TaskSpec &spec, LoadPrm &prm) {
+        const std::string &execfn, TaskSpec &spec, LoadPrm &prm) {
         auto preload_res = holder == nullptr
                                ? preload(image_cap, spec, prm)
                                : preload_into(image_cap, holder, spec, prm);
@@ -200,6 +200,7 @@ namespace task {
 
         spec.argv = argv;
         spec.envp = envp;
+        spec.linux_execfn = execfn;
         spec.bsargv.clear();
         spec.auxv.clear();
         for (const auto &record : bsargv) {
@@ -213,7 +214,7 @@ namespace task {
         const std::vector<std::string> &argv,
         const std::vector<std::string> &envp,
         const std::vector<TaskSpec::BootstrapRecordData> &bsargv,
-        TaskSpec &spec, LoadPrm &prm) {
+        const std::string &execfn, TaskSpec &spec, LoadPrm &prm) {
         if (holder == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -235,13 +236,14 @@ namespace task {
         }
 
         const bool user_program_dyn            = spec.dyn;
-        const bool user_program_has_interp     = spec.has_interp;
         const VirAddr user_program_load_base   = spec.load_base;
-        const VirAddr user_program_interp_base = spec.interp_base;
         const VirAddr user_program_entrypoint  = spec.program_entrypoint;
         const VirAddr user_program_phdr_vaddr  = spec.phdr_vaddr;
         const size_t user_program_phdr_num     = spec.phdr_num;
         const size_t user_program_phdr_entsize = spec.phdr_entsize;
+        const VirAddr user_program_tls_vaddr   = spec.tls_vaddr;
+        const size_t user_program_tls_memsz    = spec.tls_memsz;
+        const VirAddr user_program_image_end   = spec.image_end_vaddr;
 
         VirAddr runtime_entry = user_program_entrypoint;
         if (spec.dyn) {
@@ -274,8 +276,6 @@ namespace task {
             runtime_entry          = spec.interp_entrypoint;
         }
 
-        const VirAddr user_program_interp_entrypoint = spec.interp_entrypoint;
-
         LoadPrm subsystem_prm{
             .image_file_cap = subsystem_image_cap,
             .src_path       = "<cap>",
@@ -298,14 +298,14 @@ namespace task {
         propagate(linuxss_heap_res);
 
         spec.dyn                = user_program_dyn;
-        spec.has_interp         = user_program_has_interp;
         spec.load_base          = user_program_load_base;
-        spec.interp_base        = user_program_interp_base;
-        spec.interp_entrypoint  = user_program_interp_entrypoint;
         spec.program_entrypoint = user_program_entrypoint;
         spec.phdr_vaddr         = user_program_phdr_vaddr;
         spec.phdr_num           = user_program_phdr_num;
         spec.phdr_entsize       = user_program_phdr_entsize;
+        spec.tls_vaddr          = user_program_tls_vaddr;
+        spec.tls_memsz          = user_program_tls_memsz;
+        spec.image_end_vaddr    = user_program_image_end;
 
         spec.argv = argv;
         spec.envp = envp;
@@ -324,8 +324,12 @@ namespace task {
         if (platform == nullptr || platform->clock_source() == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
-        spec.linux_execfn =
-            prm.src_path.empty() ? std::string{} : std::string(prm.src_path);
+        if (!execfn.empty()) {
+            spec.linux_execfn = execfn;
+        } else {
+            spec.linux_execfn =
+                prm.src_path.empty() ? std::string{} : std::string(prm.src_path);
+        }
         spec.auxv = {
             AT_PHDR,   spec.phdr_vaddr.arith(),
             AT_PHNUM,  spec.phdr_num,
@@ -333,7 +337,7 @@ namespace task {
             AT_PAGESZ, PAGESIZE,
             AT_CLKTCK, platform->clock_source()->frequency().to_hz(),
             AT_ENTRY,  spec.program_entrypoint.arith(),
-            AT_BASE,   task::GENERIC_INTERPRET_BASE.arith(),
+            AT_BASE,   spec.has_interp ? spec.interp_base.arith() : 0,
             AT_UID,    0,
             AT_EUID,   0,
             AT_GID,    0,

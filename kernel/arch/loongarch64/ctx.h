@@ -20,6 +20,16 @@
 #include <cstddef>
 
 namespace la64 {
+    struct ExtContext {
+        umb_t v[32][2];
+        umb_t fcc;
+        b32 fcsr;
+        b32 reserved;
+    };
+
+    static_assert(sizeof(ExtContext) ==
+                  32 * 2 * sizeof(umb_t) + sizeof(umb_t) + sizeof(b32) * 2);
+
     struct Context {
         umb_t _ra;
         umb_t tp;
@@ -102,6 +112,17 @@ namespace la64 {
         [[nodiscard]]
         constexpr const umb_t &sp() const {
             return _sp;
+        }
+
+        [[nodiscard]]
+        constexpr umb_t &tls()
+        {
+            return tp;
+        }
+
+        [[nodiscard]]
+        constexpr const umb_t &tls() const {
+            return tp;
         }
 
         constexpr void set_init_regs(umb_t arg0, umb_t arg1, umb_t arg2) noexcept {
