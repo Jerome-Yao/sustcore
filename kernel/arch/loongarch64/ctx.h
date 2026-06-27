@@ -20,6 +20,16 @@
 #include <cstddef>
 
 namespace la64 {
+    struct ExtContext {
+        umb_t v[32][2];
+        umb_t fcc;
+        u32 fcsr;
+        u32 reserved;
+    };
+
+    static_assert(sizeof(ExtContext) ==
+                  32 * 2 * sizeof(umb_t) + sizeof(umb_t) + sizeof(u32) * 2);
+
     struct Context {
         umb_t _ra;
         umb_t tp;

@@ -39,6 +39,11 @@ namespace la64 {
 
     static_assert(InitializationTrait<Initialization>);
 
+    void init_ext_context(ExtContext &ctx) noexcept;
+    void save_ext_context(ExtContext &ctx) noexcept;
+    void restore_ext_context(const ExtContext &ctx) noexcept;
+    void copy_ext_context(ExtContext &dst, const ExtContext &src) noexcept;
+
     constexpr void write_ret(Context &ctx, const syscall::RetPack &pack) {
         ctx.a0 = pack.ret0;
         ctx.a1 = pack.ret1;

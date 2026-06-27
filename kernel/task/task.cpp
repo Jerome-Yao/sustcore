@@ -238,6 +238,18 @@ namespace task {
         tcb->kstack_phy    = gfp_res.value() + TCB::KSTACK_PAGES * PAGESIZE;
         tcb->kstack_bottom = convert<KpaAddr>(tcb->kstack_phy).addr();
         tcb->ksp           = (char *)tcb->kstack_bottom;
+
+        auto *ext_ctx = new ExtContext();
+        if (ext_ctx == nullptr) {
+            GFP::put_page(tcb->kstack_phy - TCB::KSTACK_SIZE, TCB::KSTACK_PAGES);
+            tcb->kstack_phy    = PhyAddr::null;
+            tcb->kstack_bottom = nullptr;
+            tcb->ksp           = nullptr;
+            unexpect_return(ErrCode::OUT_OF_MEMORY);
+        }
+        tcb->ext_ctx = util::owner<ExtContext *>(ext_ctx);
+        init_ext_context(*tcb->ext_ctx);
+        tcb->ext_ctx_live = false;
         void_return();
     }
 
@@ -312,9 +324,11 @@ namespace task {
                           TCB::KSTACK_PAGES);
         }
         destroy_nanosleep_context(tcb.get());
+        delete tcb->ext_ctx;
         tcb->task          = nullptr;
         tcb->kstack_phy    = PhyAddr::null;
         tcb->kstack_bottom = nullptr;
+        tcb->ext_ctx_live  = false;
         delete tcb.get();
         void_return();
     }

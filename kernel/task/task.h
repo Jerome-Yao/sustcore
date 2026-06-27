@@ -85,6 +85,8 @@ namespace task {
             tcb->kstack_bottom        = nullptr;
             tcb->ksp                  = nullptr;
             tcb->kstack_phy           = PhyAddr::null;
+            tcb->ext_ctx              = util::owner<ExtContext *>(nullptr);
+            tcb->ext_ctx_live         = false;
             tcb->schd_class           = schd::ClassType::BOT;
             tcb->basic_entity.state   = ThreadState::EMPTY;
             tcb->basic_entity.rq_head = {};

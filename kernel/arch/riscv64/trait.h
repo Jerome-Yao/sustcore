@@ -36,6 +36,11 @@ namespace rv64 {
 
     static_assert(InitializationTrait<Initialization>);
 
+    void init_ext_context(ExtContext &ctx) noexcept;
+    void save_ext_context(ExtContext &ctx) noexcept;
+    void restore_ext_context(const ExtContext &ctx) noexcept;
+    void copy_ext_context(ExtContext &dst, const ExtContext &src) noexcept;
+
     struct Interrupt {
         /**
          * @brief 初始化IVT

@@ -21,6 +21,14 @@
 #include <cstddef>
 
 namespace rv64 {
+    struct ExtContext {
+        umb_t f[32];
+        b32 fcsr;
+        b32 reserved;
+    };
+
+    static_assert(sizeof(ExtContext) == 32 * sizeof(umb_t) + sizeof(b32) * 2);
+
     struct Context {
         umb_t _ra;
         umb_t _sp;

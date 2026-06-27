@@ -120,8 +120,22 @@ namespace schd {
     void Scheduler::switch_to(TCB *prev, TCB *next) {
         assert(prev != nullptr);
         assert(next != nullptr);
+        assert(prev->ext_ctx != nullptr);
+        assert(next->ext_ctx != nullptr);
+        if (prev->ext_ctx_live) {
+            save_ext_context(*prev->ext_ctx);
+        }
         prepare_switch(next);
+        if (!next->ext_ctx_live) {
+            restore_ext_context(*next->ext_ctx);
+            next->ext_ctx_live = true;
+        }
         __switch_to(prev->kernel_context_ptr(), next->kernel_context_ptr());
+        auto *current = current_tcb();
+        assert(current != nullptr);
+        assert(current->ext_ctx != nullptr);
+        restore_ext_context(*current->ext_ctx);
+        current->ext_ctx_live = true;
     }
 
     bool Scheduler::try_wakeup(TCB *tcb, int flags) {
@@ -422,6 +436,9 @@ namespace schd {
         auto next = next_res.value();
         Interrupt::cli();
         prepare_switch(next);
+        assert(next->ext_ctx != nullptr);
+        restore_ext_context(*next->ext_ctx);
+        next->ext_ctx_live = true;
         Context bootstrap_prev{};
         bootstrap_prev.sp() = 0;
         __switch_to(&bootstrap_prev, next->kernel_context_ptr());

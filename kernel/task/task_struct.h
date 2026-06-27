@@ -131,6 +131,8 @@ namespace task {
         char *ksp;
         PhyAddr kstack_phy;
         Context kernel_ctx;
+        util::owner<ExtContext *> ext_ctx;
+        bool ext_ctx_live;
 
         [[nodiscard]]
         void *kstack_top() const noexcept {

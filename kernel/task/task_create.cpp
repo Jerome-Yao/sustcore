@@ -95,6 +95,9 @@ namespace task {
             tcb->boot_role  = BootThreadRole::NONE;
             tcb->schd_class = schd_class;
             reset_thread_runtime(tcb);
+            assert(tcb->ext_ctx != nullptr);
+            init_ext_context(*tcb->ext_ctx);
+            tcb->ext_ctx_live = false;
             build_user_contexts(tcb, entrypoint, user_stack_top,
                                 linuxproc_entrypoint);
         }
@@ -106,6 +109,9 @@ namespace task {
             tcb->boot_role  = BootThreadRole::NONE;
             tcb->schd_class = schd_class;
             reset_thread_runtime(tcb);
+            assert(tcb->ext_ctx != nullptr);
+            init_ext_context(*tcb->ext_ctx);
+            tcb->ext_ctx_live = false;
             build_kernel_context(tcb, entrypoint, arg0);
         }
 
@@ -116,6 +122,8 @@ namespace task {
             tcb->is_kernel = false;
             reset_thread_runtime(tcb);
             tcb->reset_kstack();
+            assert(tcb->ext_ctx != nullptr);
+            tcb->ext_ctx_live = false;
             auto *child_user_ctx = tcb->push<Context>();
             *child_user_ctx      = parent_ctx;
             child_user_ctx->kstack_top() =
@@ -1109,6 +1117,10 @@ namespace task {
 
         prepare_forked_thread(child_tcb, *parent_ctx, parent_tcb->schd_class,
                               parent_tcb->boot_role);
+        assert(parent_tcb->ext_ctx != nullptr);
+        assert(child_tcb->ext_ctx != nullptr);
+        save_ext_context(*parent_tcb->ext_ctx);
+        copy_ext_context(*child_tcb->ext_ctx, *parent_tcb->ext_ctx);
         child_pcb->threads.push_back(*child_tcb);
         tcb_guard.release();
 

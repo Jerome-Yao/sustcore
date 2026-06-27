@@ -97,11 +97,7 @@ void Initialization::init_fpu(void) {
 }
 
 void Initialization::init_simd(void) {
-    csr_sstatus_t sstatus = csr_get_sstatus();
-    sstatus.vs            = XSStatus::INITIAL;
-    csr_set_sstatus(sstatus);
-    loggers::SUSTCORE::INFO(
-        "已启用 RISC-V 向量指令支持(VS=INITIAL), 当前尚未支持上下文保存");
+    loggers::SUSTCORE::INFO("RISC-V 向量扩展保持关闭, 当前未实现上下文保存");
 }
 
 void Idle::idle()

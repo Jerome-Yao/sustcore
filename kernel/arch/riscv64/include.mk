@@ -1,1 +1,1 @@
-riscv64-sources += entry.S setup.cpp
+riscv64-sources += entry.S setup.cpp ext_context.cpp
