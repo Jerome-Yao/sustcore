@@ -418,12 +418,12 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
 
         // contest_runner::accumulate_stats(total,
                                         //  contest_runner::run_basic(ctx));
-        // contest_runner::accumulate_stats(total,
-                                        //  contest_runner::run_busybox(ctx));
+        contest_runner::accumulate_stats(total,
+                                         contest_runner::run_busybox(ctx));
         // contest_runner::accumulate_stats(total,
                                         //  contest_runner::run_libctest(ctx));
-        contest_runner::accumulate_stats(total,
-                                         contest_runner::run_ltp(ctx));
+        // contest_runner::accumulate_stats(total,
+                                        //  contest_runner::run_ltp(ctx));
         contest_runner::cleanup_runner_context_caps(ctx);
     }
 
@@ -431,6 +431,6 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
            static_cast<unsigned long>(total.total),
            static_cast<unsigned long>(total.passed),
            static_cast<unsigned long>(total.failed));
-    (void)sys_shutdown().to_result();
+    (void)sys_shutdown();
     return total.failed == 0 ? 0 : 1;
 }

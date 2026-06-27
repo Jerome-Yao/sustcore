@@ -374,6 +374,9 @@ namespace loader::elf {
         auto valid_res = validate_elf64(ehdr, file_size, accept_dyn);
         propagate(valid_res);
         const bool dyn_image = ehdr.e_type == ET_DYN;
+        if (dyn_image) {
+            loggers::ELFLOADER::INFO("加载动态ELF文件: %s", prm.src_path.data());
+        }
         spec.dyn             = dyn_image;
         spec.load_base =
             dyn_image ? load_base : VirAddr(static_cast<addr_t>(0));
@@ -413,6 +416,7 @@ namespace loader::elf {
                 if (!interp.empty() && interp.back() == '\0') {
                     interp.pop_back();
                 }
+                spec.has_interp = true;
                 *interp_path = std::move(interp);
             }
 

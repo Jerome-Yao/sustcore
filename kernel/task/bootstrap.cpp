@@ -236,9 +236,7 @@ namespace task {
         }
 
         const bool user_program_dyn            = spec.dyn;
-        const bool user_program_has_interp     = spec.has_interp;
         const VirAddr user_program_load_base   = spec.load_base;
-        const VirAddr user_program_interp_base = spec.interp_base;
         const VirAddr user_program_entrypoint  = spec.program_entrypoint;
         const VirAddr user_program_phdr_vaddr  = spec.phdr_vaddr;
         const size_t user_program_phdr_num     = spec.phdr_num;
@@ -275,8 +273,6 @@ namespace task {
             runtime_entry          = spec.interp_entrypoint;
         }
 
-        const VirAddr user_program_interp_entrypoint = spec.interp_entrypoint;
-
         LoadPrm subsystem_prm{
             .image_file_cap = subsystem_image_cap,
             .src_path       = "<cap>",
@@ -299,10 +295,7 @@ namespace task {
         propagate(linuxss_heap_res);
 
         spec.dyn                = user_program_dyn;
-        spec.has_interp         = user_program_has_interp;
         spec.load_base          = user_program_load_base;
-        spec.interp_base        = user_program_interp_base;
-        spec.interp_entrypoint  = user_program_interp_entrypoint;
         spec.program_entrypoint = user_program_entrypoint;
         spec.phdr_vaddr         = user_program_phdr_vaddr;
         spec.phdr_num           = user_program_phdr_num;
@@ -338,7 +331,7 @@ namespace task {
             AT_PAGESZ, PAGESIZE,
             AT_CLKTCK, platform->clock_source()->frequency().to_hz(),
             AT_ENTRY,  spec.program_entrypoint.arith(),
-            AT_BASE,   spec.has_interp ? task::GENERIC_INTERPRET_BASE.arith() : 0,
+            AT_BASE,   spec.has_interp ? spec.interp_base.arith() : 0,
             AT_UID,    0,
             AT_EUID,   0,
             AT_GID,    0,
