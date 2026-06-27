@@ -480,10 +480,6 @@ namespace task {
                 push_bytes(builder, spec.linux_execfn.c_str(),
                            spec.linux_execfn.size() + 1, alignof(char));
             propagate(execfn_sp_res);
-            auto null_pos = std::find(spec.auxv.begin(), spec.auxv.end(), AT_NULL);
-            if (null_pos != spec.auxv.end()) {
-                spec.auxv.erase(null_pos, spec.auxv.end());
-            }
             spec.auxv.push_back(AT_EXECFN);
             spec.auxv.push_back(execfn_sp_res.value().arith());
         }
@@ -498,8 +494,6 @@ namespace task {
 #endif
         spec.auxv.push_back(AT_RANDOM);
         spec.auxv.push_back(random_sp_res.value().arith());
-        spec.auxv.push_back(AT_NULL);
-        spec.auxv.push_back(0);
         auto pcb_explain_res = append_bootstrap_cap_explain_record(
             spec, pcb_cap, PayloadType::PCB, perm::allperm(), "#self:0");
         propagate(pcb_explain_res);
