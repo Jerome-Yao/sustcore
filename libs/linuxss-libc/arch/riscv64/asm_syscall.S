@@ -74,6 +74,13 @@ sys_tcb_wait:
     ecall
     ret
 
+    .global sys_tcb_get_tid
+    .type   sys_tcb_get_tid, @function
+sys_tcb_get_tid:
+    li a7, SYS_TCB_GET_TID
+    ecall
+    ret
+
     .global sys_pcb_fork
     .type   sys_pcb_fork, @function
 sys_pcb_fork:

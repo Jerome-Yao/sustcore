@@ -254,6 +254,7 @@ namespace syscall {
             case SYS_TCB_YIELD:           return "SYS_TCB_YIELD";
             case SYS_PCB_EXECVE:          return "SYS_PCB_EXECVE";
             case SYS_TCB_WAIT:            return "SYS_TCB_WAIT";
+            case SYS_TCB_GET_TID:         return "SYS_TCB_GET_TID";
             case SYS_PCB_MAP:             return "SYS_PCB_MAP";
             case SYS_PCB_UNMAP:           return "SYS_PCB_UNMAP";
             case SYS_PCB_QUERY_VADDR:     return "SYS_PCB_QUERY_VADDR";
@@ -557,6 +558,10 @@ namespace syscall {
                 ret = result_value_ret("等待进程状态改变",
                                        tcb_wait(capidx, caps_res.value(),
                                                 status_buf_ptr, arg2));
+                break;
+            }
+            case SYS_TCB_GET_TID: {
+                ret = result_value_ret("获取线程tid", tcb_get_tid(capidx));
                 break;
             }
             case SYS_PCB_FORK: {

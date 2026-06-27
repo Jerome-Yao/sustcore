@@ -64,6 +64,11 @@ namespace loader::elf {
             return phdr.p_type == PT_PHDR;
         }
 
+        [[nodiscard]]
+        constexpr bool is_tls_segment(const Elf64_Phdr &phdr) noexcept {
+            return phdr.p_type == PT_TLS;
+        }
+
         /**
          * @brief 计算两个 size_t 中的较小值.
          */
@@ -427,6 +432,13 @@ namespace loader::elf {
                               : VirAddr(phdr.p_vaddr);
             }
 
+            if (is_tls_segment(phdr)) {
+                spec.tls_vaddr = dyn_image
+                    ? VirAddr(load_base.arith() + phdr.p_vaddr)
+                    : VirAddr(phdr.p_vaddr);
+                spec.tls_memsz = phdr.p_memsz;
+            }
+
             if (!is_load_segment(phdr)) {
                 continue;
             }
@@ -524,15 +536,54 @@ namespace loader::elf {
             spec.phdr.stack_copy_required = !fallback_covered;
         }
 
-        if (create_heap) {
-            spec.heap_vaddr = VirAddr(max_pload_end).page_align_up();
+        VirAddr image_end = VirAddr(max_pload_end).page_align_up();
+
+        if (spec.tls_memsz != 0) {
+            bool tls_covered = false;
+            for (const auto &vma : spec.tmm->vmas()) {
+                if (spec.tls_vaddr >= vma.varea.begin &&
+                    spec.tls_vaddr + spec.tls_memsz <= vma.varea.end)
+                {
+                    tls_covered = true;
+                    break;
+                }
+            }
+            if (!tls_covered) {
+                unexpect_return(ErrCode::INVALID_PARAM);
+            }
+            VirAddr tls_end = (spec.tls_vaddr + spec.tls_memsz).page_align_up();
+            if (tls_end > image_end) {
+                image_end = tls_end;
+            }
+        } else {
+            VirAddr tls_base = image_end;
+            auto *tls_mem =
+                new cap::MemoryPayload(PAGESIZE, false, false, VMA::Growth::FIXED);
+            if (tls_mem == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            auto tls_res = spec.tmm->add_vma(
+                VMA::Type::DATA, VMA::Growth::FIXED,
+                VirArea(tls_base, tls_base + PAGESIZE), tls_mem,
+                VMA::PROT_R | VMA::PROT_W);
+            if (!tls_res.has_value()) {
+                delete tls_mem;
+                propagate_return(tls_res);
+            }
+            spec.tls_vaddr = tls_base;
+            spec.tls_memsz = PAGESIZE;
+            image_end      = tls_base + PAGESIZE;
         }
+
+        spec.image_end_vaddr = image_end;
+
         if (!create_heap) {
-            spec.linuxss_image_end = VirAddr(max_pload_end).page_align_up();
+            spec.linuxss_image_end = image_end;
         }
 
         if (create_heap) {
-            VirAddr heap_start = spec.heap_vaddr;
+            VirAddr heap_start = image_end;
+            spec.heap_vaddr = heap_start;
             auto *heap_mem =
                 new cap::MemoryPayload(0, false, false, VMA::Growth::FLEXUP);
             auto heap_cap_res = spec.holder->insert_to_free(heap_mem);

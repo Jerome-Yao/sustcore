@@ -660,7 +660,7 @@ size_t linux_sys_munmap(void *addr, size_t length) {
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                  size_t a4, size_t a5, size_t a6, size_t a7,
                                  addr_t dispatch_frame_sp) {
-    // loggers::LXSC::INFO("linux syscall %s (%lu)", syscall_to_string(a7), a7);
+    printf("linux syscall %s (%lu)\n", syscall_to_string(a7), a7);
     switch (a7) {
         case __NR_write:
             return linux_sys_write(a0, reinterpret_cast<const void *>(a1), a2);
@@ -751,12 +751,10 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_umount2:
             // 占位符
             // 等后面支持分区 + vfat 了再写入实际的实现
-            return 0;
         case __NR_mprotect:
             // 占位符
             // 我假设其总是把内存页的权限设置为可读可写可执行之后再缩减权限
             // 那么我先不缩减权限应该也不会影响程序的运行
-            return 0;
         case __NR_getuid:
         case __NR_setuid:
         case __NR_getgid:
@@ -769,15 +767,25 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_setresgid:
             // 占位符
             // 先假设所有的 uid/gid 都是 0
-            return 0;
         case __NR_prlimit64:
             // 占位符
             // 先假设所有的资源限制都是无限制的
+        case __NR_set_robust_list:
+            loggers::LXSC::ERROR("unsupported syscall %s (%lu), but returning 0 for compatibility",
+                                 syscall_to_string(a7), a7);
             return 0;
-        case __NR_set_tid_address:
-            // 占位符
-            // 先假设不需要设置线程 ID 地址
-            return 0;
+        case __NR_set_tid_address: {
+            loggers::LXSC::ERROR(
+                "unsupported syscall %s (%lu), ignoring ptr=%p and forwarding to main tcb tid",
+                syscall_to_string(a7), a7, reinterpret_cast<void *>(a0));
+            auto tid_res = sys_tcb_get_tid(__prog_main_tcb_cap).to_result();
+            if (!tid_res.has_value()) {
+                loggers::LXSC::ERROR("sys_tcb_get_tid(main_tcb) failed: err=%s",
+                                     to_cstring(tid_res.error()));
+                return -EINVAL;
+            }
+            return tid_res.value();
+        }
         default:
             loggers::LXSC::ERROR("unsupported syscall %s (%lu)",
                                  syscall_to_string(a7), a7);

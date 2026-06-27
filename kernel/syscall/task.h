@@ -49,6 +49,8 @@ namespace syscall {
     Result<CapIdx> pcb_create_thread(CapIdx pcb_cap, VirAddr entry,
                                      VirAddr stack_addr, size_t stack_size);
     [[nodiscard]]
+    Result<size_t> tcb_get_tid(CapIdx tcb_cap);
+    [[nodiscard]]
     Result<bool> tcb_kill(CapIdx tcb_cap, int exit_code);
     [[nodiscard]]
     Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,

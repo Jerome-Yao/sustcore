@@ -55,6 +55,7 @@ SysRet<void> sys_write_serial(size_t __always_zero, const char *str, size_t len)
 SysRet<void> sys_shutdown();
 SysRet<size_t> sys_time_now_ns();
 SysRet<void> sys_tcb_nanosleep(size_t ns);
+SysRet<size_t> sys_tcb_get_tid(CapIdx tcb_cap);
 SysRet<void> sys_tcb_kill(CapIdx tcb_cap, int exit_code);
 SysRet<void> sys_pcb_kill(CapIdx pcb_cap, int exit_code);
 SysRet<void> sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset, void *vaddr,

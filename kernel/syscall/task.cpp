@@ -440,6 +440,19 @@ namespace syscall {
         return thread_res.value();
     }
 
+    Result<size_t> tcb_get_tid(CapIdx tcb_cap) {
+        cap::Capability *cap = nullptr;
+        auto tcb_res         = lookup_tcb(tcb_cap, &cap);
+        propagate(tcb_res);
+        cap::TCBObject obj(util::nnullforce(cap));
+        auto current_res = obj.require_current();
+        propagate(current_res);
+        if (current_res.value() == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        return current_res.value()->tid;
+    }
+
     Result<bool> tcb_kill(CapIdx tcb_cap, int exit_code) {
         cap::Capability *cap = nullptr;
         auto tcb_res         = lookup_tcb(tcb_cap, &cap);

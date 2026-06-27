@@ -99,7 +99,7 @@ namespace la64 {
 
         umb_t fcsr = 0;
         asm volatile("movfcsr2gr %0, $fcsr0" : "=r"(fcsr));
-        ctx.fcsr = static_cast<u32>(fcsr);
+        ctx.fcsr = static_cast<b32>(fcsr);
 
         restore_euen(original);
     }
