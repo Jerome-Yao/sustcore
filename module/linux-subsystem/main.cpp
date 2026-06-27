@@ -774,6 +774,10 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             // 占位符
             // 先假设所有的资源限制都是无限制的
             return 0;
+        case __NR_set_tid_address:
+            // 占位符
+            // 先假设不需要设置线程 ID 地址
+            return 0;
         default:
             loggers::LXSC::ERROR("unsupported syscall %s (%lu)",
                                  syscall_to_string(a7), a7);
