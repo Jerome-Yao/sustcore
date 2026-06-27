@@ -556,21 +556,26 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         //     .dispname   = "test_file_rw_a",
         //     .is_linuxproc = false,
         // },
-        SpawnRequest{
-            .path         = "/initrd/test-elf-demand.mod",
-            .dispname     = "test-elf-demand",
-            .is_linuxproc = false,
-        },
+        // SpawnRequest{
+        //     .path         = "/initrd/test-elf-demand.mod",
+        //     .dispname     = "test-elf-demand",
+        //     .is_linuxproc = false,
+        // },
+        // SpawnRequest{
+        //     .path         = "/initrd/test-elf-demand-perf.mod",
+        //     .dispname     = "test-elf-demand-perf",
+        //     .is_linuxproc = false,
+        // },
         // SpawnRequest{
         //     .path       = "/initrd/tmp/write",
         //     .dispname   = "write",
         //     .is_linuxproc = true,
         // },
-        // SpawnRequest{
-        //     .path         = "/initrd/contest-runner.mod",
-        //     .dispname     = "contest-runner",
-        //     .is_linuxproc = false,
-        // },
+        SpawnRequest{
+            .path         = "/initrd/contest-runner.mod",
+            .dispname     = "contest-runner",
+            .is_linuxproc = false,
+        },
     };
     // try write file /sys/dev/serial@1fe001e0/serial
     fd = kmod_fopen("/sys/dev/serial@1fe001e0/serial", "w");
