@@ -17,6 +17,7 @@
 #include <sustcore/bootstrap.h>
 #include <sustcore/capability.h>
 #include <sus/path.h>
+#include <sustcore/files.h>
 #include <syscall.h>
 
 #include <cstddef>
@@ -1117,7 +1118,7 @@ size_t linux_sys_execve(const char *pathname, const char *const argv[],
 
     SysRet<CapIdx> image_cap_ret = sys_vfs_open(resolved.parent_cap,
         resolved.relative_path.c_str(),
-        flags::O_EXECUTE);
+        flags::O_EXECUTE | flags::O_READ);
 
     if (image_cap_ret.is_error()) {
         return -ENOENT;
