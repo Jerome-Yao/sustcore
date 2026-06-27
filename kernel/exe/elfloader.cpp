@@ -329,7 +329,8 @@ namespace loader::elf {
 
                 auto *segment_mem = new cap::MemoryPayload(
                     data_memsz, false, false, VMA::Growth::FIXED,
-                    std::move(backing), file_offset);
+                    std::move(backing), file_offset,
+                    static_cast<size_t>(phdr.p_filesz) + page_prefix);
                 auto add_res = spec.tmm->add_vma(
                     vma_type, VMA::Growth::FIXED,
                     VirArea(aligned_segvaddr,
