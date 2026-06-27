@@ -39,6 +39,7 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
 namespace {
     constexpr size_t LINUX_MMAP_QUERY_BATCH = 64;
     constexpr size_t LINUX_MMAP_GAP         = 0x40000000ULL;
+    constexpr size_t LINUX_MMAP_SCAN_LIMIT  = 0x1000000000ULL;
     constexpr size_t PROT_READ              = 0x1;
     constexpr size_t PROT_WRITE             = 0x2;
     constexpr size_t PROT_EXEC              = 0x4;
@@ -221,6 +222,9 @@ namespace {
             }
             for (size_t i = 0; i < count; ++i) {
                 size_t start = reinterpret_cast<size_t>(infos[i].vma_start);
+                if (start > LINUX_MMAP_SCAN_LIMIT) {
+                    continue;
+                }
                 size_t end   = start + infos[i].vma_size;
                 if (end > max_end) {
                     max_end = end;
@@ -244,6 +248,9 @@ namespace {
             }
             for (size_t i = 0; i < count; ++i) {
                 size_t start = reinterpret_cast<size_t>(infos[i].vma_start);
+                if (start > LINUX_MMAP_SCAN_LIMIT) {
+                    continue;
+                }
                 size_t end   = start + infos[i].vma_size;
                 if (cursor + length <= start) {
                     return cursor;
