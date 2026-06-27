@@ -148,6 +148,7 @@ namespace rv64 {
             sstatus.spp  = smode;
             sstatus.sie  = sie;
             sstatus.spie = spie;
+            sstatus.fs   = smode ? XSStatus::OFF : XSStatus::INITIAL;
         }
 
         template <SetupCase setcase>
