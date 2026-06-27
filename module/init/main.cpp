@@ -501,51 +501,9 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         exit(-1);
     }
 
-#if defined(__ARCH_riscv64__)
-
-#define LIB_PATH    "/lib"
-#define USRLIB_PATH "/usr/lib"
-
-#elif defined(__ARCH_loongarch64__)
-
-#define LIB_PATH    "/lib64"
-#define USRLIB_PATH "/usr/lib64"
-
-#endif
-
     create_blk_linkings(root_dir_cap);
     setup_stdout_link();
     mount_testing_ext4(root_dir_cap);
-
-    if (!force_symlink(LIB_PATH, "/testing/glibc/lib")) {
-        printf("init: create /lib symlink failed\n");
-    } else {
-        printf("link " LIB_PATH " -> /testing/glibc/lib created\n");
-    }
-
-    if (!force_symlink(USRLIB_PATH, "/testing/glibc/lib")) {
-        printf("init: create /usr/lib symlink failed\n");
-    } else {
-        printf("link " USRLIB_PATH " -> /testing/glibc/lib created\n");
-    }
-
-    // try open /testing/glibc/lib/libc.so.6
-    int fd = 0;
-    fd     = kmod_fopen(USRLIB_PATH "/libc.so.6", "r");
-    if (fd >= 0) {
-        printf("init: open " USRLIB_PATH "/libc.so.6 succeeded\n");
-        kmod_fclose(fd);
-    } else {
-        printf("init: open " USRLIB_PATH "/libc.so.6 failed\n");
-    }
-
-    fd = kmod_fopen("/testing/glibc/lib/libc.so.6", "r");
-    if (fd >= 0) {
-        printf("init: open /testing/glibc/lib/libc.so.6 succeeded\n");
-        kmod_fclose(fd);
-    } else {
-        printf("init: open /testing/glibc/lib/libc.so.6 failed\n");
-    }
 
     // print_tree(root_dir_cap, "/");
 
@@ -591,23 +549,14 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
             .is_linuxproc = false,
         },
     };
-    // try write file /sys/dev/serial@1fe001e0/serial
-    fd = kmod_fopen("/sys/dev/serial@1fe001e0/serial", "w");
-    if (fd >= 0) {
-        kmod_fwrite(fd, "Hello, World!\n", 14);
-        printf(
-            "init: write \"Hello, World!\" to "
-            "/sys/dev/serial@1fe001e0/serial\n");
-        kmod_fclose(fd);
-    } else {
-        printf("init: can't open `/sys/dev/serial@1fe001e0/serial` !\n");
-    }
 
+    // try write file /dev/stdout
+    int fd = 0;
     fd = kmod_fopen("/dev/stdout", "w");
     if (fd >= 0) {
-        kmod_fwrite(fd, "Hello, World!\n", 14);
+        kmod_fwrite(fd, "Hello, STDOUT!\n", 15);
         printf(
-            "init: write \"Hello, World!\" to "
+            "init: write \"Hello, STDOUT!\\n\" to "
             "/dev/stdout\n");
         kmod_fclose(fd);
     } else {

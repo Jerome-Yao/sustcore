@@ -208,6 +208,16 @@ public:
     const util::Path &global_path() const {
         return _global_path;
     }
+
+    [[nodiscard]]
+    VSuperblock &superblock() {
+        return _vind->superblock();
+    }
+
+    [[nodiscard]]
+    const VSuperblock &superblock() const {
+        return _vind->superblock();
+    }
 };
 
 class VMount : public cap::_PayloadHelper<PayloadType::VMOUNT> {
@@ -431,12 +441,10 @@ private:
         const VDirectory &vdir, std::vector<DirectoryEntryInfo> entries)
         const;
     [[nodiscard]]
-    Result<util::refc_ptr<VINode>> _ensure_directory_path(
-        util::refc_ptr<VINode> base, const util::Path &mount_path,
-        const util::Path &base_path, const util::Path &dir_path);
-    [[nodiscard]]
-    Result<util::refc_ptr<VINode>> _ensure_parent_directory(
-        const VDirectory &base, const char *relpath);
+    Result<util::refc_ptr<VINode>> _resolve_parent_directory(
+        util::refc_ptr<VINode> base, const util::Path &base_path,
+        const util::Path &dir_path, VSuperblock *vsb, bool follow_symlink,
+        bool create_intermediate_dirs);
     [[nodiscard]]
     Result<void> _ensure_mountpoint_path(const util::Path &mount_path);
 

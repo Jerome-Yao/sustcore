@@ -1298,9 +1298,9 @@ Result<VFile *> VFS::_open_file_at(VINode &parent, const util::Path &mount_path,
     propagate(create_target_res);
     const auto &target = create_target_res.value();
 
-    auto resolved_parent_res =
-        _resolve_from(util::refc_ptr(&parent), base_path, target.parent_path,
-                      &parent.superblock());
+    auto resolved_parent_res = _resolve_parent_directory(
+        util::refc_ptr(&parent), base_path, target.parent_path,
+        &parent.superblock(), true, false);
     propagate(resolved_parent_res);
 
     auto resolved_dir_res = resolved_parent_res.value()->inode()->as_directory();
@@ -1584,7 +1584,9 @@ Result<CapIdx> VFS::mkfile(cap::Capability &parent_dir_cap, const char *relpath,
     propagate(create_target_res);
     const auto &target = create_target_res.value();
 
-    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    auto create_parent_res = _resolve_parent_directory(
+        util::refc_ptr(parent->vinode().get()), parent->global_path(),
+        target.parent_path, &parent->superblock(), true, true);
     propagate(create_parent_res);
 
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
@@ -1628,7 +1630,9 @@ Result<CapIdx> VFS::mkdir(cap::Capability &parent_dir_cap, const char *relpath,
     propagate(create_target_res);
     const auto &target = create_target_res.value();
 
-    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    auto create_parent_res = _resolve_parent_directory(
+        util::refc_ptr(parent->vinode().get()), parent->global_path(),
+        target.parent_path, &parent->superblock(), true, true);
     propagate(create_parent_res);
 
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
@@ -1659,7 +1663,9 @@ Result<void> VFS::unlink(cap::Capability &parent_dir_cap, const char *relpath) {
     }
     auto target_res = parse_create_target(relpath);
     propagate(target_res);
-    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    auto create_parent_res = _resolve_parent_directory(
+        util::refc_ptr(parent->vinode().get()), parent->global_path(),
+        target_res.value().parent_path, &parent->superblock(), true, true);
     propagate(create_parent_res);
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
     propagate(target_dir_res);
@@ -1689,7 +1695,9 @@ Result<void> VFS::rmdir(cap::Capability &parent_dir_cap, const char *relpath) {
     }
     auto target_res = parse_create_target(relpath);
     propagate(target_res);
-    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    auto create_parent_res = _resolve_parent_directory(
+        util::refc_ptr(parent->vinode().get()), parent->global_path(),
+        target_res.value().parent_path, &parent->superblock(), true, true);
     propagate(create_parent_res);
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
     propagate(target_dir_res);
@@ -1737,7 +1745,9 @@ Result<void> VFS::link(cap::Capability &parent_dir_cap, const char *relpath,
     }
     auto target_res = parse_create_target(relpath);
     propagate(target_res);
-    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    auto create_parent_res = _resolve_parent_directory(
+        util::refc_ptr(parent->vinode().get()), parent->global_path(),
+        target_res.value().parent_path, &parent->superblock(), true, true);
     propagate(create_parent_res);
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
     propagate(target_dir_res);
@@ -1757,9 +1767,15 @@ Result<void> VFS::rename(cap::Capability &old_parent_cap, const char *old_name,
     auto new_target_res = parse_create_target(new_name);
     propagate(new_target_res);
 
-    auto old_dir_parent = _ensure_parent_directory(*old_parent, old_name);
+    auto old_dir_parent = _resolve_parent_directory(
+        util::refc_ptr(old_parent->vinode().get()), old_parent->global_path(),
+        old_target_res.value().parent_path, &old_parent->superblock(), true,
+        true);
     propagate(old_dir_parent);
-    auto new_dir_parent = _ensure_parent_directory(*new_parent, new_name);
+    auto new_dir_parent = _resolve_parent_directory(
+        util::refc_ptr(new_parent->vinode().get()), new_parent->global_path(),
+        new_target_res.value().parent_path, &new_parent->superblock(), true,
+        true);
     propagate(new_dir_parent);
 
     auto old_dir_res = old_dir_parent.value()->inode()->as_directory();
@@ -1786,7 +1802,9 @@ Result<void> VFS::symlink(cap::Capability &parent_dir_cap, const char *relpath,
     propagate(create_target_res);
     const auto &ctgt = create_target_res.value();
 
-    auto create_parent_res = _ensure_parent_directory(*parent, relpath);
+    auto create_parent_res = _resolve_parent_directory(
+        util::refc_ptr(parent->vinode().get()), parent->global_path(),
+        ctgt.parent_path, &parent->superblock(), true, true);
     propagate(create_parent_res);
 
     auto target_dir_res = create_parent_res.value()->inode()->as_directory();
@@ -1887,12 +1905,12 @@ Result<std::pair<util::Path, util::Path>> VFS::_global_target_path(
     return std::make_pair(base_path, normalized);
 }
 
-Result<util::refc_ptr<VINode>> VFS::_ensure_directory_path(
-    util::refc_ptr<VINode> base, const util::Path &mount_path,
-    const util::Path &base_path, const util::Path &dir_path) {
-    (void)mount_path;
+Result<util::refc_ptr<VINode>> VFS::_resolve_parent_directory(
+    util::refc_ptr<VINode> base, const util::Path &base_path,
+    const util::Path &dir_path, VSuperblock *vsb, bool follow_symlink,
+    bool create_intermediate_dirs) {
     auto current = base;
-    if (current.get() == nullptr) {
+    if (current.get() == nullptr || vsb == nullptr) {
         unexpect_return(ErrCode::NULLPTR);
     }
 
@@ -1915,6 +1933,7 @@ Result<util::refc_ptr<VINode>> VFS::_ensure_directory_path(
             propagate(next_res);
             current      = next_res.value();
             current_path = next_path;
+            vsb          = mount_res.value()->superblock.get();
             continue;
         }
 
@@ -1922,6 +1941,9 @@ Result<util::refc_ptr<VINode>> VFS::_ensure_directory_path(
         propagate(dir_res);
         auto lookup_res = dir_res.value()->lookup(entry);
         if (is_lookup_missing(lookup_res)) {
+            if (!create_intermediate_dirs) {
+                propagate_return(lookup_res);
+            }
             auto mkdir_res = dir_res.value()->mkdir(entry, nullptr);
             propagate(mkdir_res);
             lookup_res = mkdir_res;
@@ -1929,29 +1951,40 @@ Result<util::refc_ptr<VINode>> VFS::_ensure_directory_path(
             propagate(lookup_res);
         }
 
-        auto next_res = current->superblock().get_vnode(lookup_res.value());
+        auto next_res = vsb->get_vnode(lookup_res.value());
         propagate(next_res);
-        auto next_dir_res = next_res.value()->inode()->as_directory();
-        if (! next_dir_res.has_value())
+        auto symlink_res = next_res.value()->superblock().sb()->is_symlink(
+            lookup_res.value());
+        propagate(symlink_res);
+        if (symlink_res.value()) {
+            if (!follow_symlink) {
+                loggers::VFS::ERROR("VFS: expected directory at %s",
+                                    next_path.c_str());
+                unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+            }
+            util::Path next_mount_path = current_path;
+            auto follow_res =
+                _follow_symlink(next_res.value(), next_mount_path, next_path,
+                                util::Path("."), kMaxSymlinkDepth, true);
+            propagate(follow_res);
+            current = follow_res.value();
+            current_path = next_path;
+            vsb          = &current->superblock();
+        } else {
+            current = next_res.value();
+        }
+
+        auto next_dir_res = current->inode()->as_directory();
+        if (!next_dir_res.has_value())
         {
             loggers::VFS::ERROR("VFS: expected directory at %s", next_path.c_str());
             unexpect_return(ErrCode::TYPE_NOT_MATCHED);
         }
         propagate(next_dir_res);
-        current      = next_res.value();
         current_path = next_path;
     }
 
     return current;
-}
-
-Result<util::refc_ptr<VINode>> VFS::_ensure_parent_directory(
-    const VDirectory &base, const char *relpath) {
-    auto target_res = parse_create_target(relpath);
-    propagate(target_res);
-    return _ensure_directory_path(util::refc_ptr(base.vinode().get()),
-                                  base.mount_path(), base.global_path(),
-                                  target_res.value().parent_path);
 }
 
 Result<void> VFS::_ensure_mountpoint_path(const util::Path &mount_path) {
@@ -1969,9 +2002,9 @@ Result<void> VFS::_ensure_mountpoint_path(const util::Path &mount_path) {
         root_res.value()->superblock->get_vnode(root_inode_res.value());
     propagate(root_vnode_res);
 
-    auto ensure_res = _ensure_directory_path(root_vnode_res.value(),
-                                             root_res.value()->mount_path, "/",
-                                             normalized.relative_to("/"));
+    auto ensure_res = _resolve_parent_directory(
+        root_vnode_res.value(), "/", normalized.relative_to("/"),
+        root_res.value()->superblock.get(), true, true);
     propagate(ensure_res);
     void_return();
 }

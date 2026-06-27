@@ -86,6 +86,12 @@ namespace contest_runner {
     void accumulate_stats(TestRunStats &total, const TestRunStats &part);
 
     [[nodiscard]]
+    bool glibc_env_setup();
+
+    [[nodiscard]]
+    bool musl_env_setup();
+
+    [[nodiscard]]
     TestRunStats run_basic(const RunnerContext &ctx);
 
     [[nodiscard]]

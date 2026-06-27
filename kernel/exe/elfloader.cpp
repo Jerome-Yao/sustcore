@@ -217,6 +217,9 @@ namespace loader::elf {
         const bool dyn_image = ehdr.e_type == ET_DYN;
         if (dyn_image) {
             loggers::ELFLOADER::INFO("加载动态ELF文件: %s", prm.src_path.data());
+        } else
+        {
+            loggers::ELFLOADER::INFO("加载静态ELF文件: %s", prm.src_path.data());
         }
         TaskSpec::LoadedElfMeta meta{};
         meta.dyn       = dyn_image;

@@ -258,7 +258,7 @@ namespace task {
                 VFS::inst().open(interp_path.c_str(), *holder);
             if (!interp_cap_res.has_value()) {
                 loggers::TASK::ERROR(
-                    "无法加载 POSIX 解释器! 路径: %s, 错误码 : %s",
+                    "无法从路径 %s 中加载解释器, err=%s",
                     interp_path.c_str(), to_cstring(interp_cap_res.error()));
                 propagate_return(interp_cap_res);
             }
@@ -270,8 +270,10 @@ namespace task {
                 spec, interp_prm, false, task::GENERIC_INTERPRET_BASE, true,
                 nullptr);
             if (!interp_load_res.has_value()) {
-                loggers::TASK::ERROR("加载POSIX解释器失败! 错误码: %s",
-                                         to_cstring(interp_load_res.error()));
+                loggers::TASK::ERROR(
+                    "无法从路径 %s 中加载解释器, err=%s",
+                    interp_path.c_str(),
+                    to_cstring(interp_load_res.error()));
                 unexpect_return(ErrCode::CREATION_FAILED);
             }
             interp_meta    = interp_load_res.value();
@@ -285,8 +287,8 @@ namespace task {
         auto load_subsystem_res =
             loader::elf::load_segments(spec, subsystem_prm, false);
         if (!load_subsystem_res.has_value()) {
-            loggers::TASK::ERROR("加载POSIX子系统失败! 错误码: %s",
-                                     to_cstring(load_subsystem_res.error()));
+            loggers::TASK::ERROR("failed to load linux subsystem, err=%s",
+                                 to_cstring(load_subsystem_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
         const auto subsystem_meta = load_subsystem_res.value();
