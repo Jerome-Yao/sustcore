@@ -480,13 +480,13 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
     // puts("linux-subsystem: initialized");
     // printf("stack dump:\n");
     // stack_dump(stack_sp, auxv);
-    printf("argc & argv:\n");
-    printf("argc = %u\n", static_cast<unsigned>(argc));
-    dump_vector("argv", argv);
+    // printf("argc & argv:\n");
+    // printf("argc = %u\n", static_cast<unsigned>(argc));
+    // dump_vector("argv", argv);
     // printf("\nenvp:\n");
     // dump_vector("envp", envp);
-    printf("\nauxv:\n");
-    dump_auxv(auxv);
+    // printf("\nauxv:\n");
+    // dump_auxv(auxv);
     // printf("\nbsargc & bsargv:\n");
     // printf("bsargc = %u\n", static_cast<unsigned>(bsargc));
     // dump_bsargv(bsargc, bsargv);
@@ -660,7 +660,7 @@ size_t linux_sys_munmap(void *addr, size_t length) {
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                  size_t a4, size_t a5, size_t a6, size_t a7,
                                  addr_t dispatch_frame_sp) {
-    printf("linux syscall %s (%lu)\n", syscall_to_string(a7), a7);
+    // printf("linux syscall %s (%lu)\n", syscall_to_string(a7), a7);
     switch (a7) {
         case __NR_write:
             return linux_sys_write(a0, reinterpret_cast<const void *>(a1), a2);

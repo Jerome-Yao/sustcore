@@ -749,25 +749,16 @@ namespace exception {
                         break;
                     }
 
-                    bool updated = false;
-
-                    if (!pte->a) {
-                        cause = FaultCause::INVALID_AD;
-                    }
-
                     PageMan::RWX rwx = PageMan::rwx(*pte);
-                    if ((scause.cause == STORE_PAGE_FAULT) && !pte->d &&
+                    loggers::EXCEPTION::ERROR(
+                        "A/D 位异常不可恢复: addr=%p, A=%d, D=%d, rwx=0x%lx",
+                        fault_addr.addr(), pte->a, pte->d,
+                        static_cast<unsigned long>(rwx));
+                    if ((scause.cause == STORE_PAGE_FAULT) &&
                         PageMan::is_writable(rwx))
                     {
-                        cause = FaultCause::INVALID_AD;
-                    }
-
-                    processed |= updated;
-                    if (updated) {
-                        PageMan::flush_tlb();
-                        loggers::EXCEPTION::DEBUG(
-                            "修复 A/D 位后重试: addr=%p, A=%d, D=%d",
-                            fault_addr.addr(), pte->a, pte->d);
+                        loggers::EXCEPTION::ERROR(
+                            "可写页发生 D 位异常: addr=%p", fault_addr.addr());
                     }
                     break;
                 }

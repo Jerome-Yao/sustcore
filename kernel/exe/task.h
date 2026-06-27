@@ -57,6 +57,18 @@ struct TaskSpec {
         bool stack_copy_required = false;
     };
 
+    struct LoadedElfMeta {
+        bool dyn                     = false;
+        VirAddr load_base            = VirAddr(static_cast<addr_t>(0));
+        VirAddr entrypoint           = VirAddr(static_cast<addr_t>(0));
+        VirAddr program_entrypoint   = VirAddr(static_cast<addr_t>(0));
+        VirAddr phdr_vaddr           = VirAddr(static_cast<addr_t>(0));
+        size_t phdr_num              = 0;
+        size_t phdr_entsize          = 0;
+        ProgramHeaderInfo phdr{};
+        VirAddr image_end            = VirAddr(static_cast<addr_t>(0));
+    };
+
     // 进程内存管理
     util::owner<TaskMemoryManager *> tmm;
     // 进程Capability Holder

@@ -418,6 +418,7 @@ namespace task {
                 .phdr_entsize         = 0,
                 .linuxss_heap_vaddr   = VirAddr::null,
                 .linuxss_heap_mem_cap = cap::null,
+                .linuxss_image_end    = VirAddr::null,
             };
         }
 

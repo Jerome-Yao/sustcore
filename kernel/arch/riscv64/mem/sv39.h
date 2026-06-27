@@ -393,8 +393,8 @@ namespace rv64 {
             // 设置目标页表项
             target_pte->ppn = to_ppn(paddr);
             target_pte->v   = true;
-            target_pte->a   = 0;
-            target_pte->d   = 0;
+            target_pte->a   = true;
+            target_pte->d   = is_writable(flags.rwx);
             target_pte->rsw = 0;
             modify_pte<Modifier::ALL>(target_pte, flags);
             loggers::PAGING::DEBUG(

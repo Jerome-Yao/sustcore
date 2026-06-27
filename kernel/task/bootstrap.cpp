@@ -197,6 +197,18 @@ namespace task {
                                      to_cstring(load_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
+        const auto meta = load_res.value();
+        spec.dyn                = meta.dyn;
+        spec.has_interp         = false;
+        spec.load_base          = meta.load_base;
+        spec.entrypoint         = meta.entrypoint;
+        spec.interp_base        = VirAddr::null;
+        spec.interp_entrypoint  = VirAddr::null;
+        spec.program_entrypoint = meta.program_entrypoint;
+        spec.phdr_vaddr         = meta.phdr_vaddr;
+        spec.phdr_num           = meta.phdr_num;
+        spec.phdr_entsize       = meta.phdr_entsize;
+        spec.phdr               = meta.phdr;
 
         spec.argv = argv;
         spec.envp = envp;
@@ -234,16 +246,11 @@ namespace task {
                                      to_cstring(load_linux_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
+        const auto main_meta = load_linux_res.value();
 
-        const bool user_program_dyn            = spec.dyn;
-        const VirAddr user_program_load_base   = spec.load_base;
-        const VirAddr user_program_entrypoint  = spec.program_entrypoint;
-        const VirAddr user_program_phdr_vaddr  = spec.phdr_vaddr;
-        const size_t user_program_phdr_num     = spec.phdr_num;
-        const size_t user_program_phdr_entsize = spec.phdr_entsize;
-
-        VirAddr runtime_entry = user_program_entrypoint;
-        if (spec.dyn) {
+        VirAddr runtime_entry = main_meta.program_entrypoint;
+        TaskSpec::LoadedElfMeta interp_meta{};
+        if (main_meta.dyn) {
             if (interp_path.empty()) {
                 unexpect_return(ErrCode::NOT_SUPPORTED);
             }
@@ -259,8 +266,6 @@ namespace task {
                 .image_file_cap = interp_cap_res.value(),
                 .src_path       = interp_path,
             };
-            spec.has_interp      = true;
-            spec.interp_base     = task::GENERIC_INTERPRET_BASE;
             auto interp_load_res = loader::elf::load_segments(
                 spec, interp_prm, false, task::GENERIC_INTERPRET_BASE, true,
                 nullptr);
@@ -269,16 +274,14 @@ namespace task {
                                          to_cstring(interp_load_res.error()));
                 unexpect_return(ErrCode::CREATION_FAILED);
             }
-            spec.interp_entrypoint = spec.entrypoint;
-            runtime_entry          = spec.interp_entrypoint;
+            interp_meta    = interp_load_res.value();
+            runtime_entry  = interp_meta.entrypoint;
         }
 
         LoadPrm subsystem_prm{
             .image_file_cap = subsystem_image_cap,
             .src_path       = "<cap>",
         };
-        spec.entrypoint           = VirAddr(static_cast<addr_t>(0));
-        spec.linuxproc_entrypoint = VirAddr(static_cast<addr_t>(0));
         auto load_subsystem_res =
             loader::elf::load_segments(spec, subsystem_prm, false);
         if (!load_subsystem_res.has_value()) {
@@ -286,20 +289,29 @@ namespace task {
                                      to_cstring(load_subsystem_res.error()));
             unexpect_return(ErrCode::CREATION_FAILED);
         }
-        if (!spec.linuxss_image_end.nonnull()) {
+        const auto subsystem_meta = load_subsystem_res.value();
+        if (!subsystem_meta.image_end.nonnull()) {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
-        VirAddr linuxss_heap_start = spec.linuxss_image_end.page_align_up();
+        VirAddr linuxss_heap_start = subsystem_meta.image_end.page_align_up();
         auto linuxss_heap_res =
             create_linux_subsystem_heap(spec, linuxss_heap_start);
         propagate(linuxss_heap_res);
+        spec.linuxss_image_end = subsystem_meta.image_end;
 
-        spec.dyn                = user_program_dyn;
-        spec.load_base          = user_program_load_base;
-        spec.program_entrypoint = user_program_entrypoint;
-        spec.phdr_vaddr         = user_program_phdr_vaddr;
-        spec.phdr_num           = user_program_phdr_num;
-        spec.phdr_entsize       = user_program_phdr_entsize;
+        spec.dyn                = main_meta.dyn;
+        spec.has_interp         = main_meta.dyn;
+        spec.load_base          = main_meta.load_base;
+        spec.entrypoint         = subsystem_meta.entrypoint;
+        spec.interp_base        =
+            main_meta.dyn ? task::GENERIC_INTERPRET_BASE : VirAddr::null;
+        spec.interp_entrypoint  =
+            main_meta.dyn ? interp_meta.entrypoint : VirAddr::null;
+        spec.program_entrypoint = main_meta.program_entrypoint;
+        spec.phdr_vaddr         = main_meta.phdr_vaddr;
+        spec.phdr_num           = main_meta.phdr_num;
+        spec.phdr_entsize       = main_meta.phdr_entsize;
+        spec.phdr               = main_meta.phdr;
 
         spec.argv = argv;
         spec.envp = envp;

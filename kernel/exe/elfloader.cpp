@@ -171,15 +171,16 @@ namespace loader::elf {
         void_return();
     }
 
-    Result<void> load_segments(TaskSpec &spec, const LoadPrm &prm,
-                               bool create_heap) {
+    Result<TaskSpec::LoadedElfMeta> load_segments(TaskSpec &spec,
+                                                  const LoadPrm &prm,
+                                                  bool create_heap) {
         return load_segments(spec, prm, create_heap,
                              VirAddr(static_cast<addr_t>(0)), false, nullptr);
     }
 
-    Result<void> load_segments(TaskSpec &spec, const LoadPrm &prm,
-                               bool create_heap, VirAddr load_base,
-                               bool accept_dyn, std::string *interp_path) {
+    Result<TaskSpec::LoadedElfMeta> load_segments(
+        TaskSpec &spec, const LoadPrm &prm, bool create_heap, VirAddr load_base,
+        bool accept_dyn, std::string *interp_path) {
         if (spec.tmm.get() == nullptr) {
             unexpect_return(ErrCode::NULLPTR);
         }
@@ -217,22 +218,23 @@ namespace loader::elf {
         if (dyn_image) {
             loggers::ELFLOADER::INFO("加载动态ELF文件: %s", prm.src_path.data());
         }
-        spec.dyn             = dyn_image;
-        spec.load_base =
+        TaskSpec::LoadedElfMeta meta{};
+        meta.dyn       = dyn_image;
+        meta.load_base =
             dyn_image ? load_base : VirAddr(static_cast<addr_t>(0));
-        spec.phdr_num     = ehdr.e_phnum;
-        spec.phdr_entsize = ehdr.e_phentsize;
-        spec.phdr         = {};
-        spec.program_entrypoint =
+        meta.phdr_num     = ehdr.e_phnum;
+        meta.phdr_entsize = ehdr.e_phentsize;
+        meta.phdr         = {};
+        meta.program_entrypoint =
             dyn_image ? VirAddr(load_base.arith() + ehdr.e_entry)
                       : VirAddr(ehdr.e_entry);
-        spec.entrypoint = spec.program_entrypoint;
+        meta.entrypoint = meta.program_entrypoint;
 
         const uint64_t ph_bytes =
             static_cast<uint64_t>(ehdr.e_phnum) * sizeof(Elf64_Phdr);
-        spec.phdr.bytes.resize(ph_bytes);
-        auto read_phdr_table_res =
-            read_exact(*file, ehdr.e_phoff, spec.phdr.bytes.data(), ph_bytes);
+        meta.phdr.bytes.resize(ph_bytes);
+        auto read_phdr_table_res = read_exact(*file, ehdr.e_phoff,
+                                              meta.phdr.bytes.data(), ph_bytes);
         propagate(read_phdr_table_res);
 
         addr_t max_pload_end   = 0;
@@ -256,13 +258,12 @@ namespace loader::elf {
                 if (!interp.empty() && interp.back() == '\0') {
                     interp.pop_back();
                 }
-                spec.has_interp = true;
                 *interp_path = std::move(interp);
             }
 
             if (is_phdr_segment(phdr)) {
                 has_pt_phdr = true;
-                spec.phdr_vaddr =
+                meta.phdr_vaddr =
                     dyn_image ? VirAddr(load_base.arith() + phdr.p_vaddr)
                               : VirAddr(phdr.p_vaddr);
             }
@@ -409,9 +410,9 @@ namespace loader::elf {
                 }
             }
 
-            if (has_pt_phdr && spec.phdr_vaddr.nonnull() &&
-                spec.phdr_vaddr >= aligned_segvaddr &&
-                spec.phdr_vaddr + ehdr.e_phnum * ehdr.e_phentsize <= segvend)
+            if (has_pt_phdr && meta.phdr_vaddr.nonnull() &&
+                meta.phdr_vaddr >= aligned_segvaddr &&
+                meta.phdr_vaddr + ehdr.e_phnum * ehdr.e_phentsize <= segvend)
             {
                 phdr_covered = true;
             }
@@ -428,33 +429,30 @@ namespace loader::elf {
             unexpect_return(ErrCode::INVALID_PARAM);
         }
 
-        if (!spec.phdr_vaddr.nonnull()) {
-            spec.phdr_vaddr = VirAddr(min_pload_start + ehdr.e_phoff);
+        if (!meta.phdr_vaddr.nonnull()) {
+            meta.phdr_vaddr = VirAddr(min_pload_start + ehdr.e_phoff);
         }
 
-        spec.phdr.vaddr = spec.phdr_vaddr;
+        meta.phdr.vaddr = meta.phdr_vaddr;
 
         if (has_pt_phdr && !phdr_covered) {
-            spec.phdr.stack_copy_required = true;
+            meta.phdr.stack_copy_required = true;
         } else if (!has_pt_phdr) {
             bool fallback_covered = false;
             for (const auto &segment : runtime_segments) {
-                if (spec.phdr_vaddr >= segment.map_begin &&
-                    spec.phdr_vaddr + ph_bytes <= segment.map_end)
+                if (meta.phdr_vaddr >= segment.map_begin &&
+                    meta.phdr_vaddr + ph_bytes <= segment.map_end)
                 {
                     fallback_covered = true;
                     break;
                 }
             }
-            spec.phdr.stack_copy_required = !fallback_covered;
+            meta.phdr.stack_copy_required = !fallback_covered;
         }
-
-        if (!create_heap) {
-            spec.linuxss_image_end = VirAddr(max_pload_end).page_align_up();
-        }
+        meta.image_end = VirAddr(max_pload_end).page_align_up();
 
         if (create_heap) {
-            VirAddr heap_start = VirAddr(max_pload_end).page_align_up();
+            VirAddr heap_start = meta.image_end;
             spec.heap_vaddr = heap_start;
             auto *heap_mem =
                 new cap::MemoryPayload(0, false, false, VMA::Growth::FLEXUP);
@@ -496,10 +494,10 @@ namespace loader::elf {
                 PageMan::page_flags(rwx, true, false));
         }
 
-        void_return();
+        return meta;
     }
 
-    Result<void> load(TaskSpec &spec, const LoadPrm &prm) {
+    Result<TaskSpec::LoadedElfMeta> load(TaskSpec &spec, const LoadPrm &prm) {
         return load_segments(spec, prm, true);
     }
 

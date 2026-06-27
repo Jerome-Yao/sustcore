@@ -25,6 +25,7 @@ config.json
 .sisyphus/
 *.bak
 *.img
+*.img.xz
 tmp/
 
 os_serial_out_rv.txt
