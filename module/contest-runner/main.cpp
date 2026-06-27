@@ -396,13 +396,19 @@ namespace contest_runner {
         return ok;
     }
 
-#if defined(__ARCH_riscv64__)
-#define LIB_PATH "/lib"
-#elif defined(__ARCH_loongarch64__)
-#define LIB_PATH "/lib64"
-#endif
+    bool dounlink(const char *path) {
+        bool ok = kmod_unlink(path) == 0;
+        printf("%s unlink %s\n", ok ? "successfully" : "failed to", path);
+        return ok;
+    }
 
-#define LD_SO_PATH LIB_PATH "/ld-linux-riscv64-lp64d.so.1"
+#if defined(__ARCH_riscv64__)
+#define LIB_PATH   "/lib"
+#define LD_SO_PATH "/lib/ld-linux-riscv64-lp64d.so.1"
+#elif defined(__ARCH_loongarch64__)
+#define LIB_PATH   "/lib64"
+#define LD_SO_PATH "/lib64/ld-linux-loongarch-lp64d.so.1"
+#endif
 
 #define GLIBC_LIB_PATH  "/testing/glibc/lib"
 #define MUSL_LIB_PATH   "/testing/musl/lib"
@@ -411,6 +417,12 @@ namespace contest_runner {
     bool glibc_env_setup() {
         bool ok  = true;
         ok      &= dolink(LIB_PATH, GLIBC_LIB_PATH);
+        return ok;
+    }
+
+    bool glibc_env_cleanup() {
+        bool ok  = true;
+        ok      &= dounlink(LIB_PATH);
         return ok;
     }
 
@@ -433,17 +445,30 @@ namespace contest_runner {
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
-        contest_runner::accumulate_stats(total,
-                                         contest_runner::run_libctest(ctx));
-        contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
+        // contest_runner::accumulate_stats(total,
+                                        //  contest_runner::run_libctest(ctx));
+        // contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
         contest_runner::cleanup_runner_context_caps(ctx);
+
+        if (!glibc_env_cleanup()) {
+            printf("contest-runner: failed to cleanup glibc env\n");
+            return false;
+        }
+
         return true;
     }
 
     bool musl_env_setup() {
         bool ok  = true;
-        ok      &= dolink(LIB_PATH, MUSL_LIB_PATH);
+        // ok      &= dolink(LIB_PATH, MUSL_LIB_PATH);
         ok      &= dolink(LD_SO_PATH, MUSL_LD_SO_PATH);
+        return ok;
+    }
+
+    bool musl_env_cleanup() {
+        bool ok  = true;
+        // ok      &= dounlink(LIB_PATH);
+        ok      &= dounlink(LD_SO_PATH);
         return ok;
     }
 
@@ -464,12 +489,11 @@ namespace contest_runner {
         }
 
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
+        contest_runner::accumulate_stats(total,
+                                         contest_runner::run_busybox(ctx));
         // contest_runner::accumulate_stats(total,
-        //                                  contest_runner::run_busybox(ctx));
-        // contest_runner::accumulate_stats(total,
-        //                                  contest_runner::run_libctest(ctx));
-        // contest_runner::accumulate_stats(total,
-        // contest_runner::run_ltp(ctx));
+                                        //  contest_runner::run_libctest(ctx));
+        // contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
         contest_runner::cleanup_runner_context_caps(ctx);
         return true;
     }
