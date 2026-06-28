@@ -82,6 +82,12 @@
 #define SYS_PIPE_CREATE         (SYSCALL_BASE + 0x3F)
 #define SYS_PIPE_READ           (SYSCALL_BASE + 0x40)
 #define SYS_PIPE_WRITE          (SYSCALL_BASE + 0x41)
+#define SYS_VFS_GETATTR         (SYSCALL_BASE + 0x42)
+#define SYS_VFS_GETATTR_AT      (SYSCALL_BASE + 0x43)
+#define SYS_VFS_SETATTR         (SYSCALL_BASE + 0x44)
+#define SYS_VFS_SETATTR_AT      (SYSCALL_BASE + 0x45)
+#define SYS_VFS_CHOWN           (SYSCALL_BASE + 0x46)
+#define SYS_VFS_CHOWN_AT        (SYSCALL_BASE + 0x47)
 
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE        (0xFFC00000)

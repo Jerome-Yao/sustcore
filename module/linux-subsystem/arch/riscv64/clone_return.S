@@ -24,6 +24,7 @@ linux_clone_fork_return_trampoline:
     ld s9, 104(t2)
     ld s10,112(t2)
     ld s11,120(t2)
+    ld t6, 224(t2)
 
     beqz t1, 1f
     andi t1, t1, -16
@@ -33,4 +34,4 @@ linux_clone_fork_return_trampoline:
     addi sp, t2, 16 * 8
 2:
     li a0, 0
-    jr t0
+    jr t6

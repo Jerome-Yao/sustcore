@@ -51,7 +51,13 @@ namespace tmpfs {
         [[nodiscard]]
         Result<size_t> size() override;
         [[nodiscard]]
+        Result<void> truncate(size_t new_size) override;
+        [[nodiscard]]
         Result<void> sync() override;
+        [[nodiscard]]
+        Result<void> getattr(AttrSet &out) const override;
+        [[nodiscard]]
+        Result<void> setattr(AttrMask mask, const AttrSet &attrs) override;
         [[nodiscard]]
         IMetadata &metadata() override;
         [[nodiscard]]
@@ -92,6 +98,10 @@ namespace tmpfs {
         Result<DirectoryEntryInfo> entry_at(size_t index) override;
         [[nodiscard]]
         Result<void> sync() override;
+        [[nodiscard]]
+        Result<void> getattr(AttrSet &out) const override;
+        [[nodiscard]]
+        Result<void> setattr(AttrMask mask, const AttrSet &attrs) override;
         [[nodiscard]]
         IMetadata &metadata() override;
         [[nodiscard]]

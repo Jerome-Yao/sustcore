@@ -352,6 +352,12 @@ namespace syscall {
                 return "SYS_VFS_PAGE_CACHE_STATS";
             case SYS_PCB_EXECVE_POSIX:  return "SYS_PCB_EXECVE_POSIX";
             case SYS_VFS_FCHOWNAT:      return "SYS_VFS_FCHOWNAT";
+            case SYS_VFS_GETATTR:       return "SYS_VFS_GETATTR";
+            case SYS_VFS_GETATTR_AT:    return "SYS_VFS_GETATTR_AT";
+            case SYS_VFS_SETATTR:       return "SYS_VFS_SETATTR";
+            case SYS_VFS_SETATTR_AT:    return "SYS_VFS_SETATTR_AT";
+            case SYS_VFS_CHOWN:         return "SYS_VFS_CHOWN";
+            case SYS_VFS_CHOWN_AT:      return "SYS_VFS_CHOWN_AT";
             default:                      return "UNKNOWN_SYSCALL";
         }
     }
@@ -813,10 +819,60 @@ namespace syscall {
                 UString relpath((VirAddr)arg3, MAX_SYSCALL_PATH);
                 ret = result_void_ret(
                     "fchownat",
-                    vfs_fchownat(capidx, relpath,
+                    vfs_chown_at(capidx, relpath,
                                  static_cast<uint32_t>(arg0),
                                  static_cast<uint32_t>(arg1),
                                  static_cast<uint32_t>(arg2)));
+                break;
+            }
+            case SYS_VFS_GETATTR: {
+                UBuffer buf((VirAddr)arg0, sizeof(AttrSet));
+                ret = result_void_ret("getattr",
+                                      vfs_getattr(capidx, std::move(buf)));
+                break;
+            }
+            case SYS_VFS_GETATTR_AT: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                UBuffer buf((VirAddr)arg1, sizeof(AttrSet));
+                ret = result_void_ret("getattr_at",
+                                      vfs_getattr_at(capidx, path,
+                                                     std::move(buf),
+                                                     static_cast<uint32_t>(arg2)));
+                break;
+            }
+            case SYS_VFS_SETATTR: {
+                UBuffer buf((VirAddr)arg0, sizeof(AttrSet));
+                ret = result_void_ret("setattr",
+                                      vfs_setattr(capidx, std::move(buf),
+                                                  static_cast<uint32_t>(arg1),
+                                                  static_cast<uint32_t>(arg2)));
+                break;
+            }
+            case SYS_VFS_SETATTR_AT: {
+                UString path((VirAddr)arg0, MAX_SYSCALL_PATH);
+                UBuffer buf((VirAddr)arg1, sizeof(AttrSet));
+                ret = result_void_ret("setattr_at",
+                                      vfs_setattr_at(capidx, path,
+                                                     std::move(buf),
+                                                     static_cast<uint32_t>(arg2),
+                                                     static_cast<uint32_t>(arg3)));
+                break;
+            }
+            case SYS_VFS_CHOWN: {
+                ret = result_void_ret("chown",
+                                      vfs_chown(capidx,
+                                                static_cast<uint32_t>(arg0),
+                                                static_cast<uint32_t>(arg1),
+                                                static_cast<uint32_t>(arg2)));
+                break;
+            }
+            case SYS_VFS_CHOWN_AT: {
+                UString relpath((VirAddr)arg3, MAX_SYSCALL_PATH);
+                ret = result_void_ret("chown_at",
+                                      vfs_chown_at(capidx, relpath,
+                                                   static_cast<uint32_t>(arg0),
+                                                   static_cast<uint32_t>(arg1),
+                                                   static_cast<uint32_t>(arg2)));
                 break;
             }
             case SYS_MNT_CREATE: {

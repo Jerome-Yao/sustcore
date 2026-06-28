@@ -25,6 +25,7 @@ size_t linux_opendir_fd(const char *pathname, int fd);
 size_t linux_bind_cap_fd(CapIdx cap, int fd, bool append);
 size_t linux_sys_openat(int dirfd, const char *pathname, int flags, int mode);
 size_t linux_sys_lseek(int fd, size_t offset, int whence);
+size_t linux_sys_ftruncate(int fd, size_t length);
 size_t linux_sys_getcwd(char *buf, size_t size);
 size_t linux_sys_chdir(const char *pathname);
 size_t linux_sys_readlinkat(int dirfd, const char *pathname, char *buf,
@@ -33,6 +34,9 @@ size_t linux_sys_mkdirat(int dirfd, const char *pathname, int mode);
 size_t linux_sys_unlinkat(int dirfd, const char *pathname, int flags);
 size_t linux_sys_getdents64(int fd, void *dirp, size_t count);
 size_t linux_sys_fstat(int fd, void *statbuf);
+size_t linux_sys_fchmodat(int dirfd, const char *pathname, uint32_t mode);
+size_t linux_sys_fchownat(int dirfd, const char *pathname, uint32_t uid,
+                          uint32_t gid, int flags);
 size_t linux_sys_newfstatat(int dirfd, const char *pathname, void *statbuf,
                             int flags);
 size_t linux_sys_statx(int dirfd, const char *pathname, int flags,

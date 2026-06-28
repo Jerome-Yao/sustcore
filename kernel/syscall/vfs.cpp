@@ -331,6 +331,81 @@ namespace syscall {
         return out.commit_to_user(sizeof(st));
     }
 
+    Result<void> vfs_getattr(CapIdx capidx, UBuffer &&out) {
+        if (out.kbuf() == nullptr || out.len() < sizeof(AttrSet)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto cap_res = lookup_current_cap(capidx);
+        propagate(cap_res);
+        AttrSet attrs{};
+        auto getattr_res = VFS::inst().getattr(*cap_res.value(), attrs);
+        propagate(getattr_res);
+        memcpy(out.kbuf(), &attrs, sizeof(attrs));
+        return out.commit_to_user(sizeof(attrs));
+    }
+
+    Result<void> vfs_getattr_at(CapIdx parent_dir_cap, const UString &relpath,
+                                UBuffer &&out, uint32_t flags) {
+        if (out.kbuf() == nullptr || out.len() < sizeof(AttrSet)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        AttrSet attrs{};
+        auto getattr_res =
+            VFS::inst().getattr_at(*parent_res.value(), relpath.kbuf(), attrs,
+                                   flags);
+        propagate(getattr_res);
+        memcpy(out.kbuf(), &attrs, sizeof(attrs));
+        return out.commit_to_user(sizeof(attrs));
+    }
+
+    Result<void> vfs_setattr(CapIdx capidx, UBuffer &&attrs_buf, uint32_t mask,
+                             uint32_t flags) {
+        (void)flags;
+        if (attrs_buf.kbuf() == nullptr || attrs_buf.len() < sizeof(AttrSet)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto sync_res = attrs_buf.sync_from_user();
+        propagate(sync_res);
+        auto cap_res = lookup_current_cap(capidx);
+        propagate(cap_res);
+        auto *attrs = reinterpret_cast<const AttrSet *>(attrs_buf.kbuf());
+        return VFS::inst().setattr(*cap_res.value(),
+                                   static_cast<AttrMask>(mask), *attrs);
+    }
+
+    Result<void> vfs_setattr_at(CapIdx parent_dir_cap, const UString &relpath,
+                                UBuffer &&attrs_buf, uint32_t mask,
+                                uint32_t flags) {
+        if (attrs_buf.kbuf() == nullptr || attrs_buf.len() < sizeof(AttrSet)) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+        auto sync_res = attrs_buf.sync_from_user();
+        propagate(sync_res);
+        auto parent_res = lookup_current_cap(parent_dir_cap);
+        propagate(parent_res);
+        auto *attrs = reinterpret_cast<const AttrSet *>(attrs_buf.kbuf());
+        return VFS::inst().setattr_at(*parent_res.value(), relpath.kbuf(),
+                                      static_cast<AttrMask>(mask), *attrs,
+                                      flags);
+    }
+
+    Result<void> vfs_chown(CapIdx capidx, uint32_t uid, uint32_t gid,
+                           uint32_t flags) {
+        auto cap_res = lookup_current_cap(capidx);
+        propagate(cap_res);
+        return VFS::inst().chown(*cap_res.value(), uid, gid, flags);
+    }
+
+    Result<void> vfs_chown_at(CapIdx dirfd, const UString &relpath,
+                              uint32_t uid, uint32_t gid, uint32_t flags) {
+        auto parent_res = lookup_current_cap(dirfd);
+        propagate(parent_res);
+        return VFS::inst().chown_at(*parent_res.value(), relpath.kbuf(), uid,
+                                    gid, flags);
+    }
+
     Result<size_t> vfs_readlink(CapIdx parent_dir_cap, const UString &relpath,
                                  UBuffer &&buf, size_t bufsiz) {
         auto parent_res = lookup_current_cap(parent_dir_cap);
@@ -465,21 +540,6 @@ namespace syscall {
             return MountStatus::INVALID;
         }
         return state_res.value();
-    }
-
-    Result<void> vfs_fchownat(CapIdx dirfd, const UString &relpath,
-                              uint32_t uid, uint32_t gid, uint32_t flags) {
-        auto parent_res = lookup_current_cap(dirfd);
-        propagate(parent_res);
-        AttrSet attrs{};
-        attrs.uid = uid;
-        attrs.gid = gid;
-        auto setattr_res = VFS::inst().setattr(*parent_res.value(),
-                                               relpath.kbuf(),
-                                               AttrMask(attr::OWNER),
-                                               attrs, flags);
-        propagate(setattr_res);
-        void_return();
     }
 
 }  // namespace syscall

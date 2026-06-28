@@ -748,10 +748,22 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_lseek:
             return linux_sys_lseek(static_cast<int>(a0), a1,
                                    static_cast<int>(a2));
+        case __NR_ftruncate:
+            return linux_sys_ftruncate(static_cast<int>(a0), a1);
         case __NR_openat:
             return linux_sys_openat(static_cast<int>(a0),
                                     reinterpret_cast<const char *>(a1),
                                     static_cast<int>(a2), static_cast<int>(a3));
+        case __NR_fchmodat:
+            return linux_sys_fchmodat(static_cast<int>(a0),
+                                      reinterpret_cast<const char *>(a1),
+                                      static_cast<uint32_t>(a2));
+        case __NR_fchownat:
+            return linux_sys_fchownat(static_cast<int>(a0),
+                                      reinterpret_cast<const char *>(a1),
+                                      static_cast<uint32_t>(a2),
+                                      static_cast<uint32_t>(a3),
+                                      static_cast<int>(a4));
         case __NR_unlinkat:
             return linux_sys_unlinkat(static_cast<int>(a0),
                                       reinterpret_cast<const char *>(a1),
@@ -809,6 +821,11 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                 "unsupported syscall %s (%lu), ignoring pid=%d and returning 1 for compatibility",
                 syscall_to_string(a7), a7, static_cast<int>(a0));
             return 1;
+        case __NR_rt_sigaction:
+            loggers::LXSC::ERROR(
+                "unsupported syscall %s (%lu), ignoring and returning 0 for compatibility",
+                syscall_to_string(a7), a7);
+            return 0;
         default:
             loggers::LXSC::ERROR("unsupported syscall %s (%lu)",
                                  syscall_to_string(a7), a7);

@@ -161,7 +161,7 @@ namespace contest_runner {
 
         CapIdx default_caps[] = {prepared_root_dir_cap, prepared_cwd_dir_cap,
                                  prepared_parent_pcb_cap, cap::null};
-        const char *default_bsargv[]  = {
+        const char *default_bsargv[] = {
             reinterpret_cast<const char *>(&root_bootstrap),
             reinterpret_cast<const char *>(&cwd_bootstrap_cap),
             reinterpret_cast<const char *>(&parent_bootstrap),
@@ -170,7 +170,7 @@ namespace contest_runner {
             nullptr,
         };
         CapIdx *initial_caps = default_caps;
-        const char **bsargv = default_bsargv;
+        const char **bsargv  = default_bsargv;
         if (extra != nullptr) {
             if (extra->caps != nullptr) {
                 initial_caps = extra->caps;
@@ -322,8 +322,7 @@ namespace contest_runner {
     RunProgramError run_program(const RunnerContext &ctx,
                                 const OpenDirHandle &cwd,
                                 const char *program_path, const char *argv[],
-                                int &status,
-                                const ShellSpawnExtra *extra) {
+                                int &status, const ShellSpawnExtra *extra) {
         int fd = kmod_fopen(program_path, "x");
         if (fd < 0) {
             return RunProgramError::OPEN_FAILED;

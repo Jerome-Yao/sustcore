@@ -20,6 +20,7 @@ namespace {
 
     // Syscall numbers
     constexpr size_t __NR_openat        = 56;
+    constexpr size_t __NR_fchownat      = 54;
     constexpr size_t __NR_close         = 57;
     constexpr size_t __NR_lseek         = 62;
     constexpr size_t __NR_read          = 63;
@@ -35,6 +36,9 @@ namespace {
     constexpr int O_WRONLY              = 1;
     constexpr int O_CREAT               = 0100;
     constexpr int O_NONBLOCK            = 00004000;
+    constexpr int AT_EMPTY_PATH         = 0x1000;
+    constexpr int AT_SYMLINK_NOFOLLOW   = 0x100;
+    constexpr unsigned NO_CHANGE        = 0xFFFFFFFFU;
 
     // lseek whence
     constexpr int SEEK_SET              = 0;
@@ -153,6 +157,16 @@ static long linux_execve(const char *path, const char *const argv[],
                          0, 0, 0, __NR_execve);
 }
 
+static long linux_fchownat(int dirfd, const char *path, unsigned uid,
+                           unsigned gid, int flags) {
+    return linux_syscall(static_cast<size_t>(dirfd),
+                         reinterpret_cast<size_t>(path),
+                         static_cast<size_t>(uid),
+                         static_cast<size_t>(gid),
+                         static_cast<size_t>(flags),
+                         0, __NR_fchownat);
+}
+
 static void test_pipe_basic() {
     puts("Test 9.1: pipe basic read/write...\n");
     int fds[2] = {-1, -1};
@@ -262,6 +276,49 @@ static void test_pipe_fork() {
         test_fail("pipe fork communication", "unexpected child message");
     }
     linux_close(fds[0]);
+}
+
+static void test_fchownat_basic() {
+    puts("Test 9.5: fchownat basic paths...\n");
+
+    int fd = static_cast<int>(linux_openat(AT_FDCWD, "tmp/linux-fchownat.txt",
+                                           O_WRONLY | O_CREAT, 0));
+    if (fd < 0) {
+        test_fail("fchownat setup create", "openat failed");
+        return;
+    }
+    linux_close(fd);
+
+    long chown_ret = linux_fchownat(AT_FDCWD, "tmp/linux-fchownat.txt", 1000,
+                                    NO_CHANGE, 0);
+    if (chown_ret == 0) {
+        test_pass("fchownat relative path");
+    } else {
+        test_fail("fchownat relative path", "expected success");
+    }
+
+    int empty_fd = static_cast<int>(linux_openat(AT_FDCWD, "tmp", O_RDONLY, 0));
+    if (empty_fd < 0) {
+        test_fail("fchownat empty-path setup", "openat tmp failed");
+        return;
+    }
+
+    long empty_ret =
+        linux_fchownat(empty_fd, "", NO_CHANGE, 1000, AT_EMPTY_PATH);
+    if (empty_ret == 0) {
+        test_pass("fchownat AT_EMPTY_PATH on directory");
+    } else {
+        test_fail("fchownat AT_EMPTY_PATH on directory", "expected success");
+    }
+    linux_close(empty_fd);
+
+    long bad_flag_ret = linux_fchownat(AT_FDCWD, "tmp/linux-fchownat.txt", 0, 0,
+                                       AT_SYMLINK_NOFOLLOW << 8);
+    if (bad_flag_ret == -22) {
+        test_pass("fchownat invalid flags");
+    } else {
+        test_fail("fchownat invalid flags", "expected -EINVAL");
+    }
 }
 
 extern "C" [[noreturn]] void test_linux_main(size_t argc, const char *argv[],
@@ -440,6 +497,7 @@ extern "C" [[noreturn]] void test_linux_main(size_t argc, const char *argv[],
     test_pipe_eof_and_epipe();
     test_pipe_nonblock();
     test_pipe_fork();
+    test_fchownat_basic();
 
     puts("Test 10: execve self...\n");
     const char *exec_argv[] = {"/initrd/test-linux.mod", "after-exec",

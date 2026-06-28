@@ -13,6 +13,7 @@
 
 #include <cstddef>
 
+#include <sustcore/attr.h>
 #include <sustcore/capability.h>
 #include <sustcore/execve.h>
 #include <sustcore/files.h>
@@ -119,6 +120,24 @@ extern "C" SysRet<void> sys_vfs_stat(CapIdx parent_dir_cap, const char *name,
 extern "C" SysRet<void> sys_vfs_lstat(CapIdx parent_dir_cap, const char *name,
                                       NodeMeta *out);
 extern "C" SysRet<void> sys_vfs_fstat(CapIdx file_cap, NodeMeta *out);
+extern "C" SysRet<void> sys_vfs_getattr(CapIdx capidx, AttrSet *out);
+extern "C" SysRet<void> sys_vfs_getattr_at(CapIdx parent_dir_cap,
+                                           const char *name, AttrSet *out,
+                                           uint32_t flags);
+extern "C" SysRet<void> sys_vfs_setattr(CapIdx capidx, const AttrSet *attrs,
+                                        uint32_t mask, uint32_t flags);
+extern "C" SysRet<void> sys_vfs_setattr_at(CapIdx parent_dir_cap,
+                                           const char *name,
+                                           const AttrSet *attrs,
+                                           uint32_t mask, uint32_t flags);
+extern "C" SysRet<void> sys_vfs_chown(CapIdx fd, uint32_t uid, uint32_t gid,
+                                      uint32_t flags);
+extern "C" SysRet<void> sys_vfs_chown_at(CapIdx dirfd, uint32_t uid,
+                                         uint32_t gid, uint32_t flags,
+                                         const char *pathname);
+extern "C" SysRet<void> sys_vfs_fchownat(CapIdx dirfd, uint32_t uid,
+                                         uint32_t gid, uint32_t flags,
+                                         const char *pathname);
 extern "C" SysRet<size_t> sys_vfs_readlink(CapIdx parent_dir_cap, const char *name,
                                            char *buf, size_t bufsiz);
 extern "C" SysRet<size_t> sys_vfs_read(CapIdx file_cap, size_t offset, void *buf,
@@ -129,9 +148,6 @@ extern "C" SysRet<size_t> sys_vfs_size(CapIdx file_cap);
 extern "C" SysRet<size_t> sys_vfs_getdents(CapIdx dir_cap, void *buf, size_t buflen,
                                            size_t offset);
 extern "C" SysRet<void> sys_vfs_sync(CapIdx capidx);
-extern "C" SysRet<void> sys_vfs_fchownat(CapIdx dirfd, uint32_t uid,
-                                         uint32_t gid, uint32_t flags,
-                                         const char *pathname);
 extern "C" SysRet<void> sys_pipe_create(size_t nonblock,
                                         PipeCreateRet *out);
 extern "C" SysRet<size_t> sys_pipe_read(CapIdx read_cap, void *buf,

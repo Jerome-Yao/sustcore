@@ -350,6 +350,48 @@ sys_vfs_readlink:
     li.d $a7, SYS_VFS_READLINK
     do_syscall
 
+    .global sys_vfs_fchownat
+    .type sys_vfs_fchownat, @function
+sys_vfs_fchownat:
+    li.d $a7, SYS_VFS_FCHOWNAT
+    do_syscall
+
+    .global sys_vfs_getattr
+    .type sys_vfs_getattr, @function
+sys_vfs_getattr:
+    li.d $a7, SYS_VFS_GETATTR
+    do_syscall
+
+    .global sys_vfs_getattr_at
+    .type sys_vfs_getattr_at, @function
+sys_vfs_getattr_at:
+    li.d $a7, SYS_VFS_GETATTR_AT
+    do_syscall
+
+    .global sys_vfs_setattr
+    .type sys_vfs_setattr, @function
+sys_vfs_setattr:
+    li.d $a7, SYS_VFS_SETATTR
+    do_syscall
+
+    .global sys_vfs_setattr_at
+    .type sys_vfs_setattr_at, @function
+sys_vfs_setattr_at:
+    li.d $a7, SYS_VFS_SETATTR_AT
+    do_syscall
+
+    .global sys_vfs_chown
+    .type sys_vfs_chown, @function
+sys_vfs_chown:
+    li.d $a7, SYS_VFS_CHOWN
+    do_syscall
+
+    .global sys_vfs_chown_at
+    .type sys_vfs_chown_at, @function
+sys_vfs_chown_at:
+    li.d $a7, SYS_VFS_CHOWN_AT
+    do_syscall
+
     .global sys_mnt_create
     .type sys_mnt_create, @function
 sys_mnt_create:

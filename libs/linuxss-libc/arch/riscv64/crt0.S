@@ -29,7 +29,7 @@ linux_subsystem_entry:
     mv a3, t5
     addi sp, sp, -40
     sd gp, 0(sp)
-    sd t0, 8(sp)
+    sd t6, 8(sp)
     sd t3, 16(sp)
     sd t4, 24(sp)
     sd t5, 32(sp)
@@ -41,15 +41,15 @@ linux_subsystem_entry:
     .option pop
     call linuxss_entry
     ld gp, 0(sp)
-    ld t0, 8(sp)
+    ld t6, 8(sp)
     ld a0, 16(sp)
     ld a1, 24(sp)
     ld a2, 32(sp)
     addi sp, sp, 40
-    jr t0
+    jr t6
 
 .Ldispatch_path:
-    addi sp, sp, -(28 * 8)
+    addi sp, sp, -(29 * 8)
     sd ra, 0(sp)
     sd gp, 8(sp)
     sd tp, 16(sp)
@@ -78,6 +78,7 @@ linux_subsystem_entry:
     sd s9, 200(sp)
     sd s10, 208(sp)
     sd s11, 216(sp)
+    sd t6, 224(sp)
 
     .option push
     .option norelax
@@ -85,12 +86,14 @@ linux_subsystem_entry:
     auipc gp, %pcrel_hi(__global_pointer$)
     addi gp, gp, %pcrel_lo(3b)
     .option pop
-    mv t6, t0
     mv t3, sp
     addi sp, sp, -16
     sd t3, 0(sp)
+    sd t6, 8(sp)
     call linux_dispatch
-    addi sp, sp, 16
+    ld t3, 0(sp)
+    ld t6, 8(sp)
+    mv sp, t3
 
 .Ldispatch_resume:
     ld ra, 0(sp)
@@ -121,5 +124,6 @@ linux_subsystem_entry:
     ld s9, 200(sp)
     ld s10, 208(sp)
     ld s11, 216(sp)
-    addi sp, sp, (28 * 8)
+    ld t6, 224(sp)
+    addi sp, sp, (29 * 8)
     jr t6

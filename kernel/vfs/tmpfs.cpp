@@ -17,6 +17,10 @@
 
 namespace tmpfs {
     namespace {
+        constexpr uint16_t TMPFS_S_IFREG = 0x8000;
+        constexpr uint16_t TMPFS_S_IFDIR = 0x4000;
+        constexpr uint16_t TMPFS_S_IFLNK = 0xA000;
+
         [[nodiscard]]
         Result<void> validate_entry_name(std::string_view name) {
             if (name.empty() || name == "." || name == "..") {
@@ -28,6 +32,46 @@ namespace tmpfs {
                 }
             }
             void_return();
+        }
+
+        [[nodiscard]]
+        uint16_t default_mode(INodeType type) noexcept {
+            switch (type) {
+                case INodeType::DIRECTORY: return TMPFS_S_IFDIR | 0755U;
+                case INodeType::SYMLINK:   return TMPFS_S_IFLNK | 0777U;
+                case INodeType::FILE:
+                default:                   return TMPFS_S_IFREG | 0644U;
+            }
+        }
+
+        void fill_node_attr(const TmpFSNode &node, AttrSet &out) noexcept {
+            out.mode    = default_mode(node.type);
+            out.uid     = 0;
+            out.gid     = 0;
+            out.inode   = node.inode_id;
+            out.atime   = 0;
+            out.mtime   = 0;
+            out.ctime   = 0;
+            out.blksize = 512;
+
+            switch (node.type) {
+                case INodeType::DIRECTORY:
+                    out.size   = 0;
+                    out.nlink  = 2;
+                    out.blocks = 0;
+                    break;
+                case INodeType::SYMLINK:
+                    out.size   = node.symlink_target.size();
+                    out.nlink  = 1;
+                    out.blocks = 0;
+                    break;
+                case INodeType::FILE:
+                default:
+                    out.size   = node.content.size();
+                    out.nlink  = 1;
+                    out.blocks = (out.size + 511) / 512;
+                    break;
+            }
         }
     }  // namespace
 
@@ -73,6 +117,11 @@ namespace tmpfs {
         return _node->content.size();
     }
 
+    Result<void> TmpFSFile::truncate(size_t new_size) {
+        _node->content.resize(new_size, 0);
+        void_return();
+    }
+
     Result<void> TmpFSFile::sync() {
         void_return();
     }
@@ -91,6 +140,17 @@ namespace tmpfs {
 
     FileCachePolicy TmpFSFile::file_cache() const {
         return FileCachePolicy::PERMANENT;
+    }
+
+    Result<void> TmpFSFile::getattr(AttrSet &out) const {
+        fill_node_attr(*_node, out);
+        void_return();
+    }
+
+    Result<void> TmpFSFile::setattr(AttrMask mask, const AttrSet &attrs) {
+        (void)mask;
+        (void)attrs;
+        void_return();
     }
 
     TmpFSDirectory::TmpFSDirectory(TmpFSSuperblock &sb,
@@ -212,6 +272,17 @@ namespace tmpfs {
         return INodeCachePolicy::SHARED;
     }
 
+    Result<void> TmpFSDirectory::getattr(AttrSet &out) const {
+        fill_node_attr(*_node, out);
+        void_return();
+    }
+
+    Result<void> TmpFSDirectory::setattr(AttrMask mask, const AttrSet &attrs) {
+        (void)mask;
+        (void)attrs;
+        void_return();
+    }
+
     TmpFSSuperblock::TmpFSSuperblock(TmpFSDriver &fs, size_t sb_id)
         : _fs(&fs), _sb_id(sb_id), _next_inode(1) {
         _nodes.insert_or_assign(0, TmpFSNode{
@@ -300,6 +371,18 @@ namespace tmpfs {
                 [[nodiscard]]
                 Result<std::string> target() override {
                     return _node->symlink_target;
+                }
+                [[nodiscard]]
+                Result<void> getattr(AttrSet &out) const override {
+                    fill_node_attr(*_node, out);
+                    void_return();
+                }
+                [[nodiscard]]
+                Result<void> setattr(AttrMask mask,
+                                     const AttrSet &attrs) override {
+                    (void)mask;
+                    (void)attrs;
+                    void_return();
                 }
                 [[nodiscard]]
                 IMetadata &metadata() override {

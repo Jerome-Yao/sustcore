@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <sustcore/attr.h>
 #include <sustcore/files.h>
 #include <syscall/uaccess.h>
 #include <vfs/ops.h>
@@ -72,6 +73,24 @@ namespace syscall {
     [[nodiscard]]
     Result<void> vfs_fstat(CapIdx file_cap, UBuffer &&out);
     [[nodiscard]]
+    Result<void> vfs_getattr(CapIdx capidx, UBuffer &&out);
+    [[nodiscard]]
+    Result<void> vfs_getattr_at(CapIdx parent_dir_cap, const UString &relpath,
+                                UBuffer &&out, uint32_t flags);
+    [[nodiscard]]
+    Result<void> vfs_setattr(CapIdx capidx, UBuffer &&attrs, uint32_t mask,
+                             uint32_t flags);
+    [[nodiscard]]
+    Result<void> vfs_setattr_at(CapIdx parent_dir_cap, const UString &relpath,
+                                UBuffer &&attrs, uint32_t mask,
+                                uint32_t flags);
+    [[nodiscard]]
+    Result<void> vfs_chown(CapIdx capidx, uint32_t uid, uint32_t gid,
+                           uint32_t flags);
+    [[nodiscard]]
+    Result<void> vfs_chown_at(CapIdx dirfd, const UString &relpath,
+                              uint32_t uid, uint32_t gid, uint32_t flags);
+    [[nodiscard]]
     Result<size_t> vfs_readlink(CapIdx parent_dir_cap, const UString &relpath,
                                  UBuffer &&buf, size_t bufsiz);
     [[nodiscard]]
@@ -88,8 +107,4 @@ namespace syscall {
     Result<CapIdx> mnt_root(CapIdx mntcap);
     [[nodiscard]]
     MountStatus mnt_state(CapIdx mntcap);
-    [[nodiscard]]
-    Result<void> vfs_fchownat(CapIdx dirfd, const UString &relpath,
-                              uint32_t uid, uint32_t gid, uint32_t flags);
-
 }  // namespace syscall

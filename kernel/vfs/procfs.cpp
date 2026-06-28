@@ -27,6 +27,7 @@
 
 namespace procfs {
     namespace {
+        constexpr uint16_t S_IFREG = 0x8000;
         constexpr uint16_t S_IFDIR = 0x4000;
         constexpr uint16_t S_IFLNK = 0xA000;
         bool _initialized = false;
@@ -297,7 +298,7 @@ namespace procfs {
         : _sb(&sb), _node(&node) {}
 
     Result<void> MeminfoFile::getattr(AttrSet &out) const {
-        out.mode    = 0444;
+        out.mode    = S_IFREG | 0444;
         out.uid     = 0;
         out.gid     = 0;
         auto size_res = const_cast<MeminfoFile *>(this)->size();
@@ -335,7 +336,7 @@ namespace procfs {
     }
 
     Result<void> ProcFileNode::getattr(AttrSet &out) const {
-        out.mode    = 0444;
+        out.mode    = S_IFREG | 0444;
         out.uid     = 0;
         out.gid     = 0;
         auto size_res = const_cast<ProcFileNode *>(this)->size();

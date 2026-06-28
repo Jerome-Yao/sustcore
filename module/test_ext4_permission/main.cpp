@@ -16,12 +16,6 @@
 #include <cstdio>
 #include <cstring>
 
-// Forward-declare sys_vfs_fchownat — present in libs/linuxss-libc/syscall.h
-// but not yet mirrored in include/kmod/syscall.h
-extern "C" SysRet<void> sys_vfs_fchownat(CapIdx dirfd, uint32_t uid,
-                                         uint32_t gid, uint32_t flags,
-                                         const char *pathname);
-
 namespace {
     constexpr const char *EXT4_PATH      = "/test_img";
     constexpr const char *EXT4_TEST_DIR  = "test_img";
@@ -31,6 +25,7 @@ namespace {
     constexpr const char *SYMLINK_TARGET = ".tst_perm";
     constexpr const char *NONEXISTENT    = ".tst_nonexistent_12345";
     constexpr uint32_t    AT_SYMLINK_NOFOLLOW = 0x100;
+    constexpr uint32_t    AT_EMPTY_PATH       = 0x1000;
     constexpr uint32_t    NO_CHANGE           = 0xFFFFFFFF;
 
     CapIdx g_ext4_cap = cap::null;
@@ -148,6 +143,20 @@ namespace {
         return stat_res.has_value() && meta.type == EntryType::DIR;
     }
 
+    [[nodiscard]]
+    bool verify_file_owner(uint32_t uid, uint32_t gid) {
+        int fd = kmod_fopen("/test_img/.tst_perm", "r");
+        if (fd < 0) {
+            return false;
+        }
+
+        CapIdx file_cap = kmod_getcap(fd);
+        AttrSet attrs{};
+        auto getattr_res = sys_vfs_getattr(file_cap, &attrs).to_result();
+        kmod_fclose(fd);
+        return getattr_res.has_value() && attrs.uid == uid && attrs.gid == gid;
+    }
+
     /**
      * @brief test_setattr_uid — fchownat with uid=1000, gid unchanged.
      *        Verifies the syscall succeeds and the file remains intact.
@@ -171,7 +180,10 @@ namespace {
         }
         TEST_CHECK(intact,
                    "setattr-uid: file still accessible after chown");
-        return res.has_value() && intact;
+        bool owner_ok = verify_file_owner(1000, 0);
+        TEST_CHECK(owner_ok,
+                   "setattr-uid: getattr reflects uid=1000 gid=0");
+        return res.has_value() && intact && owner_ok;
     }
 
     /**
@@ -195,7 +207,10 @@ namespace {
         }
         TEST_CHECK(intact,
                    "setattr-gid: file still accessible after chown");
-        return res.has_value() && intact;
+        bool owner_ok = verify_file_owner(1000, 500);
+        TEST_CHECK(owner_ok,
+                   "setattr-gid: getattr reflects uid=1000 gid=500");
+        return res.has_value() && intact && owner_ok;
     }
 
     /**
@@ -219,7 +234,10 @@ namespace {
         }
         TEST_CHECK(intact,
                    "fchownat-basic: file still accessible after chown");
-        return res.has_value() && intact;
+        bool owner_ok = verify_file_owner(2000, 2000);
+        TEST_CHECK(owner_ok,
+                   "fchownat-basic: getattr reflects uid=2000 gid=2000");
+        return res.has_value() && intact && owner_ok;
     }
 
     /**
@@ -255,6 +273,29 @@ namespace {
                    "fchownat-nofollow: lstat shows symlink intact");
 
         return sym_res.has_value() && chown_res.has_value() && link_ok;
+    }
+
+    [[nodiscard]]
+    bool test_chown_empty_path() {
+        int fd = kmod_opendir("/test_img");
+        TEST_CHECK(fd >= 0, "chown-empty-path: open dir fd");
+        if (fd < 0) {
+            return false;
+        }
+
+        CapIdx dir_cap = kmod_getcap(fd);
+        auto chown_res = sys_vfs_chown(dir_cap, 42, 84, AT_EMPTY_PATH).to_result();
+        TEST_CHECK(chown_res.has_value(),
+                   "chown-empty-path: sys_vfs_chown on fd succeeded");
+
+        AttrSet attrs{};
+        auto getattr_res = sys_vfs_getattr(dir_cap, &attrs).to_result();
+        bool owner_ok = getattr_res.has_value() &&
+                        attrs.uid == 42 && attrs.gid == 84;
+        TEST_CHECK(owner_ok,
+                   "chown-empty-path: getattr on fd reflects new owner");
+        kmod_fclose(fd);
+        return chown_res.has_value() && owner_ok;
     }
 
     /**
@@ -317,6 +358,7 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
     ok &= test_setattr_gid();
     ok &= test_fchownat_basic();
     ok &= test_fchownat_nofollow();
+    ok &= test_chown_empty_path();
     ok &= test_fchownat_enoent();
 
     // ── Cleanup ───────────────────────────────────────────────────

@@ -21,6 +21,7 @@ linux_clone_fork_return_trampoline:
     ld.d $s6, $t2, 80
     ld.d $s7, $t2, 88
     ld.d $s8, $t2, 96
+    ld.d $t6, $t2, 200
 
     beqz $t1, 1f
     srli.d $t3, $t1, 4
@@ -31,4 +32,4 @@ linux_clone_fork_return_trampoline:
     addi.d $sp, $t2, (13 * 8)
 2:
     move $a0, $zero
-    jr $t0
+    jr $t6

@@ -76,11 +76,11 @@ namespace rv64 {
 
         [[nodiscard]]
         constexpr umb_t &linux_ra() {
-            return t0;
+            return t6;
         }
         [[nodiscard]]
         constexpr const umb_t &linux_ra() const {
-            return t0;
+            return t6;
         }
 
         [[nodiscard]]

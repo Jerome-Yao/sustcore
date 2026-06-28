@@ -15,12 +15,14 @@
 #include <logger.h>
 #include <pipe.h>
 #include <prog.h>
+#include <sustcore/attr.h>
 #include <sustcore/bootstrap.h>
 #include <sustcore/capability.h>
 #include <sus/path.h>
 #include <sustcore/files.h>
 #include <syscall.h>
 
+#include <cstdint>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -126,6 +128,7 @@ namespace {
     constexpr uint16_t S_IFREG      = 0x8000U;
     constexpr uint16_t S_IFDIR      = 0x4000U;
     constexpr uint16_t S_IFLNK      = 0xA000U;
+    constexpr uint16_t S_IFMT       = 0xF000U;
     // 占位符, 以后再引入真实时间
     constexpr int64_t FIXED_TIME    = 0x114514;
 
@@ -558,6 +561,28 @@ namespace {
         ts.__reserved = 0;
     }
 
+    void fill_time_from_attr(uint64_t sec, linux_statx_timestamp &ts) {
+        ts.tv_sec     = static_cast<int64_t>(sec);
+        ts.tv_nsec    = 0;
+        ts.__reserved = 0;
+    }
+
+    [[nodiscard]]
+    uint16_t attr_mode_to_linux_mode(const AttrSet &attrs, EntryType fallback) {
+        uint16_t mode = static_cast<uint16_t>(attrs.mode & 0xFFFFU);
+        uint16_t type = static_cast<uint16_t>(mode & 0xF000U);
+        if (type != 0) {
+            return mode;
+        }
+
+        switch (fallback) {
+            case EntryType::DIR:     return static_cast<uint16_t>(S_IFDIR | mode);
+            case EntryType::SYMLINK: return static_cast<uint16_t>(S_IFLNK | mode);
+            case EntryType::FILE:
+            default:                 return static_cast<uint16_t>(S_IFREG | mode);
+        }
+    }
+
     void fill_statx_from_node_meta(const NodeMeta &meta, linux_statx &stx) {
         memset(&stx, 0, sizeof(stx));
         stx.stx_mask = STATX_TYPE | STATX_MODE | STATX_NLINK | STATX_UID |
@@ -588,6 +613,42 @@ namespace {
         kst.st_ctime_sec  = FIXED_TIME;
     }
 
+    void fill_statx_from_attrs(const AttrSet &attrs, linux_statx &stx,
+                               EntryType fallback = EntryType::FILE) {
+        memset(&stx, 0, sizeof(stx));
+        stx.stx_mask = STATX_TYPE | STATX_MODE | STATX_NLINK | STATX_UID |
+                       STATX_GID | STATX_ATIME | STATX_INO | STATX_SIZE |
+                       STATX_BLOCKS | STATX_MTIME | STATX_CTIME;
+        stx.stx_blksize = attrs.blksize == 0 ? 4096 : attrs.blksize;
+        stx.stx_nlink   = attrs.nlink;
+        stx.stx_uid     = attrs.uid;
+        stx.stx_gid     = attrs.gid;
+        stx.stx_mode    = attr_mode_to_linux_mode(attrs, fallback);
+        stx.stx_ino     = attrs.inode;
+        stx.stx_size    = attrs.size;
+        stx.stx_blocks  = attrs.blocks;
+        fill_time_from_attr(attrs.atime, stx.stx_atime);
+        fill_fixed_time(stx.stx_btime);
+        fill_time_from_attr(attrs.ctime, stx.stx_ctime);
+        fill_time_from_attr(attrs.mtime, stx.stx_mtime);
+    }
+
+    void fill_kstat_from_attrs(const AttrSet &attrs, linux_kstat &kst,
+                               EntryType fallback = EntryType::FILE) {
+        memset(&kst, 0, sizeof(kst));
+        kst.st_ino        = attrs.inode;
+        kst.st_mode       = attr_mode_to_linux_mode(attrs, fallback);
+        kst.st_nlink      = attrs.nlink;
+        kst.st_uid        = attrs.uid;
+        kst.st_gid        = attrs.gid;
+        kst.st_size       = static_cast<long>(attrs.size);
+        kst.st_blksize    = attrs.blksize == 0 ? 4096U : attrs.blksize;
+        kst.st_blocks     = attrs.blocks;
+        kst.st_atime_sec  = static_cast<long>(attrs.atime);
+        kst.st_mtime_sec  = static_cast<long>(attrs.mtime);
+        kst.st_ctime_sec  = static_cast<long>(attrs.ctime);
+    }
+
     [[nodiscard]]
     size_t stat_path_at(int dirfd, const char *pathname, bool nofollow,
                         NodeMeta &meta) {
@@ -606,6 +667,44 @@ namespace {
                 .to_result();
         if (!stat_res.has_value()) {
             return stat_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT : -EIO;
+        }
+        return 0;
+    }
+
+    [[nodiscard]]
+    size_t fchownat_empty_path(int dirfd, uint32_t uid, uint32_t gid,
+                               uint32_t flags) {
+        CapIdx cap = fd_to_cap(dirfd);
+        if (cap == cap::error || cap == cap::null) {
+            return -EBADF;
+        }
+        auto chown_res = sys_vfs_chown(cap, uid, gid, flags).to_result();
+        if (!chown_res.has_value()) {
+            return chown_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT : -EIO;
+        }
+        return 0;
+    }
+
+    [[nodiscard]]
+    size_t getattr_path_at(int dirfd, const char *pathname, bool nofollow,
+                           AttrSet &attrs, EntryType fallback = EntryType::FILE) {
+        auto resolved = resolve_path_at(dirfd, pathname);
+        if (resolved.parent_cap == cap::null || resolved.parent_cap == cap::error ||
+            resolved.relative_path.empty())
+        {
+            return -ENOENT;
+        }
+
+        auto getattr_res =
+            sys_vfs_getattr_at(resolved.parent_cap, resolved.relative_path.c_str(),
+                               &attrs, nofollow ? AT_SYMLINK_NOFOLLOW : 0)
+                .to_result();
+        if (!getattr_res.has_value()) {
+            return getattr_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT : -EIO;
+        }
+
+        if ((attrs.mode & 0xF000U) == 0) {
+            attrs.mode = attr_mode_to_linux_mode(attrs, fallback);
         }
         return 0;
     }
@@ -1450,13 +1549,13 @@ size_t linux_sys_statx(int dirfd, const char *pathname, int flags,
         return -EBADF;
     }
 
-    NodeMeta meta{};
-    if (!sys_vfs_fstat(cap, &meta)) {
+    AttrSet attrs{};
+    if (!sys_vfs_getattr(cap, &attrs)) {
         return -EIO;
     }
 
     linux_statx stx{};
-    fill_statx_from_node_meta(meta, stx);
+    fill_statx_from_attrs(attrs, stx);
     memcpy(statxbuf, &stx, sizeof(stx));
     return 0;
 }
@@ -1471,14 +1570,102 @@ size_t linux_sys_fstat(int fd, void *statbuf) {
         return -EBADF;
     }
 
-    NodeMeta meta{};
-    if (!sys_vfs_fstat(cap, &meta)) {
+    AttrSet attrs{};
+    if (!sys_vfs_getattr(cap, &attrs)) {
         return -EIO;
     }
 
     linux_kstat kst{};
-    fill_kstat_from_node_meta(meta, kst);
+    fill_kstat_from_attrs(attrs, kst);
     memcpy(statbuf, &kst, sizeof(kst));
+    return 0;
+}
+
+size_t linux_sys_ftruncate(int fd, size_t length) {
+    if (static_cast<long>(length) < 0) {
+        return -EINVAL;
+    }
+
+    CapIdx cap = fd_to_cap(fd);
+    if (cap == cap::error || cap == cap::null) {
+        return -EBADF;
+    }
+
+    auto truncate_res = sys_vfs_truncate(cap, length).to_result();
+    if (!truncate_res.has_value()) {
+        return truncate_res.error() == ErrCode::TYPE_NOT_MATCHED ? -EINVAL
+                                                                 : -EIO;
+    }
+    return 0;
+}
+
+size_t linux_sys_fchmodat(int dirfd, const char *pathname, uint32_t mode) {
+    if (pathname == nullptr) {
+        return -EFAULT;
+    }
+
+    auto resolved = resolve_path_at(dirfd, pathname);
+    if (resolved.parent_cap == cap::null || resolved.parent_cap == cap::error ||
+        resolved.relative_path.empty())
+    {
+        return -ENOENT;
+    }
+
+    AttrSet attrs{};
+    auto getattr_res =
+        sys_vfs_getattr_at(resolved.parent_cap, resolved.relative_path.c_str(),
+                           &attrs, 0)
+            .to_result();
+    if (!getattr_res.has_value()) {
+        return getattr_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT : -EIO;
+    }
+
+    attrs.mode =
+        static_cast<uint32_t>((attrs.mode & S_IFMT) | (mode & ~S_IFMT));
+    auto setattr_res =
+        sys_vfs_setattr_at(resolved.parent_cap, resolved.relative_path.c_str(),
+                           &attrs, static_cast<uint32_t>(AttrMask::MODE),
+                           0)
+            .to_result();
+    if (!setattr_res.has_value()) {
+        return setattr_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT : -EIO;
+    }
+    return 0;
+}
+
+size_t linux_sys_fchownat(int dirfd, const char *pathname, uint32_t uid,
+                          uint32_t gid, int flags) {
+    constexpr int SUPPORTED_FLAGS = AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH;
+
+    if (pathname == nullptr) {
+        return -EINVAL;
+    }
+    if ((flags & ~SUPPORTED_FLAGS) != 0) {
+        return -EINVAL;
+    }
+
+    if (pathname[0] == '\0') {
+        if ((flags & AT_EMPTY_PATH) == 0) {
+            return -ENOENT;
+        }
+        return fchownat_empty_path(dirfd, uid, gid, static_cast<uint32_t>(flags));
+    }
+
+    auto resolved = resolve_path_at(dirfd, pathname);
+    if (resolved.parent_cap == cap::null || resolved.parent_cap == cap::error ||
+        resolved.relative_path.empty())
+    {
+        return -ENOENT;
+    }
+
+    auto chown_res =
+        sys_vfs_chown_at(resolved.parent_cap, uid, gid,
+                         static_cast<uint32_t>(flags),
+                         resolved.relative_path.c_str())
+            .to_result();
+    if (!chown_res.has_value()) {
+        return chown_res.error() == ErrCode::ENTRY_NOT_FOUND ? -ENOENT : -EIO;
+    }
     return 0;
 }
 
@@ -1493,7 +1680,7 @@ size_t linux_sys_newfstatat(int dirfd, const char *pathname, void *statbuf,
         return -EINVAL;
     }
 
-    NodeMeta meta{};
+    AttrSet attrs{};
     if (pathname[0] == '\0') {
         if ((flags & AT_EMPTY_PATH) == 0) {
             return -ENOENT;
@@ -1503,20 +1690,20 @@ size_t linux_sys_newfstatat(int dirfd, const char *pathname, void *statbuf,
         if (cap == cap::error || cap == cap::null) {
             return -EBADF;
         }
-        if (!sys_vfs_fstat(cap, &meta)) {
+        if (!sys_vfs_getattr(cap, &attrs)) {
             return -EIO;
         }
     } else {
-        size_t stat_ret =
-            stat_path_at(dirfd, pathname, (flags & AT_SYMLINK_NOFOLLOW) != 0,
-                         meta);
+        size_t stat_ret = getattr_path_at(dirfd, pathname,
+                                          (flags & AT_SYMLINK_NOFOLLOW) != 0,
+                                          attrs);
         if (static_cast<long>(stat_ret) < 0) {
             return stat_ret;
         }
     }
 
     linux_kstat kst{};
-    fill_kstat_from_node_meta(meta, kst);
+    fill_kstat_from_attrs(attrs, kst);
     memcpy(statbuf, &kst, sizeof(kst));
     return 0;
 }

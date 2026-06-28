@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <sustcore/attr.h>
 #include <sustcore/bootstrap.h>
 #include <sustcore/capability.h>
 #include <sustcore/execve.h>
@@ -107,8 +108,22 @@ SysRet<void> sys_vfs_link(CapIdx parent_dir_cap, const char *name, CapIdx target
 SysRet<void> sys_vfs_stat(CapIdx parent_dir_cap, const char *name, NodeMeta *out);
 SysRet<void> sys_vfs_lstat(CapIdx parent_dir_cap, const char *name, NodeMeta *out);
 SysRet<void> sys_vfs_fstat(CapIdx file_cap, NodeMeta *out);
+SysRet<void> sys_vfs_getattr(CapIdx capidx, AttrSet *out);
+SysRet<void> sys_vfs_getattr_at(CapIdx parent_dir_cap, const char *name,
+                                AttrSet *out, uint32_t flags);
+SysRet<void> sys_vfs_setattr(CapIdx capidx, const AttrSet *attrs,
+                             uint32_t mask, uint32_t flags);
+SysRet<void> sys_vfs_setattr_at(CapIdx parent_dir_cap, const char *name,
+                                const AttrSet *attrs, uint32_t mask,
+                                uint32_t flags);
+SysRet<void> sys_vfs_chown(CapIdx fd, uint32_t uid, uint32_t gid,
+                           uint32_t flags);
+SysRet<void> sys_vfs_chown_at(CapIdx dirfd, uint32_t uid, uint32_t gid,
+                              uint32_t flags, const char *pathname);
 SysRet<size_t> sys_vfs_readlink(CapIdx parent_dir_cap, const char *name, char *buf,
                                 size_t bufsiz);
+SysRet<void> sys_vfs_fchownat(CapIdx dirfd, uint32_t uid, uint32_t gid,
+                              uint32_t flags, const char *pathname);
 SysRet<CapIdx> sys_mnt_create(CapIdx devfile_cap, const char *fs_name,
                               uint64_t superflags, const char *options);
 SysRet<void> sys_mnt_mount(CapIdx mntcap, CapIdx parent_dir_cap, const char *mountpoint,

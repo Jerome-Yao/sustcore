@@ -552,9 +552,24 @@ public:
     Result<void> lstat(cap::Capability &parent_dir_cap, const char *relpath,
                        NodeMeta &out) const;
     [[nodiscard]]
-    Result<void> setattr(cap::Capability &parent_dir_cap, const char *relpath,
-                         AttrMask mask, const AttrSet &attrs,
-                         uint32_t flags) const;
+    Result<void> getattr(cap::Capability &cap, AttrSet &out) const;
+    [[nodiscard]]
+    Result<void> getattr_at(cap::Capability &parent_dir_cap,
+                            const char *relpath, AttrSet &out,
+                            uint32_t flags) const;
+    [[nodiscard]]
+    Result<void> setattr(cap::Capability &cap, AttrMask mask,
+                         const AttrSet &attrs) const;
+    [[nodiscard]]
+    Result<void> setattr_at(cap::Capability &parent_dir_cap,
+                            const char *relpath, AttrMask mask,
+                            const AttrSet &attrs, uint32_t flags) const;
+    [[nodiscard]]
+    Result<void> chown(cap::Capability &cap, uint32_t uid, uint32_t gid,
+                       uint32_t flags) const;
+    [[nodiscard]]
+    Result<void> chown_at(cap::Capability &parent_dir_cap, const char *relpath,
+                          uint32_t uid, uint32_t gid, uint32_t flags) const;
     [[nodiscard]]
     Result<size_t> readlink(cap::Capability &parent_dir_cap, const char *relpath,
                             char *buf, size_t bufsiz) const;

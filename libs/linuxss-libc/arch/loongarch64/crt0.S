@@ -22,20 +22,20 @@ linux_subsystem_entry:
     move $a2, $t4
     move $a3, $t5
     addi.d $sp, $sp, -32
-    st.d $t0, $sp, 0
+    st.d $t6, $sp, 0
     st.d $t3, $sp, 8
     st.d $t4, $sp, 16
     st.d $t5, $sp, 24
     bl linuxss_entry
-    ld.d $t0, $sp, 0
+    ld.d $t6, $sp, 0
     ld.d $a0, $sp, 8
     ld.d $a1, $sp, 16
     ld.d $a2, $sp, 24
     addi.d $sp, $sp, 32
-    jr $t0
+    jr $t6
 
 .Ldispatch_path:
-    addi.d $sp, $sp, -(25 * 8)
+    addi.d $sp, $sp, -(26 * 8)
     st.d $ra, $sp, 0
     st.d $tp, $sp, 8
     st.d $t0, $sp, 16
@@ -61,13 +61,16 @@ linux_subsystem_entry:
     st.d $s6, $sp, 176
     st.d $s7, $sp, 184
     st.d $s8, $sp, 192
+    st.d $t6, $sp, 200
 
-    move $t6, $t0
     move $t3, $sp
     addi.d $sp, $sp, -16
     st.d $t3, $sp, 0
+    st.d $t6, $sp, 8
     bl linux_dispatch
-    addi.d $sp, $sp, 16
+    ld.d $t3, $sp, 0
+    ld.d $t6, $sp, 8
+    move $sp, $t3
 
 .Ldispatch_resume:
 
@@ -96,5 +99,6 @@ linux_subsystem_entry:
     ld.d $s6, $sp, 176
     ld.d $s7, $sp, 184
     ld.d $s8, $sp, 192
-    addi.d $sp, $sp, (25 * 8)
+    ld.d $t6, $sp, 200
+    addi.d $sp, $sp, (26 * 8)
     jr $t6

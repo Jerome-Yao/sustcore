@@ -409,6 +409,55 @@ sys_vfs_readlink:
     ecall
     ret
 
+    .global sys_vfs_fchownat
+    .type sys_vfs_fchownat, @function
+sys_vfs_fchownat:
+    li a7, SYS_VFS_FCHOWNAT
+    ecall
+    ret
+
+    .global sys_vfs_getattr
+    .type sys_vfs_getattr, @function
+sys_vfs_getattr:
+    li a7, SYS_VFS_GETATTR
+    ecall
+    ret
+
+    .global sys_vfs_getattr_at
+    .type sys_vfs_getattr_at, @function
+sys_vfs_getattr_at:
+    li a7, SYS_VFS_GETATTR_AT
+    ecall
+    ret
+
+    .global sys_vfs_setattr
+    .type sys_vfs_setattr, @function
+sys_vfs_setattr:
+    li a7, SYS_VFS_SETATTR
+    ecall
+    ret
+
+    .global sys_vfs_setattr_at
+    .type sys_vfs_setattr_at, @function
+sys_vfs_setattr_at:
+    li a7, SYS_VFS_SETATTR_AT
+    ecall
+    ret
+
+    .global sys_vfs_chown
+    .type sys_vfs_chown, @function
+sys_vfs_chown:
+    li a7, SYS_VFS_CHOWN
+    ecall
+    ret
+
+    .global sys_vfs_chown_at
+    .type sys_vfs_chown_at, @function
+sys_vfs_chown_at:
+    li a7, SYS_VFS_CHOWN_AT
+    ecall
+    ret
+
     .global sys_mnt_create
     .type sys_mnt_create, @function
 sys_mnt_create:

@@ -2415,9 +2415,53 @@ Result<void> VFS::fstat(cap::Capability &cap, NodeMeta &out) const {
     unexpect_return(ErrCode::TYPE_NOT_MATCHED);
 }
 
-Result<void> VFS::setattr(cap::Capability &parent_dir_cap,
-                         const char *relpath, AttrMask mask,
-                         const AttrSet &attrs, uint32_t flags) const {
+Result<void> VFS::getattr(cap::Capability &cap, AttrSet &out) const {
+    if (auto *vfile = cap.payload_as<VFile>(); vfile != nullptr) {
+        return vfile->vinode()->inode()->getattr(out);
+    }
+    if (auto *vdir = cap.payload_as<VDirectory>(); vdir != nullptr) {
+        return vdir->vinode()->inode()->getattr(out);
+    }
+    unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+}
+
+Result<void> VFS::getattr_at(cap::Capability &parent_dir_cap,
+                             const char *relpath, AttrSet &out,
+                             uint32_t flags) const {
+    constexpr uint32_t AT_SYMLINK_NOFOLLOW = 0x100;
+    auto *parent = parent_dir_cap.payload_as<VDirectory>();
+    if (parent == nullptr) {
+        unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+    }
+    auto global_res = _global_target_path(*parent, relpath);
+    propagate(global_res);
+    util::Path mount_path;
+    if (flags & AT_SYMLINK_NOFOLLOW) {
+        auto vnode_res = _resolve_inode_no_follow(global_res.value().second,
+                                                  mount_path);
+        propagate(vnode_res);
+        return vnode_res.value()->inode()->getattr(out);
+    } else {
+        auto vnode_res = _resolve_inode(global_res.value().second, mount_path);
+        propagate(vnode_res);
+        return vnode_res.value()->inode()->getattr(out);
+    }
+}
+
+Result<void> VFS::setattr(cap::Capability &cap, AttrMask mask,
+                          const AttrSet &attrs) const {
+    if (auto *vfile = cap.payload_as<VFile>(); vfile != nullptr) {
+        return vfile->vinode()->inode()->setattr(mask, attrs);
+    }
+    if (auto *vdir = cap.payload_as<VDirectory>(); vdir != nullptr) {
+        return vdir->vinode()->inode()->setattr(mask, attrs);
+    }
+    unexpect_return(ErrCode::TYPE_NOT_MATCHED);
+}
+
+Result<void> VFS::setattr_at(cap::Capability &parent_dir_cap,
+                             const char *relpath, AttrMask mask,
+                             const AttrSet &attrs, uint32_t flags) const {
     constexpr uint32_t AT_SYMLINK_NOFOLLOW = 0x100;
     auto *parent = parent_dir_cap.payload_as<VDirectory>();
     if (parent == nullptr) {
@@ -2436,6 +2480,24 @@ Result<void> VFS::setattr(cap::Capability &parent_dir_cap,
         propagate(vnode_res);
         return vnode_res.value()->inode()->setattr(mask, attrs);
     }
+}
+
+Result<void> VFS::chown(cap::Capability &cap, uint32_t uid, uint32_t gid,
+                        uint32_t flags) const {
+    (void)flags;
+    AttrSet attrs{};
+    attrs.uid = uid;
+    attrs.gid = gid;
+    return setattr(cap, AttrMask(attr::OWNER), attrs);
+}
+
+Result<void> VFS::chown_at(cap::Capability &parent_dir_cap, const char *relpath,
+                           uint32_t uid, uint32_t gid, uint32_t flags) const {
+    AttrSet attrs{};
+    attrs.uid = uid;
+    attrs.gid = gid;
+    return setattr_at(parent_dir_cap, relpath, AttrMask(attr::OWNER), attrs,
+                      flags);
 }
 
 Result<size_t> VFS::readlink(cap::Capability &parent_dir_cap,
