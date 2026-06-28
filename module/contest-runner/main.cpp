@@ -516,7 +516,7 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
 
     contest_runner::TestRunStats total{};
     bool ok  = true;
-    // ok      &= contest_runner::run_glibc(root_dir_cap, total);
+    ok      &= contest_runner::run_glibc(root_dir_cap, total);
     ok      &= contest_runner::run_musl(root_dir_cap, total);
 
     printf("contest-runner: all done total=%lu passed=%lu failed=%lu\n",
