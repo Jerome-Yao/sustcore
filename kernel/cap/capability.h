@@ -13,6 +13,7 @@
 
 #include <fwd.h>
 #include <cap/permission.h>
+#include <logger.h>
 #include <sus/nonnull.h>
 #include <sus/owner.h>
 #include <sus/raii.h>
@@ -135,6 +136,9 @@ namespace cap {
         [[nodiscard]]
         Result<void> downgrade(b64 new_perm) {
             if (!perm::imply(_perm, new_perm)) {
+                loggers::CAPABILITY::ERROR("尝试降级权限失败: 当前权限=0x%016X, 目标权限=0x%016X",
+                                         _perm,
+                                         new_perm);
                 unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
             }
             _perm = new_perm;

@@ -43,6 +43,12 @@ namespace {
     constexpr uint8_t DT_DIR        = 4;
     constexpr uint8_t DT_LNK        = 10;
     constexpr uint8_t DT_UNKNOWN    = 0;
+    constexpr int LINUX_IOV_MAX     = 1024;
+
+    struct linux_iovec {
+        void *iov_base;
+        size_t iov_len;
+    };
 
     struct linux_dirent64 {
         uint64_t d_ino;
@@ -819,6 +825,27 @@ size_t linux_open_fd(const char *pathname, int fd, int flags) {
     return bind_open_result(fd, file_cap, 0, nullptr, false);
 }
 
+size_t linux_bind_cap_fd(CapIdx cap, int fd, bool append) {
+    if (cap == cap::null || cap == cap::error) {
+        return -EBADF;
+    }
+
+    size_t offset = 0;
+    if (append) {
+        auto size_res = sys_vfs_size(cap).to_result();
+        if (!size_res.has_value()) {
+            return -EIO;
+        }
+        offset = size_res.value();
+    }
+
+    auto clone_res = sys_cap_clone(cap).to_result();
+    if (!clone_res.has_value()) {
+        return -EBADF;
+    }
+    return bind_open_result(fd, clone_res.value(), offset, nullptr, false);
+}
+
 size_t linux_opendir_fd(const char *pathname, int fd) {
     auto resolved = resolve_path_at(AT_FDCWD, pathname);
     if (resolved.parent_cap == cap::null || resolved.relative_path.empty()) {
@@ -844,7 +871,8 @@ size_t linux_sys_write(size_t fd, const void *buf, size_t len) {
     }
 
     CapIdx file_cap = fd_to_cap(static_cast<int>(fd));
-    if (file_cap == cap::error) {
+    if (! cap::valid(file_cap)) {
+        printf("linux_sys_write: invalid fd %u, parsed to invalid cap idx\n", fd);
         return -EBADF;
     }
 
@@ -859,6 +887,37 @@ size_t linux_sys_write(size_t fd, const void *buf, size_t len) {
 
     set_fd_offset(static_cast<int>(fd), offset + written);
     return written;
+}
+
+size_t linux_sys_writev(int fd, const void *iov, int iovcnt) {
+    if (iovcnt < 0 || iovcnt > LINUX_IOV_MAX) {
+        return -EINVAL;
+    }
+    if (iovcnt == 0) {
+        return 0;
+    }
+    if (iov == nullptr) {
+        return -EFAULT;
+    }
+
+    const auto *iovecs = static_cast<const linux_iovec *>(iov);
+    size_t total       = 0;
+    for (int i = 0; i < iovcnt; ++i) {
+        const auto &entry = iovecs[i];
+        if (entry.iov_base == nullptr && entry.iov_len != 0) {
+            return total != 0 ? total : static_cast<size_t>(-EFAULT);
+        }
+        size_t wrote = linux_sys_write(
+            static_cast<size_t>(fd), entry.iov_base, entry.iov_len);
+        if (static_cast<long>(wrote) < 0) {
+            return total != 0 ? total : wrote;
+        }
+        total += wrote;
+        if (wrote != entry.iov_len) {
+            break;
+        }
+    }
+    return total;
 }
 
 size_t linux_sys_read(int fd, void *buf, size_t count) {
@@ -886,6 +945,36 @@ size_t linux_sys_read(int fd, void *buf, size_t count) {
 
     set_fd_offset(fd, offset + nread);
     return nread;
+}
+
+size_t linux_sys_readv(int fd, const void *iov, int iovcnt) {
+    if (iovcnt < 0 || iovcnt > LINUX_IOV_MAX) {
+        return -EINVAL;
+    }
+    if (iovcnt == 0) {
+        return 0;
+    }
+    if (iov == nullptr) {
+        return -EFAULT;
+    }
+
+    const auto *iovecs = static_cast<const linux_iovec *>(iov);
+    size_t total       = 0;
+    for (int i = 0; i < iovcnt; ++i) {
+        const auto &entry = iovecs[i];
+        if (entry.iov_base == nullptr && entry.iov_len != 0) {
+            return total != 0 ? total : static_cast<size_t>(-EFAULT);
+        }
+        size_t nread = linux_sys_read(fd, entry.iov_base, entry.iov_len);
+        if (static_cast<long>(nread) < 0) {
+            return total != 0 ? total : nread;
+        }
+        total += nread;
+        if (nread != entry.iov_len) {
+            break;
+        }
+    }
+    return total;
 }
 
 size_t linux_sys_close(int fd) {

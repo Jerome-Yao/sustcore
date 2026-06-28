@@ -84,11 +84,6 @@ namespace {
 
     constexpr uint64_t MEMORY_GROWTH_FIXED = 0;
 
-    struct linux_iovec {
-        const void *iov_base;
-        size_t iov_len;
-    };
-
     [[nodiscard]]
     size_t page_align_up_user(size_t value) noexcept {
         return (value + PAGESIZE - 1) & ~(PAGESIZE - 1);
@@ -440,6 +435,22 @@ void dump_bsargv(size_t bsargc, const bsheader *const *bsargv) {
                     path_view.path_desc);
                 continue;
             }
+            case boot::TYPE_SHELLIO: {
+                BootstrapShellIoView shellio_view{};
+                if (!bootstrap_parse_shell_io(view, shellio_view)) {
+                    printf(
+                        "bsargv[%u] = { type=TYPE_SHELLIO, size=%u, "
+                        "parse_error=true }\n",
+                        static_cast<unsigned>(i), record->size);
+                    continue;
+                }
+                printf(
+                    "bsargv[%u] = { type=TYPE_SHELLIO, size=%u, "
+                    "shellio_target=%d, shellio_flags=%d}\n",
+                    static_cast<unsigned>(i), record->size,
+                    shellio_view.target, shellio_view.flags);
+                continue;
+            }
             default:
                 printf(
                     "bsargv[%u] = { type=%u, size=%u, raw_data=%p, "
@@ -484,7 +495,6 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
                            const bsheader *bsargv[]) {
     g_linux_initialized = true;
     init_prog_data(argc, argv, bsargc, bsargv);
-    // init_procfs();
     // puts("linux-subsystem: initialized");
     // printf("stack dump:\n");
     // stack_dump(stack_sp, auxv);
@@ -498,27 +508,6 @@ extern "C" void linux_main(const void *stack_sp, size_t argc,
     // printf("\nbsargc & bsargv:\n");
     // printf("bsargc = %u\n", static_cast<unsigned>(bsargc));
     // dump_bsargv(bsargc, bsargv);
-}
-
-size_t linux_sys_writev(size_t fd, const linux_iovec *iov, size_t iovcnt) {
-    if (fd != 1 && fd != 2) {
-        loggers::LXSC::ERROR("unsupported writev fd=%lu", fd);
-        return INVALID_VALUE;
-    }
-    if (iov == nullptr && iovcnt != 0) {
-        return INVALID_VALUE;
-    }
-
-    size_t total = 0;
-    for (size_t i = 0; i < iovcnt; ++i) {
-        if (iov[i].iov_base == nullptr && iov[i].iov_len != 0) {
-            return INVALID_VALUE;
-        }
-        sys_write_serial(0, reinterpret_cast<const char *>(iov[i].iov_base),
-                         iov[i].iov_len);
-        total += iov[i].iov_len;
-    }
-    return total;
 }
 
 size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
@@ -668,7 +657,7 @@ size_t linux_sys_munmap(void *addr, size_t length) {
 extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                  size_t a4, size_t a5, size_t a6, size_t a7,
                                  addr_t dispatch_frame_sp) {
-    // printf("linux syscall %s (%lu)\n", syscall_to_string(a7), a7);
+    printf("linux syscall %s (%lu)\n", syscall_to_string(a7), a7);
     switch (a7) {
         case __NR_write:
             return linux_sys_write(a0, reinterpret_cast<const void *>(a1), a2);
@@ -676,8 +665,13 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             return linux_sys_read(static_cast<int>(a0),
                                   reinterpret_cast<void *>(a1), a2);
         case __NR_writev:
-            return linux_sys_writev(
-                a0, reinterpret_cast<const linux_iovec *>(a1), a2);
+            return linux_sys_writev(static_cast<int>(a0),
+                                    reinterpret_cast<const void *>(a1),
+                                    static_cast<int>(a2));
+        case __NR_readv:
+            return linux_sys_readv(static_cast<int>(a0),
+                                   reinterpret_cast<const void *>(a1),
+                                   static_cast<int>(a2));
         case __NR_mmap:
             return linux_sys_mmap(reinterpret_cast<void *>(a0), a1, a2, a3, a4,
                                   a5);
@@ -788,6 +782,9 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             // 占位符
             // 先假设所有的资源限制都是无限制的
         case __NR_set_robust_list:
+            // 占位符
+        case __NR_utimensat:
+            // 占位符
             loggers::LXSC::ERROR("unsupported syscall %s (%lu), but returning 0 for compatibility",
                                  syscall_to_string(a7), a7);
             return 0;

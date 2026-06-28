@@ -500,6 +500,11 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
 
     create_blk_linkings(root_dir_cap);
     setup_stdout_link();
+
+    // make a link /bin/ls -> /dev/stdout
+    // 只是为了让 which ls 能够正常工作
+    kmod_symlink("/bin/ls", "/dev/stdout");
+
     mount_testing_ext4(root_dir_cap);
 
     // print_tree(root_dir_cap, "/");

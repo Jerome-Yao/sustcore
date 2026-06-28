@@ -60,17 +60,24 @@ namespace contest_runner {
 
     void close_cwd_dir(OpenDirHandle &cwd);
 
+    struct ShellSpawnExtra {
+        const char **bsargv = nullptr;
+        CapIdx *caps = nullptr;
+    };
+
     [[nodiscard]]
     RunProgramError run_program(const RunnerContext &ctx,
                                 const OpenDirHandle &cwd,
                                 const char *program_path,
-                                const char *argv[], int &status);
+                                const char *argv[], int &status,
+                                const ShellSpawnExtra *extra = nullptr);
 
     [[nodiscard]]
     RunProgramError spawn_program(const RunnerContext &ctx,
                                   const OpenDirHandle &cwd,
                                   const char *program_path,
-                                  const char *argv[], CapIdx &child_pcb);
+                                  const char *argv[], CapIdx &child_pcb,
+                                  const ShellSpawnExtra *extra = nullptr);
 
     [[nodiscard]]
     RunProgramError wait_program(CapIdx child_pcb, int &status);

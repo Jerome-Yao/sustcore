@@ -49,7 +49,8 @@ namespace contest_runner {
                                CapIdx prepared_cwd_dir_cap,
                                CapIdx prepared_parent_pcb_cap,
                                const char *cwd_path, const char *program_path,
-                               const char *argv[]) {
+                               const char *argv[],
+                               const ShellSpawnExtra *extra = nullptr) {
         if (fd < 0 || prepared_root_dir_cap == cap::null ||
             prepared_root_dir_cap == cap::error ||
             prepared_cwd_dir_cap == cap::null ||
@@ -158,9 +159,9 @@ namespace contest_runner {
         memcpy(exe_path_bootstrap + sizeof(bsheader), exe_desc,
                static_cast<size_t>(exe_desc_len) + 1);
 
-        CapIdx initial_caps[] = {prepared_root_dir_cap, prepared_cwd_dir_cap,
+        CapIdx default_caps[] = {prepared_root_dir_cap, prepared_cwd_dir_cap,
                                  prepared_parent_pcb_cap, cap::null};
-        const char *bsargv[]  = {
+        const char *default_bsargv[]  = {
             reinterpret_cast<const char *>(&root_bootstrap),
             reinterpret_cast<const char *>(&cwd_bootstrap_cap),
             reinterpret_cast<const char *>(&parent_bootstrap),
@@ -168,6 +169,16 @@ namespace contest_runner {
             exe_path_bootstrap,
             nullptr,
         };
+        CapIdx *initial_caps = default_caps;
+        const char **bsargv = default_bsargv;
+        if (extra != nullptr) {
+            if (extra->caps != nullptr) {
+                initial_caps = extra->caps;
+            }
+            if (extra->bsargv != nullptr) {
+                bsargv = extra->bsargv;
+            }
+        }
         ExecveRequest request{
             .image_cap = kmod_getcap(fd),
             .execfn    = program_path,
@@ -311,7 +322,8 @@ namespace contest_runner {
     RunProgramError run_program(const RunnerContext &ctx,
                                 const OpenDirHandle &cwd,
                                 const char *program_path, const char *argv[],
-                                int &status) {
+                                int &status,
+                                const ShellSpawnExtra *extra) {
         int fd = kmod_fopen(program_path, "x");
         if (fd < 0) {
             return RunProgramError::OPEN_FAILED;
@@ -319,7 +331,7 @@ namespace contest_runner {
 
         CapIdx child_pcb = spawn_linux_program(
             fd, ctx.prepared_root_dir_cap, cwd.prepared_cap,
-            ctx.prepared_parent_pcb_cap, cwd.path, program_path, argv);
+            ctx.prepared_parent_pcb_cap, cwd.path, program_path, argv, extra);
         kmod_fclose(fd);
         if (child_pcb == cap::null || child_pcb == cap::error) {
             return RunProgramError::SPAWN_FAILED;
@@ -331,7 +343,8 @@ namespace contest_runner {
     RunProgramError spawn_program(const RunnerContext &ctx,
                                   const OpenDirHandle &cwd,
                                   const char *program_path, const char *argv[],
-                                  CapIdx &child_pcb) {
+                                  CapIdx &child_pcb,
+                                  const ShellSpawnExtra *extra) {
         child_pcb = cap::null;
         int fd    = kmod_fopen(program_path, "x");
         if (fd < 0) {
@@ -340,7 +353,7 @@ namespace contest_runner {
 
         child_pcb = spawn_linux_program(
             fd, ctx.prepared_root_dir_cap, cwd.prepared_cap,
-            ctx.prepared_parent_pcb_cap, cwd.path, program_path, argv);
+            ctx.prepared_parent_pcb_cap, cwd.path, program_path, argv, extra);
         kmod_fclose(fd);
         if (child_pcb == cap::null || child_pcb == cap::error) {
             return RunProgramError::SPAWN_FAILED;
@@ -442,11 +455,9 @@ namespace contest_runner {
             return false;
         }
 
-        // contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
-// #if defined(__ARCH_riscv64__)
+        contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
-// #endif
         // contest_runner::accumulate_stats(total,
         //  contest_runner::run_libctest(ctx));
         // contest_runner::accumulate_stats(total,
@@ -492,10 +503,8 @@ namespace contest_runner {
         }
 
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
-#if defined(__ARCH_riscv64__)
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
-#endif
         // contest_runner::accumulate_stats(total,
         //  contest_runner::run_libctest(ctx));
         // contest_runner::accumulate_stats(total,
@@ -527,7 +536,7 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
            static_cast<unsigned long>(total.total),
            static_cast<unsigned long>(total.passed),
            static_cast<unsigned long>(total.failed));
-    (void)sys_shutdown();
+    // (void)sys_shutdown();
     exit(0);
     return total.failed == 0 ? 0 : 1;
 }

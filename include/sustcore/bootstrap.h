@@ -55,10 +55,28 @@ struct BootstrapPathExplainView {
     const char *path_desc;
 };
 
+struct BootstrapShellIoPayload {
+    uint32_t flags;
+    uint32_t target;
+};
+
+struct BootstrapShellIoView {
+    uint32_t flags;
+    uint32_t target;
+};
+
 namespace boot {
     constexpr uint32_t TYPE_CAPEXP   = 0x1;
     constexpr uint32_t TYPE_VADDREXP = 0x2;
     constexpr uint32_t TYPE_PATHEXP  = 0x3;
+    constexpr uint32_t TYPE_SHELLIO  = 0x4;
+
+    constexpr uint32_t SHELLIO_FLAG_OVERWRITE = 0;
+    constexpr uint32_t SHELLIO_FLAG_APPEND    = 1;
+
+    constexpr uint32_t SHELLIO_TARGET_STDIN  = 0;
+    constexpr uint32_t SHELLIO_TARGET_STDOUT = 1;
+    constexpr uint32_t SHELLIO_TARGET_STDERR = 2;
 }  // namespace boot
 
 constexpr uint32_t BOOTSTRAP_USER_TYPE_PREFIX = 0xFFFF0000U;
@@ -184,6 +202,22 @@ inline bool bootstrap_parse_path_explain(const BootstrapRecordView &view,
         }
     }
     return false;
+}
+
+[[nodiscard]]
+inline bool bootstrap_parse_shell_io(const BootstrapRecordView &view,
+                                     BootstrapShellIoView &shellio_view) {
+    if (view.data == nullptr ||
+        view.data_size != sizeof(BootstrapShellIoPayload))
+    {
+        return false;
+    }
+
+    BootstrapShellIoPayload payload{};
+    memcpy(&payload, view.data, sizeof(payload));
+    shellio_view.flags  = payload.flags;
+    shellio_view.target = payload.target;
+    return true;
 }
 
 [[nodiscard]]

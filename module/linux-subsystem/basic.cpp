@@ -50,6 +50,13 @@ namespace {
         long tms_cstime;
     };
 
+    struct ShellIoConfig {
+        bool present   = false;
+        bool append    = false;
+        CapIdx cap     = cap::null;
+        std::string path{};
+    };
+
     bool parse_tagged_index(const char *text, const char *prefix,
                             size_t &value) {
         if (text == nullptr || prefix == nullptr) {
@@ -138,6 +145,63 @@ CapIdx __prog_cwd_dir_cap  = cap::null;
 std::vector<CapIdx> __prog_children{};
 std::string __prog_cwd     = "/";
 std::string __prog_image_path{};
+ShellIoConfig __prog_stdout{};
+ShellIoConfig __prog_stderr{};
+
+namespace {
+    void reset_shellio_config(ShellIoConfig &config) {
+        config.present = false;
+        config.append  = false;
+        config.cap     = cap::null;
+        config.path.clear();
+    }
+
+    void init_shell_stdio() {
+        const char *default_stdout = "/dev/stdout";
+        bool stdout_append         = __prog_stdout.present
+                                         ? __prog_stdout.append
+                                         : false;
+
+        if (cap::valid(__prog_stdout.cap)) {
+            loggers::LXSC::INFO("linux-subsystem: binding STDOUT fd to cap 0x%016X", __prog_stdout.cap);
+            (void)linux_bind_cap_fd(__prog_stdout.cap, 1, stdout_append);
+        } else {
+            const char *stdout_path =
+                __prog_stdout.path.empty() ? default_stdout
+                                           : __prog_stdout.path.c_str();
+            loggers::LXSC::INFO("linux-subsystem: binding STDOUT fd to path %s", stdout_path);
+            (void)linux_open_fd(stdout_path, 1, LINUX_O_WRONLY);
+        }
+
+        bool stderr_append = __prog_stderr.present
+                                 ? __prog_stderr.append
+                                 : stdout_append;
+        if (__prog_stderr.present &&
+            cap::valid(__prog_stderr.cap))
+        {
+            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to cap 0x%016X", __prog_stderr.cap);
+            (void)linux_bind_cap_fd(__prog_stderr.cap, 2, stderr_append);
+            return;
+        }
+        if (__prog_stderr.present && !__prog_stderr.path.empty()) {
+            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to path %s", __prog_stderr.path.c_str());
+            (void)linux_open_fd(__prog_stderr.path.c_str(), 2, LINUX_O_WRONLY);
+            return;
+        }
+
+        CapIdx stdout_cap = fd_to_cap(1);
+        if (cap::valid(stdout_cap)) {
+            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to STDOUT cap 0x%016X", stdout_cap);
+            (void)linux_bind_cap_fd(stdout_cap, 2, stdout_append);
+        } else {
+            const char *stdout_path =
+                __prog_stdout.path.empty() ? default_stdout
+                                           : __prog_stdout.path.c_str();
+            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to stdout path %s", stdout_path);
+            (void)linux_open_fd(stdout_path, 2, LINUX_O_WRONLY);
+        }
+    }
+}  // namespace
 
 void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
                     const bsheader *bsargv[]) {
@@ -152,6 +216,8 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
     __prog_children.clear();
     __prog_cwd          = "/";
     __prog_image_path.clear();
+    reset_shellio_config(__prog_stdout);
+    reset_shellio_config(__prog_stderr);
 
     for (size_t i = 0; i < bsargc; ++i) {
         BootstrapRecordView view{};
@@ -201,6 +267,17 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
                 }
                 continue;
             }
+            if (cap_view.cap_type == PayloadType::VFILE &&
+                cap_view.cap_desc != nullptr &&
+                cap_view.cap_desc[0] == '#')
+            {
+                if (strcmp(cap_view.cap_desc, "#stdout-cap") == 0) {
+                    __prog_stdout.cap = cap_view.cap_idx;
+                } else if (strcmp(cap_view.cap_desc, "#stderr-cap") == 0) {
+                    __prog_stderr.cap = cap_view.cap_idx;
+                }
+                continue;
+            }
             continue;
         }
 
@@ -225,6 +302,29 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
                 __prog_cwd = path_view.path_desc + 5;
             } else if (strncmp(path_view.path_desc, "#exe:", 5) == 0) {
                 __prog_image_path = path_view.path_desc + 5;
+            } else if (strncmp(path_view.path_desc, "#stdout:", 8) == 0) {
+                __prog_stdout.path = path_view.path_desc + 8;
+            } else if (strncmp(path_view.path_desc, "#stderr:", 8) == 0) {
+                __prog_stderr.path = path_view.path_desc + 8;
+            }
+            continue;
+        }
+
+        if (view.header->type == boot::TYPE_SHELLIO) {
+            BootstrapShellIoView shellio_view{};
+            if (!bootstrap_parse_shell_io(view, shellio_view)) {
+                continue;
+            }
+            ShellIoConfig *target = nullptr;
+            if (shellio_view.target == boot::SHELLIO_TARGET_STDOUT) {
+                target = &__prog_stdout;
+            } else if (shellio_view.target == boot::SHELLIO_TARGET_STDERR) {
+                target = &__prog_stderr;
+            }
+            if (target != nullptr) {
+                target->present = true;
+                target->append =
+                    shellio_view.flags == boot::SHELLIO_FLAG_APPEND;
             }
         }
     }
@@ -241,9 +341,7 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
     }
 
     init_procfs();
-
-    (void)linux_open_fd("/dev/stdout", 1, LINUX_O_WRONLY);
-    (void)linux_open_fd("/dev/stdout", 2, LINUX_O_WRONLY);
+    init_shell_stdio();
 }
 
 size_t linux_sys_brk(size_t newbrk) {
