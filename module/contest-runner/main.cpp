@@ -443,8 +443,10 @@ namespace contest_runner {
         }
 
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
+#if defined(__ARCH_riscv64__)
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
+#endif
         // contest_runner::accumulate_stats(total,
         //  contest_runner::run_libctest(ctx));
         // contest_runner::accumulate_stats(total,
@@ -490,8 +492,10 @@ namespace contest_runner {
         }
 
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
+#if defined(__ARCH_riscv64__)
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
+#endif
         // contest_runner::accumulate_stats(total,
         //  contest_runner::run_libctest(ctx));
         // contest_runner::accumulate_stats(total,
