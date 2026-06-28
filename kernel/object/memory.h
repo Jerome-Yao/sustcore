@@ -82,7 +82,8 @@ namespace cap {
         util::owner<Capability *> file;
         /// 后端文件内起始偏移.
         size_t file_offset;
-        size_t file_data_size;
+        /// 从 payload 偏移 0 开始, 实际由文件内容提供的字节数.
+        size_t file_backed_len;
         /// 已实际分配的物理页映射, key 为 offvpn. 
         std::unordered_map<size_t, PhyPage> phy_pages;
 
@@ -99,7 +100,7 @@ namespace cap {
                        util::owner<Capability *> file =
                            util::owner<Capability *>(nullptr),
                       size_t file_offset = 0,
-                      size_t file_data_size = static_cast<size_t>(-1));
+                      size_t file_backed_len = static_cast<size_t>(-1));
         ~MemoryPayload() override;
 
         [[nodiscard]]

@@ -333,10 +333,6 @@ namespace loader::elf {
                     .page_prefix   = page_prefix,
                 });
             } else {
-                size_t data_memsz = page_align_up(
-                    static_cast<size_t>(phdr.p_filesz) + page_prefix);
-                size_t bss_memsz = map_memsz - data_memsz;
-
                 auto *file_clone = access_res.value()->clone();
                 auto downgrade_res = file_clone->downgrade(perm::vfile::READ);
                 if (!downgrade_res.has_value()) {
@@ -350,13 +346,12 @@ namespace loader::elf {
                     raw_off > 0 ? static_cast<size_t>(raw_off) : 0;
 
                 auto *segment_mem = new cap::MemoryPayload(
-                    data_memsz, false, false, VMA::Growth::FIXED,
+                    map_memsz, false, false, VMA::Growth::FIXED,
                     std::move(backing), file_offset,
                     static_cast<size_t>(phdr.p_filesz) + page_prefix);
                 auto add_res = spec.tmm->add_vma(
                     vma_type, VMA::Growth::FIXED,
-                    VirArea(aligned_segvaddr,
-                            aligned_segvaddr + data_memsz),
+                    VirArea(aligned_segvaddr, segvend),
                     segment_mem, vma_prot);
                 if (!add_res.has_value()) {
                     delete segment_mem;
@@ -365,52 +360,23 @@ namespace loader::elf {
                     while (true);
                 }
                 loggers::ELFLOADER::DEBUG(
-                    "创建ELF VMA(DATA): type=%s area=[%p,%p) mem=%p "
-                    "memsz=%lu file_off=%lu",
+                    "创建ELF VMA(FILE): type=%s area=[%p,%p) mem=%p "
+                    "memsz=%lu file_off=%lu file_len=%lu",
                     to_string(vma_type), aligned_segvaddr.addr(),
-                    (aligned_segvaddr + data_memsz).addr(), segment_mem,
-                    static_cast<unsigned long>(data_memsz),
-                    static_cast<unsigned long>(file_offset));
+                    segvend.addr(), segment_mem,
+                    static_cast<unsigned long>(map_memsz),
+                    static_cast<unsigned long>(file_offset),
+                    static_cast<unsigned long>(static_cast<size_t>(phdr.p_filesz) +
+                                               page_prefix));
 
                 runtime_segments.push_back(RuntimeLoadSegment{
                     .index         = i,
                     .phdr          = phdr,
                     .runtime_vaddr = segvaddr,
                     .map_begin     = aligned_segvaddr,
-                    .map_end       = aligned_segvaddr + data_memsz,
+                    .map_end       = segvend,
                     .page_prefix   = page_prefix,
                 });
-
-                if (bss_memsz > 0) {
-                    // BSS 区: 匿名 MemoryPayload
-                    auto *segment_mem = new cap::MemoryPayload(
-                        bss_memsz, false, false, VMA::Growth::FIXED);
-                    auto add_res = spec.tmm->add_vma(
-                        vma_type, VMA::Growth::FIXED,
-                        VirArea(aligned_segvaddr + data_memsz, segvend),
-                        segment_mem, vma_prot);
-                    if (!add_res.has_value()) {
-                        delete segment_mem;
-                        loggers::ELFLOADER::ERROR("无法为段%d添加VMA(BSS): %d",
-                                                  i, add_res.error());
-                        while (true);
-                    }
-                    loggers::ELFLOADER::DEBUG(
-                        "创建ELF VMA(BSS尾部): type=%s area=[%p,%p) mem=%p "
-                        "memsz=%lu",
-                        to_string(vma_type),
-                        (aligned_segvaddr + data_memsz).addr(), segvend.addr(),
-                        segment_mem, static_cast<unsigned long>(bss_memsz));
-
-                    runtime_segments.push_back(RuntimeLoadSegment{
-                        .index         = i,
-                        .phdr          = phdr,
-                        .runtime_vaddr = segvaddr,
-                        .map_begin     = aligned_segvaddr + data_memsz,
-                        .map_end       = segvend,
-                        .page_prefix   = 0,
-                    });
-                }
             }
 
             if (has_pt_phdr && meta.phdr_vaddr.nonnull() &&

@@ -160,14 +160,14 @@ namespace cap {
     MemoryPayload::MemoryPayload(size_t memsz, bool shared, bool continuity,
                                  MemoryGrowth growth,
                                  util::owner<Capability *> file,
-                                 size_t file_offset, size_t file_data_size)
+                                 size_t file_offset, size_t file_backed_len)
         : memsz(memsz),
           shared(shared),
           continuity(continuity),
           growth(growth),
           file(file),
           file_offset(file_offset),
-          file_data_size(file_data_size),
+          file_backed_len(file_backed_len),
           phy_pages() {
         adjust_committed_pages(
             static_cast<ssize_t>(page_align_up(memsz) / PAGESIZE));
@@ -199,7 +199,7 @@ namespace cap {
                                : util::owner<Capability *>(nullptr);
         auto *cloned = new MemoryPayload(memsz, shared, continuity, growth,
                                          cloned_file, file_offset,
-                                         file_data_size);
+                                         file_backed_len);
         for (auto &page : phy_pages) {
             GFP::keep_page(page.second.addr, 1);
             page.second.refcount++;
@@ -237,14 +237,12 @@ namespace cap {
                 GFP::put_page(paddr, 1);
                 unexpect_return(ErrCode::OUT_OF_BOUNDARY);
             }
-            // Short reads leave the remaining zero-filled bytes in place, which
-            // matches file-backed mmap semantics for pages extending past EOF.
             size_t read_len = PAGESIZE;
-            if (file_data_size != static_cast<size_t>(-1)) {
-                if (page_file_offset >= file_data_size) {
+            if (file_backed_len != static_cast<size_t>(-1)) {
+                if (page_file_offset >= file_backed_len) {
                     read_len = 0;
-                } else if (file_data_size - page_file_offset < read_len) {
-                    read_len = file_data_size - page_file_offset;
+                } else if (file_backed_len - page_file_offset < read_len) {
+                    read_len = file_backed_len - page_file_offset;
                 }
             }
             if (read_len != 0) {
