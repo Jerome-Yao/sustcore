@@ -274,9 +274,9 @@ namespace ltp {
         // "stat03",
         "lstat01",
         // "lstat02",
-        // "fstatat01",
+        "fstatat01",
         // "statx01",
-        // "statx02",
+        "statx02",
         // "statx03",
         nullptr,
     };
