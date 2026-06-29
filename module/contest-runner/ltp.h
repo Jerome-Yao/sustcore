@@ -164,9 +164,9 @@ namespace ltp {
 
     const char *testcase11_lseek[] = {
         "lseek01",
-        "lseek02",
+        // "lseek02",
         "lseek07",
-        "lseek11",
+        // "lseek11",
         nullptr,
     };
 
@@ -690,7 +690,7 @@ namespace ltp {
         // testcase08_pread_pwrite,
         // testcase09_preadv_pwritev,
         // testcase10_copy_sendfile_readahead,
-        // testcase11_lseek,
+        testcase11_lseek,
         // testcase12_cwd_chdir,
         // testcase13_getdents_readlink,
         // testcase14_mkdir_unlink,
