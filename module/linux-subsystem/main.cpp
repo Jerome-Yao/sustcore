@@ -868,6 +868,12 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                 "compatibility",
                 syscall_to_string(a7), a7);
             return 0;
+        case __NR_setitimer:
+            loggers::LXSC::WARN(
+                "unsupported syscall %s (%lu) with which=%d, ignoring and returning 0 for "
+                "compatibility",
+                syscall_to_string(a7), a7, static_cast<int>(a0));
+            return 0;
         case __NR_clock_gettime:
             return linux_sys_clock_gettime(static_cast<int>(a0),
                                            reinterpret_cast<void *>(a1));
