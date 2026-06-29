@@ -75,6 +75,13 @@ sys_tcb_wait:
     syscall 0
     ret
 
+    .global sys_tcb_timeout_wait
+    .type sys_tcb_timeout_wait, @function
+sys_tcb_timeout_wait:
+    li.d $a7, SYS_TCB_TIMEOUT_WAIT
+    syscall 0
+    ret
+
     .global sys_tcb_get_tid
     .type sys_tcb_get_tid, @function
 sys_tcb_get_tid:

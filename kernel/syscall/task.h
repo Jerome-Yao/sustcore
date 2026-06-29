@@ -56,6 +56,11 @@ namespace syscall {
     Result<CapIdx> tcb_wait(CapIdx tcb_cap, const std::vector<CapIdx> &pcbs,
                             UBuffer *status_buf, size_t options);
     [[nodiscard]]
+    Result<CapIdx> tcb_timeout_wait(CapIdx tcb_cap,
+                                    const std::vector<CapIdx> &pcbs,
+                                    UBuffer *status_buf, size_t timeout_ns,
+                                    size_t options);
+    [[nodiscard]]
     Result<void> tcb_nanosleep(size_t ns);
 
     /**

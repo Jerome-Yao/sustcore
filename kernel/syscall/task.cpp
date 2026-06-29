@@ -522,6 +522,57 @@ namespace syscall {
         return final_res.value();
     }
 
+    Result<CapIdx> tcb_timeout_wait(CapIdx tcb_cap,
+                                    const std::vector<CapIdx> &pcbs,
+                                    UBuffer *status_buf, size_t timeout_ns,
+                                    size_t options) {
+        if (options != 0 && options != TCB_WAIT_WNOHANG) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        cap::Capability *tcb_cap_obj = nullptr;
+        auto tcb_res                 = lookup_tcb(tcb_cap, &tcb_cap_obj);
+        propagate(tcb_res);
+        cap::TCBObject tcb_obj(util::nnullforce(tcb_cap_obj));
+        auto current_tcb_res = tcb_obj.require_current();
+        propagate(current_tcb_res);
+
+        auto exited_res = find_exited_pcb_cap(pcbs);
+        propagate(exited_res);
+        if (exited_res.value() != cap::null) {
+            auto pcb_res = lookup_pcb(exited_res.value(), nullptr);
+            propagate(pcb_res);
+            auto status_res = write_wait_status(status_buf, pcb_res.value());
+            propagate(status_res);
+            return exited_res.value();
+        }
+        if (options == TCB_WAIT_WNOHANG || timeout_ns == 0) {
+            return cap::null;
+        }
+
+        auto wait_res = timeout_wait_event(task::task_exit_wait_wd(),
+                                           timeout_ns, ({
+                                               auto __exited_res =
+                                                   find_exited_pcb_cap(pcbs);
+                                               __exited_res.has_value() &&
+                                               __exited_res.value() != cap::null;
+                                           }));
+        propagate(wait_res);
+        if (wait_res.value()) {
+            return cap::null;
+        }
+
+        auto final_res = find_exited_pcb_cap(pcbs);
+        propagate(final_res);
+        if (final_res.value() != cap::null) {
+            auto pcb_res = lookup_pcb(final_res.value(), nullptr);
+            propagate(pcb_res);
+            auto status_res = write_wait_status(status_buf, pcb_res.value());
+            propagate(status_res);
+        }
+        return final_res.value();
+    }
+
     Result<void> tcb_nanosleep(size_t ns) {
         auto current_tcb_res = running_tcb();
         propagate(current_tcb_res);

@@ -78,6 +78,9 @@ SysRet<CapIdx> sys_pcb_create_thread(CapIdx pcb_cap, void (*entry)(),
 SysRet<CapIdx> sys_create_thread(void (*entry)(), void *stack_addr, size_t stack_size);
 SysRet<CapIdx> sys_tcb_wait(CapIdx tcb_cap, CapIdx pcbs_idx[], int *status,
                             size_t options);
+SysRet<CapIdx> sys_tcb_timeout_wait(CapIdx tcb_cap, CapIdx pcbs_idx[],
+                                    int *status, size_t timeout_ns,
+                                    size_t options);
 SysRet<size_t> sys_pcb_fork(CapIdx pcb_cap, CapIdx *child_pcb_cap);
 SysRet<size_t> fork(CapIdx *child_pcb_cap);
 SysRet<void> sys_pcb_execve(CapIdx pcb_cap, const ExecveRequest *request);

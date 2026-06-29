@@ -17,7 +17,6 @@
 #include <cstddef>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 namespace tmpfs {
     class TmpFSDriver;
@@ -30,8 +29,44 @@ namespace tmpfs {
         INodeType type   = INodeType::FILE;
         TmpFSMetadata metadata;
         std::unordered_map<std::string, inode_t> entries;
-        std::vector<byte> content;
+        char *content = nullptr;
+        size_t content_sz = 0;
         std::string symlink_target;
+
+        TmpFSNode() = default;
+        ~TmpFSNode() {
+            delete[] content;
+        }
+
+        TmpFSNode(const TmpFSNode &)            = delete;
+        TmpFSNode &operator=(const TmpFSNode &) = delete;
+
+        TmpFSNode(TmpFSNode &&other) noexcept
+            : inode_id(other.inode_id), type(other.type),
+              metadata(std::move(other.metadata)),
+              entries(std::move(other.entries)), content(other.content),
+              content_sz(other.content_sz),
+              symlink_target(std::move(other.symlink_target)) {
+            other.content    = nullptr;
+            other.content_sz = 0;
+        }
+
+        TmpFSNode &operator=(TmpFSNode &&other) noexcept {
+            if (this == &other) {
+                return *this;
+            }
+            delete[] content;
+            inode_id       = other.inode_id;
+            type           = other.type;
+            metadata       = std::move(other.metadata);
+            entries        = std::move(other.entries);
+            content        = other.content;
+            content_sz     = other.content_sz;
+            symlink_target = std::move(other.symlink_target);
+            other.content  = nullptr;
+            other.content_sz = 0;
+            return *this;
+        }
     };
 
     class TmpFSFile final : public IFile {

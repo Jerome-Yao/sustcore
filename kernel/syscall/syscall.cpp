@@ -293,6 +293,7 @@ namespace syscall {
             case SYS_TCB_YIELD:           return "SYS_TCB_YIELD";
             case SYS_PCB_EXECVE:          return "SYS_PCB_EXECVE";
             case SYS_TCB_WAIT:            return "SYS_TCB_WAIT";
+            case SYS_TCB_TIMEOUT_WAIT:    return "SYS_TCB_TIMEOUT_WAIT";
             case SYS_TCB_GET_TID:         return "SYS_TCB_GET_TID";
             case SYS_PCB_MAP:             return "SYS_PCB_MAP";
             case SYS_PCB_UNMAP:           return "SYS_PCB_UNMAP";
@@ -610,6 +611,29 @@ namespace syscall {
                 ret = result_value_ret("等待进程状态改变",
                                        tcb_wait(capidx, caps_res.value(),
                                                 status_buf_ptr, arg2));
+                break;
+            }
+            case SYS_TCB_TIMEOUT_WAIT: {
+                auto caps_res = copy_terminated_values<CapIdx>(
+                    VirAddr(arg0), cap::null);
+                if (!caps_res.has_value()) {
+                    loggers::SYSCALL::ERROR("同步等待PCB列表失败: err=%s",
+                                            to_cstring(caps_res.error()));
+                    ret = RetPack{.processed = true,
+                                  .ret0      = 0,
+                                  .ret1 = static_cast<b64>(caps_res.error())};
+                    break;
+                }
+                UBuffer status_buf((VirAddr)arg1, sizeof(int));
+                UBuffer *status_buf_ptr = nullptr;
+                if (arg1 != 0) {
+                    status_buf_ptr = &status_buf;
+                }
+                ret = result_value_ret("等待进程状态改变(带超时)",
+                                       tcb_timeout_wait(capidx,
+                                                        caps_res.value(),
+                                                        status_buf_ptr, arg2,
+                                                        arg3));
                 break;
             }
             case SYS_TCB_GET_TID: {

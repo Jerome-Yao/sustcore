@@ -58,6 +58,12 @@ namespace {
     constexpr size_t CLONE_NEWTIME        = 0x00000080;
     constexpr int WAIT4_WNOHANG           = 1;
     constexpr int WAIT4_ANY_CHILD         = -1;
+    constexpr int LINUX_SIGCHLD           = 17;
+
+    struct linux_timespec {
+        int64_t tv_sec;
+        long tv_nsec;
+    };
 
     constexpr CloneFlagName CLONE_FLAG_NAMES[] = {
         {.value = CLONE_NEWTIME, .name = "CLONE_NEWTIME"},
@@ -164,6 +170,22 @@ namespace {
         }
         wait_caps.push_back(cap::null);
         return wait_caps;
+    }
+
+    [[nodiscard]]
+    bool sigmask_contains_sigchld(const void *set, size_t sigsetsize) noexcept {
+        if (set == nullptr || sigsetsize < sizeof(unsigned long)) {
+            return false;
+        }
+        auto *words = reinterpret_cast<const unsigned long *>(set);
+        constexpr size_t bit = static_cast<size_t>(LINUX_SIGCHLD - 1);
+        constexpr size_t bits_per_word = sizeof(unsigned long) * 8;
+        size_t word_index = bit / bits_per_word;
+        size_t bit_index  = bit % bits_per_word;
+        if (sigsetsize < (word_index + 1) * sizeof(unsigned long)) {
+            return false;
+        }
+        return (words[word_index] & (1UL << bit_index)) != 0;
     }
 }  // namespace
 
@@ -324,4 +346,43 @@ size_t linux_sys_wait4(int pid, int *status, int options, void *rusage) {
     loggers::LXRT::INFO("wait4 等到子进程 pid=%lu 退出",
                         static_cast<unsigned long>(child_pid));
     return child_pid;
+}
+
+size_t linux_sys_rt_sigtimedwait(const void *set, void *info,
+                                 const void *timeout,
+                                 size_t sigsetsize) {
+    (void)info;
+    if (!sigmask_contains_sigchld(set, sigsetsize)) {
+        loggers::LXSC::ERROR(
+            "rt_sigtimedwait 目前仅支持等待 SIGCHLD");
+        return static_cast<size_t>(-ENOSYS);
+    }
+
+    if (__prog_children.empty()) {
+        return static_cast<size_t>(-EAGAIN);
+    }
+
+    size_t timeout_ns = static_cast<size_t>(-1);
+    if (timeout != nullptr) {
+        auto *ts = reinterpret_cast<const linux_timespec *>(timeout);
+        if (ts->tv_sec < 0 || ts->tv_nsec < 0 || ts->tv_nsec >= 1000000000L) {
+            return static_cast<size_t>(-EINVAL);
+        }
+        timeout_ns = static_cast<size_t>(ts->tv_sec) * 1000000000ULL +
+                     static_cast<size_t>(ts->tv_nsec);
+    }
+
+    auto wait_caps = make_wait_caps_vector();
+    auto wait_res =
+        sys_tcb_timeout_wait(__prog_main_tcb_cap, wait_caps.data(), nullptr,
+                             timeout_ns, 0)
+            .to_result();
+    if (!wait_res.has_value()) {
+        loggers::LXSC::ERROR("rt_sigtimedwait wait failed");
+        return static_cast<size_t>(-EINVAL);
+    }
+    if (wait_res.value() == cap::null) {
+        return static_cast<size_t>(-EAGAIN);
+    }
+    return LINUX_SIGCHLD;
 }

@@ -1510,6 +1510,82 @@ namespace wait {
         __wait_result;                                                    \
     })
 
+#define timeout_wait_event(wd, timeout_ns, condition)                        \
+    ({                                                                       \
+        Result<bool> __wait_result = std::expected<bool, ErrCode>{false};    \
+        if ((wd) == 0) {                                                     \
+            __wait_result = std::unexpected(ErrCode::INVALID_PARAM);         \
+        } else {                                                             \
+            __wait_event_init_state();                                       \
+            if (__wait_event_invalid_context()) {                            \
+                __wait_result = std::unexpected(ErrCode::INVALID_PARAM);     \
+            } else if (condition) {                                          \
+                __wait_result = std::expected<bool, ErrCode>{false};         \
+            } else if ((timeout_ns) == 0) {                                  \
+                __wait_result = std::expected<bool, ErrCode>{true};          \
+            } else {                                                         \
+                auto __wait_arm_res =                                        \
+                    ::task::arm_timed_wait(util::nnullforce(__wait_current), \
+                                           (wd), (timeout_ns));              \
+                if (!__wait_arm_res.has_value()) {                           \
+                    __wait_result = std::unexpected(__wait_arm_res.error()); \
+                } else {                                                     \
+                    while (true) {                                           \
+                        if (!__wait_result.has_value()) {                    \
+                            break;                                           \
+                        }                                                    \
+                        if (condition) {                                     \
+                            __wait_result =                                  \
+                                std::expected<bool, ErrCode>{false};         \
+                            break;                                           \
+                        }                                                    \
+                        auto __wait_enqueue_res =                            \
+                            __wait_waitman.enqueue((wd), __wait_current);    \
+                        if (!__wait_enqueue_res.has_value()) {               \
+                            __wait_result =                                  \
+                                std::unexpected(__wait_enqueue_res.error()); \
+                            break;                                           \
+                        }                                                    \
+                        if (condition) {                                     \
+                            auto __wait_remove_res =                         \
+                                __wait_waitman.remove(__wait_current);       \
+                            if (!__wait_remove_res.has_value()) {            \
+                                __wait_result =                              \
+                                    std::unexpected(__wait_remove_res.error()); \
+                            } else {                                         \
+                                __wait_result =                              \
+                                    std::expected<bool, ErrCode>{false};     \
+                            }                                                \
+                            break;                                           \
+                        }                                                    \
+                        __wait_current->basic_entity                         \
+                            .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>(); \
+                        __wait_scheduler.schedule(true);                     \
+                        auto __wait_remove_res =                             \
+                            __wait_waitman.remove(__wait_current);           \
+                        if (!__wait_remove_res.has_value()) {                \
+                            __wait_result =                                  \
+                                std::unexpected(__wait_remove_res.error());  \
+                            break;                                           \
+                        }                                                    \
+                        if (condition) {                                     \
+                            __wait_result =                                  \
+                                std::expected<bool, ErrCode>{false};         \
+                            break;                                           \
+                        }                                                    \
+                        if (::task::timed_wait_timed_out(__wait_current)) {  \
+                            __wait_result =                                  \
+                                std::expected<bool, ErrCode>{true};          \
+                            break;                                           \
+                        }                                                    \
+                    }                                                        \
+                    ::task::disarm_timed_wait(__wait_current);               \
+                }                                                            \
+            }                                                                \
+        }                                                                    \
+        __wait_result;                                                       \
+    })
+
 #define locked_wait_event_with(lock_guard_type, wd, lock, condition)          \
     ({                                                                        \
         Result<void> __wait_result = std::expected<void, ErrCode>{};          \

@@ -67,11 +67,39 @@ namespace tmpfs {
                     break;
                 case INodeType::FILE:
                 default:
-                    out.size   = node.content.size();
+                    out.size   = node.content_sz;
                     out.nlink  = 1;
                     out.blocks = (out.size + 511) / 512;
                     break;
             }
+        }
+
+        [[nodiscard]]
+        Result<void> resize_file_content(TmpFSNode &node,
+                                         size_t new_size) noexcept {
+            if (new_size == node.content_sz) {
+                void_return();
+            }
+
+            char *new_content = nullptr;
+            if (new_size != 0) {
+                new_content = new char[new_size];
+                if (new_content == nullptr) {
+                    unexpect_return(ErrCode::OUT_OF_MEMORY);
+                }
+                size_t copied = std::min(node.content_sz, new_size);
+                if (copied != 0 && node.content != nullptr) {
+                    memcpy(new_content, node.content, copied);
+                }
+                if (new_size > copied) {
+                    memset(new_content + copied, 0, new_size - copied);
+                }
+            }
+
+            delete[] node.content;
+            node.content    = new_content;
+            node.content_sz = new_size;
+            void_return();
         }
     }  // namespace
 
@@ -84,12 +112,12 @@ namespace tmpfs {
         }
 
         const size_t start = static_cast<size_t>(offset);
-        if (start >= _node->content.size()) {
+        if (start >= _node->content_sz) {
             return 0;
         }
 
-        const size_t readable = std::min(len, _node->content.size() - start);
-        memcpy(buf, _node->content.data() + start, readable);
+        const size_t readable = std::min(len, _node->content_sz - start);
+        memcpy(buf, _node->content + start, readable);
         return readable;
     }
 
@@ -104,22 +132,25 @@ namespace tmpfs {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);
         }
 
-        if (end > _node->content.size()) {
-            _node->content.resize(end, 0);
+        if (end > _node->content_sz) {
+            auto resize_res = resize_file_content(*_node, end);
+            propagate(resize_res);
         }
         if (len != 0) {
-            memcpy(_node->content.data() + start, buf, len);
+            if (_node->content == nullptr) {
+                unexpect_return(ErrCode::OUT_OF_MEMORY);
+            }
+            memcpy(_node->content + start, buf, len);
         }
         return len;
     }
 
     Result<size_t> TmpFSFile::size() {
-        return _node->content.size();
+        return _node->content_sz;
     }
 
     Result<void> TmpFSFile::truncate(size_t new_size) {
-        _node->content.resize(new_size, 0);
-        void_return();
+        return resize_file_content(*_node, new_size);
     }
 
     Result<void> TmpFSFile::sync() {
@@ -285,14 +316,10 @@ namespace tmpfs {
 
     TmpFSSuperblock::TmpFSSuperblock(TmpFSDriver &fs, size_t sb_id)
         : _fs(&fs), _sb_id(sb_id), _next_inode(1) {
-        _nodes.insert_or_assign(0, TmpFSNode{
-                                       .inode_id = 0,
-                                       .type     = INodeType::DIRECTORY,
-                                       .metadata = {},
-                                       .entries  = {},
-                                       .content  = {},
-                                       .symlink_target = {},
-                                   });
+        TmpFSNode root{};
+        root.inode_id = 0;
+        root.type     = INodeType::DIRECTORY;
+        _nodes.insert_or_assign(0, std::move(root));
     }
 
     Result<TmpFSNode *> TmpFSSuperblock::lookup_node(
@@ -429,14 +456,10 @@ namespace tmpfs {
 
     Result<inode_t> TmpFSSuperblock::alloc_inode(INodeType type) {
         const inode_t inode_id = _next_inode++;
-        _nodes.insert_or_assign(inode_id, TmpFSNode{
-                                              .inode_id = inode_id,
-                                              .type     = type,
-                                              .metadata = {},
-                                              .entries  = {},
-                                              .content  = {},
-                                              .symlink_target = {},
-                                          });
+        TmpFSNode node{};
+        node.inode_id = inode_id;
+        node.type     = type;
+        _nodes.insert_or_assign(inode_id, std::move(node));
         return inode_id;
     }
 

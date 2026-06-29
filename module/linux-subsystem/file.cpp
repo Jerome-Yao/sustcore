@@ -901,6 +901,23 @@ namespace {
         return true;
     }
 
+    [[nodiscard]]
+    bool fill_exe_path_bootstrap(PathBootstrap &record, const char *path) {
+        if (path == nullptr || path[0] != '/') {
+            return false;
+        }
+        memset(&record, 0, sizeof(record));
+        int written =
+            snprintf(record.desc, sizeof(record.desc), "#exe:%s", path);
+        if (written <= 0 ||
+            static_cast<size_t>(written) >= sizeof(record.desc)) {
+            return false;
+        }
+        record.header.size = sizeof(bsheader) + static_cast<size_t>(written) + 1;
+        record.header.type = boot::TYPE_PATHEXP;
+        return true;
+    }
+
     size_t fail_execve_after_open(int image_fd, size_t err) {
         linux_sys_close(image_fd);
         return err;
@@ -1350,6 +1367,7 @@ size_t linux_sys_execve(const char *pathname, const char *const argv[],
     CapExplainBootstrap cwd_bootstrap{};
     CapExplainBootstrap parent_bootstrap{};
     PathBootstrap cwd_path_bootstrap{};
+    PathBootstrap exe_path_bootstrap{};
 
     fill_cap_bootstrap(root_bootstrap, root_cap, PayloadType::VDIR, ~b64(0),
                        "#/");
@@ -1362,6 +1380,11 @@ size_t linux_sys_execve(const char *pathname, const char *const argv[],
     if (!fill_cwd_path_bootstrap(cwd_path_bootstrap)) {
         return fail_execve_after_open(image_fd, -ENAMETOOLONG);
     }
+    if (!fill_exe_path_bootstrap(exe_path_bootstrap,
+                                 resolved.absolute_path.c_str()))
+    {
+        return fail_execve_after_open(image_fd, -ENAMETOOLONG);
+    }
 
     std::vector<std::string> argv_storage{};
     std::vector<std::string> envp_storage{};
@@ -1372,7 +1395,7 @@ size_t linux_sys_execve(const char *pathname, const char *const argv[],
     }
 
     if (argv_storage.empty()) {
-        argv_storage.emplace_back(pathname);
+        argv_storage.emplace_back(resolved.absolute_path);
     }
 
     std::vector<const char *> argv_ptrs{};
@@ -1385,12 +1408,14 @@ size_t linux_sys_execve(const char *pathname, const char *const argv[],
         reinterpret_cast<const char *>(&cwd_bootstrap),
         reinterpret_cast<const char *>(&parent_bootstrap),
         reinterpret_cast<const char *>(&cwd_path_bootstrap),
+        reinterpret_cast<const char *>(&exe_path_bootstrap),
         nullptr,
     };
     const char *bsargv_without_parent[] = {
         reinterpret_cast<const char *>(&root_bootstrap),
         reinterpret_cast<const char *>(&cwd_bootstrap),
         reinterpret_cast<const char *>(&cwd_path_bootstrap),
+        reinterpret_cast<const char *>(&exe_path_bootstrap),
         nullptr,
     };
     const char **bsargv = parent_cap != cap::null && parent_cap != cap::error
@@ -1404,7 +1429,7 @@ size_t linux_sys_execve(const char *pathname, const char *const argv[],
 
     ExecveRequest request{
         .image_cap = exec_cap,
-        .execfn    = pathname,
+        .execfn    = resolved.absolute_path.c_str(),
         .caps      = reserved_caps,
         .argv      = argv_ptrs.data(),
         .envp      = envp_ptrs.data(),

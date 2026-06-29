@@ -74,6 +74,13 @@ sys_tcb_wait:
     ecall
     ret
 
+    .global sys_tcb_timeout_wait
+    .type   sys_tcb_timeout_wait, @function
+sys_tcb_timeout_wait:
+    li a7, SYS_TCB_TIMEOUT_WAIT
+    ecall
+    ret
+
     .global sys_tcb_get_tid
     .type   sys_tcb_get_tid, @function
 sys_tcb_get_tid:

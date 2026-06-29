@@ -9,9 +9,10 @@
  *
  */
 
-#include <logger.h>
+#include <errno.h>
 #include <fdtable.h>
 #include <file.h>
+#include <logger.h>
 #include <prm.h>
 #include <prog.h>
 #include <syscall.h>
@@ -25,6 +26,10 @@ namespace {
     constexpr size_t INVALID_VALUE      = 0xFFFF'FFFF'FFFF'FFFF;
     constexpr size_t UTSNAME_FIELD_SIZE = 65;
     constexpr int LINUX_O_WRONLY        = 1;
+    constexpr int LINUX_SIGABRT         = 6;
+    constexpr int LINUX_SIGKILL         = 9;
+    constexpr int LINUX_SIGSEGV         = 11;
+    constexpr int LINUX_SIGTERM         = 15;
     constexpr long LINUX_TIMES_STAMP    = 114514;
     constexpr byte GETRANDOM_PATTERN[]  = {0x11, 0x41, 0x51, 0x41,
                                            0x19, 0x19, 0x81, 0x00};
@@ -51,9 +56,9 @@ namespace {
     };
 
     struct ShellIoConfig {
-        bool present   = false;
-        bool append    = false;
-        CapIdx cap     = cap::null;
+        bool present = false;
+        bool append  = false;
+        CapIdx cap   = cap::null;
         std::string path{};
     };
 
@@ -104,6 +109,33 @@ namespace {
         return "unknown";
 #endif
     }
+
+    [[nodiscard]]
+    bool find_direct_child_cap_by_pid(int pid, CapIdx &pcb_cap) noexcept {
+        for (auto child_cap : __prog_children) {
+            auto pid_res = sys_getpid(child_cap).to_result();
+            if (!pid_res.has_value()) {
+                continue;
+            }
+            if (static_cast<int>(pid_res.value()) == pid) {
+                pcb_cap = child_cap;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]]
+    int signal_exit_code(int sig) noexcept {
+        switch (sig) {
+            case LINUX_SIGABRT:
+            case LINUX_SIGKILL:
+            case LINUX_SIGSEGV:
+            case LINUX_SIGTERM:
+                return 128 + sig;
+            default: return -1;
+        }
+    }
 }  // namespace
 
 void init_procfs() {
@@ -113,25 +145,30 @@ void init_procfs() {
 
     auto comm_cap_res = sys_pcb_procfs_get(__prog_pcb_cap, "comm").to_result();
     if (comm_cap_res.has_value()) {
-        const char *comm = __prog_image_path.empty() ? "<linuxss>" : __prog_image_path.c_str();
-        size_t comm_len  = strlen(comm);
+        const char *comm =
+            __prog_image_path.empty() ? "<linuxss>" : __prog_image_path.c_str();
+        size_t comm_len = strlen(comm);
         if (comm_len != 0) {
-            (void)sys_vfs_write(comm_cap_res.value(), 0, comm, comm_len).to_result();
+            (void)sys_vfs_write(comm_cap_res.value(), 0, comm, comm_len)
+                .to_result();
         }
         (void)sys_cap_remove(comm_cap_res.value()).to_result();
     }
 
     if (!__prog_image_path.empty()) {
-        (void)sys_pcb_procfs_redirect(__prog_pcb_cap, "exe",
-                                      __prog_image_path.c_str())
-            .to_result();
+        if (!sys_pcb_procfs_redirect(__prog_pcb_cap, "exe",
+                                      __prog_image_path.c_str()).to_result()) {
+            loggers::LXSC::ERROR("Failed to redirect /proc/<pid>/exe");
+        }
     }
     if (!__prog_cwd.empty()) {
-        (void)sys_pcb_procfs_redirect(__prog_pcb_cap, "cwd",
-                                      __prog_cwd.c_str())
-            .to_result();
+        if (!sys_pcb_procfs_redirect(__prog_pcb_cap, "cwd", __prog_cwd.c_str()).to_result()) {
+            loggers::LXSC::ERROR("Failed to redirect /proc/<pid>/cwd");
+        }
     }
-    (void)sys_pcb_procfs_redirect(__prog_pcb_cap, "root", "/").to_result();
+    if (!sys_pcb_procfs_redirect(__prog_pcb_cap, "root", "/").to_result()) {
+        loggers::LXSC::ERROR("Failed to redirect /proc/<pid>/root");
+    }
 }
 
 size_t __prog_heap_base    = 0;
@@ -143,7 +180,7 @@ CapIdx __prog_heap_mem_cap = cap::null;
 CapIdx __prog_root_dir_cap = cap::null;
 CapIdx __prog_cwd_dir_cap  = cap::null;
 std::vector<CapIdx> __prog_children{};
-std::string __prog_cwd     = "/";
+std::string __prog_cwd = "/";
 std::string __prog_image_path{};
 ShellIoConfig __prog_stdout{};
 ShellIoConfig __prog_stderr{};
@@ -158,46 +195,52 @@ namespace {
 
     void init_shell_stdio() {
         const char *default_stdout = "/dev/stdout";
-        bool stdout_append         = __prog_stdout.present
-                                         ? __prog_stdout.append
-                                         : false;
+        bool stdout_append =
+            __prog_stdout.present ? __prog_stdout.append : false;
 
         if (cap::valid(__prog_stdout.cap)) {
-            loggers::LXSC::INFO("linux-subsystem: binding STDOUT fd to cap 0x%016X", __prog_stdout.cap);
+            loggers::LXSC::INFO(
+                "linux-subsystem: binding STDOUT fd to cap 0x%016X",
+                __prog_stdout.cap);
             (void)linux_bind_cap_fd(__prog_stdout.cap, 1, stdout_append);
         } else {
-            const char *stdout_path =
-                __prog_stdout.path.empty() ? default_stdout
-                                           : __prog_stdout.path.c_str();
-            loggers::LXSC::INFO("linux-subsystem: binding STDOUT fd to path %s", stdout_path);
+            const char *stdout_path = __prog_stdout.path.empty()
+                                          ? default_stdout
+                                          : __prog_stdout.path.c_str();
+            loggers::LXSC::INFO("linux-subsystem: binding STDOUT fd to path %s",
+                                stdout_path);
             (void)linux_open_fd(stdout_path, 1, LINUX_O_WRONLY);
         }
 
-        bool stderr_append = __prog_stderr.present
-                                 ? __prog_stderr.append
-                                 : stdout_append;
-        if (__prog_stderr.present &&
-            cap::valid(__prog_stderr.cap))
-        {
-            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to cap 0x%016X", __prog_stderr.cap);
+        bool stderr_append =
+            __prog_stderr.present ? __prog_stderr.append : stdout_append;
+        if (__prog_stderr.present && cap::valid(__prog_stderr.cap)) {
+            loggers::LXSC::INFO(
+                "linux-subsystem: binding STDERR fd to cap 0x%016X",
+                __prog_stderr.cap);
             (void)linux_bind_cap_fd(__prog_stderr.cap, 2, stderr_append);
             return;
         }
         if (__prog_stderr.present && !__prog_stderr.path.empty()) {
-            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to path %s", __prog_stderr.path.c_str());
+            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to path %s",
+                                __prog_stderr.path.c_str());
             (void)linux_open_fd(__prog_stderr.path.c_str(), 2, LINUX_O_WRONLY);
             return;
         }
 
         CapIdx stdout_cap = fd_to_cap(1);
         if (cap::valid(stdout_cap)) {
-            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to STDOUT cap 0x%016X", stdout_cap);
+            loggers::LXSC::INFO(
+                "linux-subsystem: binding STDERR fd to STDOUT cap 0x%016X",
+                stdout_cap);
             (void)linux_bind_cap_fd(stdout_cap, 2, stdout_append);
         } else {
-            const char *stdout_path =
-                __prog_stdout.path.empty() ? default_stdout
-                                           : __prog_stdout.path.c_str();
-            loggers::LXSC::INFO("linux-subsystem: binding STDERR fd to stdout path %s", stdout_path);
+            const char *stdout_path = __prog_stdout.path.empty()
+                                          ? default_stdout
+                                          : __prog_stdout.path.c_str();
+            loggers::LXSC::INFO(
+                "linux-subsystem: binding STDERR fd to stdout path %s",
+                stdout_path);
             (void)linux_open_fd(stdout_path, 2, LINUX_O_WRONLY);
         }
     }
@@ -214,7 +257,7 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
     __prog_root_dir_cap = cap::null;
     __prog_cwd_dir_cap  = cap::null;
     __prog_children.clear();
-    __prog_cwd          = "/";
+    __prog_cwd = "/";
     __prog_image_path.clear();
     reset_shellio_config(__prog_stdout);
     reset_shellio_config(__prog_stderr);
@@ -257,8 +300,7 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
                 continue;
             }
             if (cap_view.cap_type == PayloadType::VDIR &&
-                cap_view.cap_desc != nullptr &&
-                cap_view.cap_desc[0] == '#')
+                cap_view.cap_desc != nullptr && cap_view.cap_desc[0] == '#')
             {
                 if (strcmp(cap_view.cap_desc + 1, "/") == 0) {
                     __prog_root_dir_cap = cap_view.cap_idx;
@@ -268,8 +310,7 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
                 continue;
             }
             if (cap_view.cap_type == PayloadType::VFILE &&
-                cap_view.cap_desc != nullptr &&
-                cap_view.cap_desc[0] == '#')
+                cap_view.cap_desc != nullptr && cap_view.cap_desc[0] == '#')
             {
                 if (strcmp(cap_view.cap_desc, "#stdout-cap") == 0) {
                     __prog_stdout.cap = cap_view.cap_idx;
@@ -355,8 +396,7 @@ size_t linux_sys_brk(size_t newbrk) {
     if (__prog_heap_mem_cap == cap::null) {
         return __prog_brk;
     }
-    if (!sys_mem_resize(__prog_heap_mem_cap, newbrk - __prog_heap_base))
-    {
+    if (!sys_mem_resize(__prog_heap_mem_cap, newbrk - __prog_heap_base)) {
         return __prog_brk;
     }
 
@@ -439,8 +479,8 @@ size_t linux_sys_nanosleep(const void *req, void *rem) {
         return INVALID_VALUE;
     }
 
-    auto *tv = reinterpret_cast<const linux_timeval *>(req);
-    uint64_t ns = tv->sec * 1000000000ULL + tv->usec * 1000ULL;
+    auto *tv       = reinterpret_cast<const linux_timeval *>(req);
+    uint64_t ns    = tv->sec * 1000000000ULL + tv->usec * 1000ULL;
     auto sleep_res = sys_tcb_nanosleep(static_cast<size_t>(ns)).to_result();
     if (!sleep_res.has_value()) {
         return INVALID_VALUE;
@@ -452,6 +492,7 @@ size_t linux_sys_nanosleep(const void *req, void *rem) {
     }
     return 0;
 }
+
 [[noreturn]]
 void linux_sys_exit(int exitcode) {
     (void)sys_tcb_kill(__prog_main_tcb_cap, exitcode).to_result();
@@ -469,17 +510,116 @@ void linux_sys_exit_group(int exitcode) {
 }
 
 size_t linux_sys_getpid() {
-    if (__prog_pcb_cap == cap::null || __prog_pcb_cap == cap::error) {
+    if (!cap::valid(__prog_pcb_cap)) {
         return INVALID_VALUE;
     }
     return sys_getpid(__prog_pcb_cap).value();
 }
 
 size_t linux_sys_getppid() {
-    if (__prog_parent_cap == cap::null || __prog_parent_cap == cap::error) {
+    if (!cap::valid(__prog_parent_cap)) {
         return 0;
     }
     return sys_getpid(__prog_parent_cap).value();
+}
+
+size_t linux_sys_gettid() {
+    if (!cap::valid(__prog_main_tcb_cap)) {
+        return static_cast<size_t>(-EINVAL);
+    }
+
+    auto tid_res = sys_tcb_get_tid(__prog_main_tcb_cap).to_result();
+    if (!tid_res.has_value()) {
+        loggers::LXSC::ERROR("gettid failed: err=%s",
+                             to_cstring(tid_res.error()));
+        return static_cast<size_t>(-EINVAL);
+    }
+    return tid_res.value();
+}
+
+size_t linux_sys_kill(int pid, int sig) {
+    loggers::LXSC::INFO("kill pid=%d sig=%d", pid, sig);
+    int exit_code = signal_exit_code(sig);
+    if (exit_code < 0) {
+        loggers::LXSC::ERROR(
+            "kill 仅支持 SIGABRT/SIGKILL/SIGSEGV/SIGTERM, 目前得到 sig=%d",
+            sig);
+        return static_cast<size_t>(-ENOSYS);
+    }
+    if (pid <= 0) {
+        loggers::LXSC::ERROR("kill 不支持 pid=%d", pid);
+        return static_cast<size_t>(-ENOSYS);
+    }
+    if (!cap::valid(__prog_pcb_cap)) {
+        loggers::LXSC::ERROR("当前 pcb cap 无效, 无法执行 kill");
+        return static_cast<size_t>(-EINVAL);
+    }
+
+    auto self_pid_res = sys_getpid(__prog_pcb_cap).to_result();
+    if (!self_pid_res.has_value()) {
+        loggers::LXSC::ERROR("kill failed to resolve self pid: err=%s",
+                             to_cstring(self_pid_res.error()));
+        return static_cast<size_t>(-EINVAL);
+    }
+
+    CapIdx target_pcb = cap::null;
+    if (static_cast<int>(self_pid_res.value()) == pid) {
+        target_pcb = __prog_pcb_cap;
+    } else if (!find_direct_child_cap_by_pid(pid, target_pcb)) {
+        loggers::LXSC::ERROR("kill target pid=%d not found", pid);
+        return static_cast<size_t>(-ESRCH);
+    }
+
+    auto kill_res = sys_pcb_kill(target_pcb, exit_code).to_result();
+    if (!kill_res.has_value()) {
+        loggers::LXSC::ERROR("kill failed pid=%d err=%s", pid,
+                             to_cstring(kill_res.error()));
+        return static_cast<size_t>(-EINVAL);
+    }
+    return 0;
+}
+
+size_t linux_sys_tgkill(int tgid, int tid, int sig) {
+    loggers::LXSC::INFO("tgkill tgid=%d tid=%d sig=%d", tgid, tid, sig);
+    int exit_code = signal_exit_code(sig);
+    if (exit_code < 0) {
+        loggers::LXSC::ERROR(
+            "tgkill 仅支持 SIGABRT/SIGKILL/SIGSEGV/SIGTERM, 目前得到 sig=%d",
+            sig);
+        return static_cast<size_t>(-ENOSYS);
+    }
+    if (!cap::valid(__prog_pcb_cap) || !cap::valid(__prog_main_tcb_cap)) {
+        loggers::LXSC::ERROR("tgkill PCB 与 TCB 能力无效");
+        return static_cast<size_t>(-EINVAL);
+    }
+
+    auto self_pid_res = sys_getpid(__prog_pcb_cap).to_result();
+    auto self_tid_res = sys_tcb_get_tid(__prog_main_tcb_cap).to_result();
+    if (!self_pid_res.has_value() || !self_tid_res.has_value()) {
+        loggers::LXSC::ERROR("tgkill 无法获取当前 PCB 或 TCB 的 pid/tid: err_pid=%s err_tid=%s",
+                             to_cstring(self_pid_res.error()),
+                             to_cstring(self_tid_res.error()));
+        return static_cast<size_t>(-EINVAL);
+    }
+
+    if (static_cast<int>(self_pid_res.value()) != tgid ||
+        static_cast<int>(self_tid_res.value()) != tid)
+    {
+        loggers::LXSC::ERROR(
+            "tgkill 目标不匹配: want tgid=%d tid=%d current_tgid=%lu "
+            "current_tid=%lu",
+            tgid, tid, static_cast<unsigned long>(self_pid_res.value()),
+            static_cast<unsigned long>(self_tid_res.value()));
+        return static_cast<size_t>(-ESRCH);
+    }
+
+    auto kill_res = sys_tcb_kill(__prog_main_tcb_cap, exit_code).to_result();
+    if (!kill_res.has_value()) {
+        loggers::LXSC::ERROR("tgkill failed tgid=%d tid=%d err=%s", tgid, tid,
+                             to_cstring(kill_res.error()));
+        return static_cast<size_t>(-EINVAL);
+    }
+    return 0;
 }
 
 size_t linux_sys_sched_yield() {

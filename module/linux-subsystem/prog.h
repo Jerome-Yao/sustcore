@@ -43,6 +43,9 @@ void linux_sys_exit(int exitcode);
 void linux_sys_exit_group(int exitcode);
 size_t linux_sys_getpid();
 size_t linux_sys_getppid();
+size_t linux_sys_gettid();
+size_t linux_sys_kill(int pid, int sig);
+size_t linux_sys_tgkill(int tgid, int tid, int sig);
 size_t linux_sys_sched_yield();
 size_t linux_sys_chdir(const char *pathname);
 size_t linux_sys_uname(void *buf);
@@ -50,6 +53,8 @@ size_t linux_sys_gettimeofday(void *tv, void *tz);
 size_t linux_sys_nanosleep(const void *req, void *rem);
 size_t linux_sys_times(void *buf);
 size_t linux_sys_getrandom(void *buf, size_t buflen, unsigned flags);
+size_t linux_sys_rt_sigtimedwait(const void *set, void *info,
+                                 const void *timeout, size_t sigsetsize);
 size_t linux_sys_execve(const char *pathname, const char *const argv[],
                         const char *const envp[]);
 size_t linux_sys_wait4(int pid, int *status, int options, void *rusage);

@@ -42,10 +42,21 @@ namespace task {
     [[nodiscard]]
     wait::wd_t task_exit_wait_wd() noexcept;
     struct NanosleepContext;
+    struct TimedWaitContext;
     [[nodiscard]]
     Result<NanosleepContext *> ensure_nanosleep_context(
         util::nonnull<TCB *> tcb) noexcept;
     void destroy_nanosleep_context(TCB *tcb) noexcept;
+    [[nodiscard]]
+    Result<TimedWaitContext *> ensure_timed_wait_context(
+        util::nonnull<TCB *> tcb) noexcept;
+    void destroy_timed_wait_context(TCB *tcb) noexcept;
+    [[nodiscard]]
+    Result<void> arm_timed_wait(util::nonnull<TCB *> tcb, wait::wd_t wait_wd,
+                                size_t timeout_ns) noexcept;
+    void disarm_timed_wait(TCB *tcb) noexcept;
+    [[nodiscard]]
+    bool timed_wait_timed_out(const TCB *tcb) noexcept;
     [[nodiscard]]
     Result<void> block_current_for_nanosleep(
         util::nonnull<TCB *> tcb, size_t ns) noexcept;
@@ -94,6 +105,7 @@ namespace task {
             tcb->wait_wd              = 0;
             tcb->wait_predicate       = {};
             tcb->nanosleep_ctx        = nullptr;
+            tcb->timed_wait_ctx       = nullptr;
             tcb->syscall_info.reset();
             tcb->wait_head = {};
             return util::nnullforce(tcb);

@@ -88,6 +88,7 @@
 #define SYS_VFS_SETATTR_AT      (SYSCALL_BASE + 0x45)
 #define SYS_VFS_CHOWN           (SYSCALL_BASE + 0x46)
 #define SYS_VFS_CHOWN_AT        (SYSCALL_BASE + 0x47)
+#define SYS_TCB_TIMEOUT_WAIT    (SYSCALL_BASE + 0x48)
 
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE        (0xFFC00000)

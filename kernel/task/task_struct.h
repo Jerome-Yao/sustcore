@@ -38,6 +38,7 @@ namespace wait {
 
 namespace task {
     struct NanosleepContext;
+    struct TimedWaitContext;
     struct ProcState;
 
     enum class BootThreadRole {
@@ -126,7 +127,7 @@ namespace task {
         util::ListHead<TCB> list_head;
 
         // running information
-        constexpr static size_t KSTACK_PAGES = 64;  // 256KB(64 pages) for kernel stack
+        constexpr static size_t KSTACK_PAGES = 96;  // 384KB(96 pages) for kernel stack
         constexpr static size_t KSTACK_SIZE = KSTACK_PAGES * PAGESIZE;
         void *kstack_bottom;
         char *ksp;
@@ -193,6 +194,7 @@ namespace task {
         // 由被等待的事件在满足条件时检查, 决定是否可以唤醒线程
         wait::WaitPredicate wait_predicate;
         NanosleepContext *nanosleep_ctx;
+        TimedWaitContext *timed_wait_ctx;
         SyscallInfo syscall_info;
 
         void *operator new(size_t size);
