@@ -25,6 +25,8 @@
 namespace {
     constexpr size_t INVALID_VALUE      = 0xFFFF'FFFF'FFFF'FFFF;
     constexpr size_t UTSNAME_FIELD_SIZE = 65;
+    constexpr unsigned long LINUX_PERSONALITY_QUERY = 0xFFFFFFFFUL;
+    constexpr unsigned long PER_LINUX               = 0x0000UL;
     constexpr int LINUX_O_WRONLY        = 1;
     constexpr int LINUX_SIGABRT         = 6;
     constexpr int LINUX_SIGKILL         = 9;
@@ -196,6 +198,7 @@ CapIdx __prog_cwd_dir_cap  = cap::null;
 std::vector<CapIdx> __prog_children{};
 std::string __prog_cwd = "/";
 std::string __prog_image_path{};
+unsigned long __prog_personality = PER_LINUX;
 ShellIoConfig __prog_stdout{};
 ShellIoConfig __prog_stderr{};
 
@@ -273,6 +276,7 @@ void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
     __prog_children.clear();
     __prog_cwd = "/";
     __prog_image_path.clear();
+    __prog_personality = PER_LINUX;
     reset_shellio_config(__prog_stdout);
     reset_shellio_config(__prog_stderr);
 
@@ -479,6 +483,15 @@ size_t linux_sys_clock_gettime(int clk_id, void *tp) {
     };
     memcpy(tp, &value, sizeof(value));
     return 0;
+}
+
+size_t linux_sys_personality(unsigned long persona) {
+    unsigned long previous = __prog_personality;
+    if (persona == LINUX_PERSONALITY_QUERY) {
+        return previous;
+    }
+    __prog_personality = static_cast<uint32_t>(persona);
+    return previous;
 }
 
 size_t linux_sys_syslog(int type, void *bufp, int len) {

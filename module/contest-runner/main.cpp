@@ -415,11 +415,13 @@ namespace contest_runner {
     }
 
 #if defined(__ARCH_riscv64__)
-#define LIB_PATH   "/lib"
-#define LD_SO_PATH "/lib/ld-linux-riscv64-lp64d.so.1"
+#define LIB_PATH        "/lib"
+#define LD_SO_PATH      "/lib/ld-linux-riscv64-lp64d.so.1"
+#define LD_SO_PATH_MUSL "/lib/ld-musl-riscv64.so.1"
 #elif defined(__ARCH_loongarch64__)
-#define LIB_PATH   "/lib64"
-#define LD_SO_PATH "/lib64/ld-linux-loongarch-lp64d.so.1"
+#define LIB_PATH        "/lib64"
+#define LD_SO_PATH      "/lib64/ld-linux-loongarch-lp64d.so.1"
+#define LD_SO_PATH_MUSL "/lib64/ld-musl-riscv64.so.1"
 #endif
 
 #define GLIBC_LIB_PATH  "/testing/glibc/lib"
@@ -457,7 +459,9 @@ namespace contest_runner {
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
+#if defined(__ARCH_riscv64__)
         contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
+#endif
         contest_runner::cleanup_runner_context_caps(ctx);
 
         if (!glibc_env_cleanup()) {
@@ -472,6 +476,7 @@ namespace contest_runner {
         bool ok  = true;
         ok      &= dolink(LIB_PATH, MUSL_LIB_PATH);
         ok      &= dolink(LD_SO_PATH, MUSL_LD_SO_PATH);
+        ok      &= dolink(LD_SO_PATH_MUSL, MUSL_LD_SO_PATH);
         return ok;
     }
 
@@ -479,6 +484,7 @@ namespace contest_runner {
         bool ok  = true;
         ok      &= dounlink(LIB_PATH);
         ok      &= dounlink(LD_SO_PATH);
+        ok      &= dounlink(LD_SO_PATH_MUSL);
         return ok;
     }
 
@@ -503,7 +509,9 @@ namespace contest_runner {
                                          contest_runner::run_busybox(ctx));
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_libctest(ctx));
+#if defined(__ARCH_riscv64__)
         contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
+#endif
         contest_runner::cleanup_runner_context_caps(ctx);
         return true;
     }

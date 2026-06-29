@@ -733,6 +733,8 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_getrandom:
             return linux_sys_getrandom(reinterpret_cast<void *>(a0), a1,
                                        static_cast<unsigned>(a2));
+        case __NR_personality:
+            return linux_sys_personality(static_cast<unsigned long>(a0));
         case __NR_fstat:
             return linux_sys_fstat(static_cast<int>(a0),
                                    reinterpret_cast<void *>(a1));
@@ -824,7 +826,7 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             // 占位符
         case __NR_utimensat:
             // 占位符
-            loggers::LXSC::ERROR("unsupported syscall %s (%lu), but returning 0 for compatibility",
+            loggers::LXSC::WARN("unsupported syscall %s (%lu), but returning 0 for compatibility",
                                  syscall_to_string(a7), a7);
             return 0;
         case __NR_syslog:
@@ -832,7 +834,7 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                     reinterpret_cast<void *>(a1),
                                     static_cast<int>(a2));
         case __NR_set_tid_address: {
-            loggers::LXSC::ERROR(
+            loggers::LXSC::WARN(
                 "unsupported syscall %s (%lu), ignoring ptr=%p and forwarding to main tcb tid",
                 syscall_to_string(a7), a7, reinterpret_cast<void *>(a0));
             auto tid_res = sys_tcb_get_tid(__prog_main_tcb_cap).to_result();
@@ -844,12 +846,12 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
             return tid_res.value();
         }
         case __NR_sched_getaffinity:
-            loggers::LXSC::ERROR(
+            loggers::LXSC::WARN(
                 "unsupported syscall %s (%lu), ignoring pid=%d and returning 1 for compatibility",
                 syscall_to_string(a7), a7, static_cast<int>(a0));
             return 1;
         case __NR_rt_sigaction:
-            loggers::LXSC::ERROR(
+            loggers::LXSC::WARN(
                 "unsupported syscall %s (%lu), ignoring and returning 0 for compatibility",
                 syscall_to_string(a7), a7);
             return 0;

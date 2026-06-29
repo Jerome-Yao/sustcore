@@ -32,6 +32,7 @@ extern CapIdx __prog_cwd_dir_cap;
 extern std::vector<CapIdx> __prog_children;
 extern std::string __prog_cwd;
 extern std::string __prog_image_path;
+extern unsigned long __prog_personality;
 
 void init_prog_data(size_t argc, const char *argv[], size_t bsargc,
                     const bsheader *bsargv[]);
@@ -51,6 +52,7 @@ size_t linux_sys_chdir(const char *pathname);
 size_t linux_sys_uname(void *buf);
 size_t linux_sys_gettimeofday(void *tv, void *tz);
 size_t linux_sys_clock_gettime(int clk_id, void *tp);
+size_t linux_sys_personality(unsigned long persona);
 size_t linux_sys_syslog(int type, void *bufp, int len);
 size_t linux_sys_nanosleep(const void *req, void *rem);
 size_t linux_sys_times(void *buf);
