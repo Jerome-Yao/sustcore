@@ -756,6 +756,8 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
         case __NR_dup3:
             return linux_sys_dup3(static_cast<int>(a0), static_cast<int>(a1),
                                   static_cast<int>(a2));
+        case __NR_fcntl:
+            return linux_sys_fcntl(static_cast<int>(a0), static_cast<int>(a1), a2);
         case __NR_ioctl:
             return linux_sys_ioctl(static_cast<int>(a0), a1, a2);
         case __NR_lseek:

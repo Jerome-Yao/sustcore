@@ -4,7 +4,7 @@
 
 #include <kmod/syscall.h>
 
-static FdEntry fd_table[MAX_FDS] = {{cap::null, 0}};
+static FdEntry fd_table[MAX_FDS] = {{cap::null, 0, 0, 0}};
 static FdTableLock fd_table_lock;
 
 int alloc_fd(CapIdx cap) {
@@ -13,9 +13,11 @@ int alloc_fd(CapIdx cap) {
     int fd = -EMFILE;
     for (int i = CWD_FD_RESERVED + 1; i < MAX_FDS; ++i) {
         if (fd_table[i].cap == cap::null) {
-            fd_table[i].cap    = cap;
-            fd_table[i].offset = 0;
-            fd                 = i;
+            fd_table[i].cap          = cap;
+            fd_table[i].offset       = 0;
+            fd_table[i].fd_flags     = 0;
+            fd_table[i].status_flags = 0;
+            fd                       = i;
             break;
         }
     }
@@ -35,8 +37,10 @@ bool bind_fd(int fd, CapIdx cap) {
     if (old_cap != cap::null && old_cap != cap) {
         sys_cap_remove(old_cap);
     }
-    fd_table[fd].cap    = cap;
-    fd_table[fd].offset = 0;
+    fd_table[fd].cap          = cap;
+    fd_table[fd].offset       = 0;
+    fd_table[fd].fd_flags     = 0;
+    fd_table[fd].status_flags = 0;
 
     fd_table_lock.unlock();
     return true;
@@ -52,7 +56,7 @@ void free_fd(int fd) {
     CapIdx cap = fd_table[fd].cap;
     if (cap != cap::null) {
         sys_cap_remove(cap);
-        fd_table[fd] = {cap::null, 0};
+        fd_table[fd] = {cap::null, 0, 0, 0};
     }
 
     fd_table_lock.unlock();
@@ -97,4 +101,32 @@ void set_fd_offset(int fd, size_t offset) {
         return;
     }
     fd_table[fd].offset = offset;
+}
+
+int fd_flags(int fd) {
+    if (fd < 0 || fd >= MAX_FDS || fd_table[fd].cap == cap::null) {
+        return 0;
+    }
+    return fd_table[fd].fd_flags;
+}
+
+void set_fd_flags(int fd, int flags) {
+    if (fd < 0 || fd >= MAX_FDS || fd_table[fd].cap == cap::null) {
+        return;
+    }
+    fd_table[fd].fd_flags = flags;
+}
+
+int fd_status_flags(int fd) {
+    if (fd < 0 || fd >= MAX_FDS || fd_table[fd].cap == cap::null) {
+        return 0;
+    }
+    return fd_table[fd].status_flags;
+}
+
+void set_fd_status_flags(int fd, int flags) {
+    if (fd < 0 || fd >= MAX_FDS || fd_table[fd].cap == cap::null) {
+        return;
+    }
+    fd_table[fd].status_flags = flags;
 }

@@ -28,6 +28,8 @@ constexpr int CWD_FD_RESERVED = 3;
 struct FdEntry {
     CapIdx cap;
     size_t offset;
+    int fd_flags;
+    int status_flags;
 };
 
 class FdTableLock {
@@ -45,3 +47,7 @@ FdEntry*    lookup_fd(int fd);       // returns nullptr if out of bounds or cap=
 CapIdx      fd_to_cap(int fd);        // returns cap::error on invalid
 size_t      fd_offset(int fd);        // returns 0 on invalid
 void        set_fd_offset(int fd, size_t offset);
+int         fd_flags(int fd);
+void        set_fd_flags(int fd, int flags);
+int         fd_status_flags(int fd);
+void        set_fd_status_flags(int fd, int flags);

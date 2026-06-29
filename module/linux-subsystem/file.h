@@ -20,6 +20,7 @@ size_t linux_sys_readv(int fd, const void *iov, int iovcnt);
 size_t linux_sys_close(int fd);
 size_t linux_sys_dup(int oldfd);
 size_t linux_sys_dup3(int oldfd, int newfd, int flags);
+size_t linux_sys_fcntl(int fd, int cmd, size_t arg);
 size_t linux_sys_ioctl(int fd, size_t request, size_t arg);
 size_t linux_open_fd(const char *pathname, int fd, int flags);
 size_t linux_opendir_fd(const char *pathname, int fd);

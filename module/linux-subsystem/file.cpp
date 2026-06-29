@@ -38,7 +38,15 @@ namespace {
     constexpr int LINUX_O_WRONLY    = 1;
     constexpr int LINUX_O_RDWR      = 2;
     constexpr int LINUX_O_CREAT     = 0100;     // octal
+    constexpr int LINUX_O_APPEND    = 02000;    // octal
+    constexpr int LINUX_O_NONBLOCK  = 04000;    // octal
     constexpr int LINUX_O_DIRECTORY = 0200000;  // octal
+    constexpr int LINUX_F_DUPFD     = 0;
+    constexpr int LINUX_F_GETFD     = 1;
+    constexpr int LINUX_F_SETFD     = 2;
+    constexpr int LINUX_F_GETFL     = 3;
+    constexpr int LINUX_F_SETFL     = 4;
+    constexpr int LINUX_FD_CLOEXEC  = 1;
     constexpr int AT_REMOVEDIR      = 0x200;
     constexpr size_t MAX_DIR_FDS    = 128;
     constexpr size_t MAX_EXEC_ARGS   = 256;
@@ -951,7 +959,11 @@ size_t linux_open_fd(const char *pathname, int fd, int flags) {
         return -ENOENT;
     }
 
-    return bind_open_result(fd, file_cap, 0, nullptr, false);
+    auto open_res = bind_open_result(fd, file_cap, 0, nullptr, false);
+    if (static_cast<long>(open_res) >= 0) {
+        set_fd_status_flags(static_cast<int>(open_res), flags & 0xFFFFFFFF);
+    }
+    return open_res;
 }
 
 size_t linux_bind_cap_fd(CapIdx cap, int fd, bool append) {
@@ -972,7 +984,12 @@ size_t linux_bind_cap_fd(CapIdx cap, int fd, bool append) {
     if (!clone_res.has_value()) {
         return -EBADF;
     }
-    return bind_open_result(fd, clone_res.value(), offset, nullptr, false);
+    auto bind_res = bind_open_result(fd, clone_res.value(), offset, nullptr, false);
+    if (static_cast<long>(bind_res) >= 0) {
+        set_fd_status_flags(static_cast<int>(bind_res),
+                            append ? LINUX_O_APPEND : 0);
+    }
+    return bind_res;
 }
 
 size_t linux_opendir_fd(const char *pathname, int fd) {
@@ -1110,6 +1127,37 @@ size_t linux_sys_ioctl(int fd, size_t request, size_t arg) {
     return 0;
 }
 
+size_t linux_sys_fcntl(int fd, int cmd, size_t arg) {
+    switch (cmd) {
+        case LINUX_F_GETFD:
+            if (fd_to_cap(fd) == cap::error) {
+                return -EBADF;
+            }
+            return static_cast<size_t>(fd_flags(fd));
+        case LINUX_F_SETFD:
+            if (fd_to_cap(fd) == cap::error) {
+                return -EBADF;
+            }
+            set_fd_flags(fd, static_cast<int>(arg) & LINUX_FD_CLOEXEC);
+            return 0;
+        case LINUX_F_GETFL:
+            if (fd_to_cap(fd) == cap::error) {
+                return -EBADF;
+            }
+            return static_cast<size_t>(fd_status_flags(fd));
+        case LINUX_F_SETFL:
+            if (fd_to_cap(fd) == cap::error) {
+                return -EBADF;
+            }
+            set_fd_status_flags(
+                fd, static_cast<int>(arg) & (LINUX_O_NONBLOCK | LINUX_O_APPEND));
+            return 0;
+        default:
+            loggers::LXSC::ERROR("unsupported fcntl cmd=%d", cmd);
+            return -EINVAL;
+    }
+}
+
 size_t linux_sys_readv(int fd, const void *iov, int iovcnt) {
     if (iovcnt < 0 || iovcnt > LINUX_IOV_MAX) {
         return -EINVAL;
@@ -1176,6 +1224,8 @@ size_t linux_sys_dup(int oldfd) {
     }
 
     set_fd_offset(newfd, fd_offset(oldfd));
+    set_fd_flags(newfd, fd_flags(oldfd));
+    set_fd_status_flags(newfd, fd_status_flags(oldfd));
     copy_dir_fd_state(oldfd, newfd, false);
     return static_cast<size_t>(newfd);
 }
@@ -1215,6 +1265,8 @@ size_t linux_sys_dup3(int oldfd, int newfd, int flags) {
     }
 
     set_fd_offset(newfd, fd_offset(oldfd));
+    set_fd_flags(newfd, fd_flags(oldfd));
+    set_fd_status_flags(newfd, fd_status_flags(oldfd));
     copy_dir_fd_state(oldfd, newfd, false);
     return static_cast<size_t>(newfd);
 }
