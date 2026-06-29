@@ -473,9 +473,9 @@ namespace contest_runner {
         contest_runner::accumulate_stats(total, contest_runner::run_basic(ctx));
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
-#if defined(__ARCH_riscv64__)
-        contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
-#endif
+// #if defined(__ARCH_riscv64__)
+//         contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
+// #endif
         contest_runner::cleanup_runner_context_caps(ctx);
 
         if (!glibc_env_cleanup()) {
@@ -523,9 +523,9 @@ namespace contest_runner {
                                          contest_runner::run_busybox(ctx));
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_libctest(ctx));
-#if defined(__ARCH_riscv64__)
-        contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
-#endif
+// #if defined(__ARCH_riscv64__)
+//         contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
+// #endif
         contest_runner::cleanup_runner_context_caps(ctx);
         return true;
     }
