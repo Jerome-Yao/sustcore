@@ -608,9 +608,9 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
     size_t file_offset      = 0;
     if (is_anonymous) {
         if (fd != static_cast<size_t>(-1)) {
-            loggers::LXSC::ERROR("anonymous mmap requires fd=-1, got fd=%ld",
+            loggers::LXSC::WARN("anonymous mmap requires fd=-1, got fd=%ld, ignored",
                                  static_cast<long>(fd));
-            return INVALID_VALUE;
+            fd = -1;
         }
     } else {
         backing_file_cap = fd_to_cap(static_cast<int>(fd));
