@@ -86,12 +86,12 @@ namespace ltp {
     const char *testcase07_readv_writev[] = {
         "readv01",
         "readv02",
-        "writev01",
-        "writev02",
-        "writev03",
-        "writev05",
+        // "writev01",
+        // "writev02",
+        // "writev03",
+        // "writev05",
         "writev06",
-        "writev07",
+        // "writev07",
         nullptr,
     };
 
@@ -686,7 +686,7 @@ namespace ltp {
         testcase04_process_basic,
         testcase05_close_dup,
         testcase06_read_write,
-        // testcase07_readv_writev,
+        testcase07_readv_writev,
         // testcase08_pread_pwrite,
         // testcase09_preadv_pwritev,
         // testcase10_copy_sendfile_readahead,
