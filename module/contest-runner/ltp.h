@@ -296,14 +296,14 @@ namespace ltp {
 
     const char *testcase20_chmod_chown_at[] = {
         "fchmodat01",
-        "fchmodat02",
+        // "fchmodat02",
         "fchownat01",
-        "fchownat02",
+        // "fchownat02",
         "chmod01",
-        "chmod03",
-        "chmod05",
-        "chmod06",
-        "chmod07",
+        // "chmod03",
+        // "chmod05",
+        // "chmod06",
+        // "chmod07",
         nullptr,
     };
 
@@ -698,7 +698,7 @@ namespace ltp {
         // testcase17_openat,
         testcase18_stat_core,
         // testcase19_statx_extended,
-        // testcase20_chmod_chown_at,
+        testcase20_chmod_chown_at,
         // testcase21_chown_variants,
         // testcase22_statfs_statvfs,
         // testcase23_truncate,
