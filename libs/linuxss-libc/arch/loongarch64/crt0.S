@@ -21,17 +21,16 @@ linux_subsystem_entry:
     move $a1, $t3
     move $a2, $t4
     move $a3, $t5
-    addi.d $sp, $sp, -32
+    addi.d $sp, $sp, -16
     st.d $t6, $sp, 0
-    st.d $t3, $sp, 8
-    st.d $t4, $sp, 16
-    st.d $t5, $sp, 24
+    st.d $zero, $sp, 8
     bl linuxss_entry
     ld.d $t6, $sp, 0
-    ld.d $a0, $sp, 8
-    ld.d $a1, $sp, 16
-    ld.d $a2, $sp, 24
-    addi.d $sp, $sp, 32
+    move $a0, $zero
+    move $a1, $zero
+    move $a2, $zero
+    move $a3, $zero
+    addi.d $sp, $sp, 16
     jr $t6
 
 .Ldispatch_path:

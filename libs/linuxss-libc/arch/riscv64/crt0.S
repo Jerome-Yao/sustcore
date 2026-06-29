@@ -27,12 +27,9 @@ linux_subsystem_entry:
     mv a1, t3
     mv a2, t4
     mv a3, t5
-    addi sp, sp, -40
+    addi sp, sp, -16
     sd gp, 0(sp)
     sd t6, 8(sp)
-    sd t3, 16(sp)
-    sd t4, 24(sp)
-    sd t5, 32(sp)
     .option push
     .option norelax
 2:
@@ -42,10 +39,11 @@ linux_subsystem_entry:
     call linuxss_entry
     ld gp, 0(sp)
     ld t6, 8(sp)
-    ld a0, 16(sp)
-    ld a1, 24(sp)
-    ld a2, 32(sp)
-    addi sp, sp, 40
+    li a0, 0
+    li a1, 0
+    li a2, 0
+    li a3, 0
+    addi sp, sp, 16
     jr t6
 
 .Ldispatch_path:
