@@ -90,6 +90,9 @@
 #define SYS_VFS_CHOWN_AT        (SYSCALL_BASE + 0x47)
 #define SYS_TCB_TIMEOUT_WAIT    (SYSCALL_BASE + 0x48)
 #define SYS_VFS_IOCTL           (SYSCALL_BASE + 0x49)
+#define SYS_PCB_SIGACTION       (SYSCALL_BASE + 0x4A)
+#define SYS_PCB_SIGNAL          (SYSCALL_BASE + 0x4B)
+#define SYS_PCB_WAITSIG         (SYSCALL_BASE + 0x4C)
 
 // 以SYS_UNSTABLE_BASE开头的系统调用为不稳定接口, 可能会在后续版本中更改或移除
 #define SYS_UNSTABLE_BASE        (0xFFC00000)

@@ -225,7 +225,7 @@ namespace wait {
 
         tcb->wait_wd            = wd;
         tcb->wait_predicate     = std::move(predicate);
-        tcb->basic_entity.state = ThreadState::WAITING;
+        tcb->basic_entity.state = ThreadState::UNINTERRUPTIBLE_WAITING;
         qres.value()->threads.push_back(*tcb);
         loggers::TASK::DEBUG("等待队列入队: pid=%lu tid=%lu wd=%lu",
                              tcb->task != nullptr ? tcb->task->pid : 0,

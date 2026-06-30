@@ -1,1 +1,1 @@
-sources += task.cpp task_create.cpp bootstrap.cpp scheduler.cpp wait.cpp
+sources += task.cpp task_create.cpp bootstrap.cpp scheduler.cpp wait.cpp signal.cpp

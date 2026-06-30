@@ -137,6 +137,27 @@ sys_pcb_procfs_redirect:
     syscall 0
     ret
 
+    .global sys_pcb_sigaction
+    .type sys_pcb_sigaction, @function
+sys_pcb_sigaction:
+    li.d $a7, SYS_PCB_SIGACTION
+    syscall 0
+    ret
+
+    .global sys_pcb_signal
+    .type sys_pcb_signal, @function
+sys_pcb_signal:
+    li.d $a7, SYS_PCB_SIGNAL
+    syscall 0
+    ret
+
+    .global sys_pcb_waitsig
+    .type sys_pcb_waitsig, @function
+sys_pcb_waitsig:
+    li.d $a7, SYS_PCB_WAITSIG
+    syscall 0
+    ret
+
     .global sys_yield
     .type sys_yield, @function
 sys_yield:

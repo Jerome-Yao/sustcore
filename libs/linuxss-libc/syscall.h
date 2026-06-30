@@ -38,6 +38,13 @@ struct PipeCreateRet {
     CapIdx write_cap;
 };
 
+struct KmodSigAction {
+    size_t handler;
+    uint64_t mask;
+    uint64_t flags;
+    size_t restorer;
+};
+
 extern "C" SysRet<void> sys_write_serial(size_t __always_zero, const char *str,
                                          size_t len);
 extern "C" SysRet<size_t> sys_time_now_ns();
@@ -71,6 +78,12 @@ extern "C" SysRet<CapIdx> sys_pcb_procfs_get(CapIdx pcb_cap, const char *name);
 extern "C" SysRet<void> sys_pcb_procfs_redirect(CapIdx pcb_cap,
                                                 const char *name,
                                                 const char *target);
+extern "C" SysRet<void> sys_pcb_sigaction(CapIdx pcb_cap, size_t signo,
+                                          const KmodSigAction *action,
+                                          KmodSigAction *old_action);
+extern "C" SysRet<void> sys_pcb_signal(CapIdx pcb_cap, size_t signo);
+extern "C" SysRet<size_t> sys_pcb_waitsig(CapIdx pcb_cap, uint64_t mask,
+                                          size_t timeout_ns, size_t options);
 extern "C" SysRet<size_t> sys_yield();
 extern "C" SysRet<size_t> sys_getpid(CapIdx pcb_cap);
 extern "C" SysRet<CapIdx> sys_notif_create();

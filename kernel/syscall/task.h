@@ -119,6 +119,15 @@ namespace syscall {
     [[nodiscard]]
     Result<bool> pcb_procfs_redirect(CapIdx pcb_cap, const UString &name,
                                      const UString &target);
+    [[nodiscard]]
+    Result<bool> pcb_sigaction(CapIdx pcb_cap, size_t signo,
+                               const task::SigAction *action,
+                               task::SigAction *old_action);
+    [[nodiscard]]
+    Result<bool> pcb_signal(CapIdx pcb_cap, size_t signo);
+    [[nodiscard]]
+    Result<size_t> pcb_waitsig(CapIdx pcb_cap, uint64_t mask,
+                               size_t timeout_ns, size_t options);
 
     /**
      * @brief 判断目标 PCB 是否为当前进程.

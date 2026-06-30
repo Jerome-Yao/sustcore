@@ -609,6 +609,16 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         //     .dispname     = "contest-runner",
         //     .is_linuxproc = false,
         // },
+        // SpawnRequest{
+        //     .path       = "/initrd/test-linux.mod",
+        //     .dispname   = "test-linux",
+        //     .is_linuxproc = true,
+        // },
+        // SpawnRequest{
+        //     .path         = "/initrd/test-signal.mod",
+        //     .dispname     = "test-signal",
+        //     .is_linuxproc = true,
+        // },
         SpawnRequest{
             .path         = "/initrd/contest-runner.mod",
             .dispname     = "contest-runner",
@@ -618,11 +628,6 @@ extern "C" int kmod_main(int argc, const char *argv[], const char *envp[],
         //     .path         = "/initrd/test-meminfo.mod",
         //     .dispname     = "test-meminfo",
         //     .is_linuxproc = false,
-        // },
-        // SpawnRequest{
-        //     .path       = "/initrd/test-linux.mod",
-        //     .dispname   = "test-linux",
-        //     .is_linuxproc = true,
         // }
     };
 

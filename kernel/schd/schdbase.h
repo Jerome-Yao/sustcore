@@ -20,25 +20,27 @@
 #include <concepts>
 
 enum class ThreadState {
-    EMPTY          = 0,
-    INITIALIZATION = 1,
-    READY          = 2,
-    RUNNING        = 3,
-    YIELD          = 4,
-    WAITING        = 5,
-    DYING          = 6
+    EMPTY                   = 0,
+    INITIALIZATION          = 1,
+    READY                   = 2,
+    RUNNING                 = 3,
+    YIELD                   = 4,
+    INTERRUPTIBLE_WAITING   = 5,
+    UNINTERRUPTIBLE_WAITING = 6,
+    DYING                   = 7
 };
 
 constexpr const char *to_string(ThreadState state) {
     switch (state) {
-        case ThreadState::EMPTY:          return "EMPTY";
-        case ThreadState::INITIALIZATION: return "INITIALIZATION";
-        case ThreadState::READY:          return "READY";
-        case ThreadState::RUNNING:        return "RUNNING";
-        case ThreadState::YIELD:          return "YIELD";
-        case ThreadState::WAITING:        return "WAITING";
-        case ThreadState::DYING:          return "DYING";
-        default:                          return "UNKNOWN";
+        case ThreadState::EMPTY:                   return "EMPTY";
+        case ThreadState::INITIALIZATION:          return "INITIALIZATION";
+        case ThreadState::READY:                   return "READY";
+        case ThreadState::RUNNING:                 return "RUNNING";
+        case ThreadState::YIELD:                   return "YIELD";
+        case ThreadState::INTERRUPTIBLE_WAITING:   return "INTERRUPTIBLE_WAITING";
+        case ThreadState::UNINTERRUPTIBLE_WAITING: return "UNINTERRUPTIBLE_WAITING";
+        case ThreadState::DYING:                   return "DYING";
+        default:                                   return "UNKNOWN";
     }
 }
 

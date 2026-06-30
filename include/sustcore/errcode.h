@@ -37,6 +37,7 @@ enum class ErrCode : int {
     FUTURE_CANCLED           = GENERIC_ERROR | 0x000B,
     FUTURE_CONSUMED          = GENERIC_ERROR | 0x000C,
     TIMEOUT                  = GENERIC_ERROR | 0x000D,
+    INTERRUPTED              = GENERIC_ERROR | 0x000E,
     // capability errors
     CAP_ERROR                = 0x01'0000,
     INVALID_CAPABILITY       = CAP_ERROR | 0x0001,
@@ -84,6 +85,8 @@ constexpr const char *to_cstring(ErrCode err) {
         case ErrCode::FUTURE_PENDING:     return "FUTURE_PENDING";
         case ErrCode::FUTURE_CANCLED:     return "FUTURE_CANCLED";
         case ErrCode::FUTURE_CONSUMED:    return "FUTURE_CONSUMED";
+        case ErrCode::TIMEOUT:            return "TIMEOUT";
+        case ErrCode::INTERRUPTED:        return "INTERRUPTED";
         case ErrCode::INVALID_CAPABILITY: return "INVALID_CAPABILITY";
         case ErrCode::INSUFFICIENT_PERMISSIONS:
             return "INSUFFICIENT_PERMISSIONS";

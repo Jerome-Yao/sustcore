@@ -171,13 +171,15 @@ namespace schd {
     }
 
     Result<void> Scheduler::prepare_prev_task(TCB *tcb) noexcept {
-        if (tcb == nullptr || tcb->basic_entity.state == ThreadState::WAITING ||
+        if (tcb == nullptr ||
+            tcb->basic_entity.state == ThreadState::INTERRUPTIBLE_WAITING ||
+            tcb->basic_entity.state == ThreadState::UNINTERRUPTIBLE_WAITING ||
             tcb->basic_entity.state == ThreadState::DYING)
         {
             void_return();
         }
         if (!can_schedule_tcb(tcb)) {
-            tcb->basic_entity.state = ThreadState::WAITING;
+            tcb->basic_entity.state = ThreadState::UNINTERRUPTIBLE_WAITING;
             void_return();
         }
 
@@ -260,7 +262,8 @@ namespace schd {
         }
 
         if (!ignore_preempt_disabled &&
-            current->basic_entity.state != ThreadState::WAITING &&
+            current->basic_entity.state != ThreadState::INTERRUPTIBLE_WAITING &&
+            current->basic_entity.state != ThreadState::UNINTERRUPTIBLE_WAITING &&
             current->basic_entity
                 .template flags_check<SchedMeta::FLAGS_PREEMPT_DISABLED>())
         {
@@ -347,7 +350,9 @@ namespace schd {
         if (tcb->basic_entity.state == ThreadState::DYING) {
             return false;
         }
-        if (tcb->basic_entity.state != ThreadState::WAITING) {
+        if (tcb->basic_entity.state != ThreadState::INTERRUPTIBLE_WAITING &&
+            tcb->basic_entity.state != ThreadState::UNINTERRUPTIBLE_WAITING)
+        {
             return false;
         }
         tcb->basic_entity.state = ThreadState::EMPTY;

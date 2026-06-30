@@ -127,6 +127,27 @@ sys_pcb_procfs_redirect:
     ecall
     ret
 
+    .global sys_pcb_sigaction
+    .type sys_pcb_sigaction, @function
+sys_pcb_sigaction:
+    li a7, SYS_PCB_SIGACTION
+    ecall
+    ret
+
+    .global sys_pcb_signal
+    .type sys_pcb_signal, @function
+sys_pcb_signal:
+    li a7, SYS_PCB_SIGNAL
+    ecall
+    ret
+
+    .global sys_pcb_waitsig
+    .type sys_pcb_waitsig, @function
+sys_pcb_waitsig:
+    li a7, SYS_PCB_WAITSIG
+    ecall
+    ret
+
     .global sys_notif_wait
     .type sys_notif_wait, @function
 sys_notif_wait:

@@ -51,6 +51,13 @@ struct VMAInfo {
     CapIdx mem_cap;
 };
 
+struct KmodSigAction {
+    size_t handler;
+    uint64_t mask;
+    uint64_t flags;
+    size_t restorer;
+};
+
 extern "C" {
 SysRet<void> sys_write_serial(size_t __always_zero, const char *str, size_t len);
 SysRet<void> sys_shutdown();
@@ -90,6 +97,12 @@ SysRet<void> sys_pcb_execve_linux(CapIdx pcb_cap,
 SysRet<CapIdx> sys_pcb_procfs_get(CapIdx pcb_cap, const char *name);
 SysRet<void> sys_pcb_procfs_redirect(CapIdx pcb_cap, const char *name,
                                      const char *target);
+SysRet<void> sys_pcb_sigaction(CapIdx pcb_cap, size_t signo,
+                               const KmodSigAction *action,
+                               KmodSigAction *old_action);
+SysRet<void> sys_pcb_signal(CapIdx pcb_cap, size_t signo);
+SysRet<size_t> sys_pcb_waitsig(CapIdx pcb_cap, uint64_t mask,
+                               size_t timeout_ns, size_t options);
 SysRet<void> sys_execve(const ExecveRequest *request);
 SysRet<void> execve(const ExecveRequest *request);
 

@@ -320,7 +320,12 @@ size_t linux_sys_wait4(int pid, int *status, int options, void *rusage) {
                      wait_options)
             .to_result();
     if (!wait_res.has_value()) {
-        loggers::LXSC::ERROR("wait4 syscall 失败");
+        if (wait_res.error() == ErrCode::INTERRUPTED) {
+            loggers::LXSC::INFO("wait4 被 signal 打断");
+            return static_cast<size_t>(-EINTR);
+        }
+        loggers::LXSC::ERROR("wait4 syscall 失败 err=%s",
+                             to_cstring(wait_res.error()));
         return static_cast<size_t>(-ECHILD);
     }
 
@@ -352,14 +357,8 @@ size_t linux_sys_rt_sigtimedwait(const void *set, void *info,
                                  const void *timeout,
                                  size_t sigsetsize) {
     (void)info;
-    if (!sigmask_contains_sigchld(set, sigsetsize)) {
-        loggers::LXSC::ERROR(
-            "rt_sigtimedwait 目前仅支持等待 SIGCHLD");
-        return static_cast<size_t>(-ENOSYS);
-    }
-
-    if (__prog_children.empty()) {
-        return static_cast<size_t>(-EAGAIN);
+    if (set == nullptr || sigsetsize < sizeof(uint64_t)) {
+        return static_cast<size_t>(-EINVAL);
     }
 
     size_t timeout_ns = static_cast<size_t>(-1);
@@ -372,20 +371,19 @@ size_t linux_sys_rt_sigtimedwait(const void *set, void *info,
                      static_cast<size_t>(ts->tv_nsec);
     }
 
-    auto wait_caps = make_wait_caps_vector();
+    uint64_t mask = *reinterpret_cast<const uint64_t *>(set);
     auto wait_res =
-        sys_tcb_timeout_wait(__prog_main_tcb_cap, wait_caps.data(), nullptr,
-                             timeout_ns, 0)
-            .to_result();
+        sys_pcb_waitsig(__prog_pcb_cap, mask << 1U, timeout_ns, 0).to_result();
     if (!wait_res.has_value()) {
         if (wait_res.error() == ErrCode::TIMEOUT) {
             return static_cast<size_t>(-EAGAIN);
         }
-        loggers::LXSC::ERROR("rt_sigtimedwait wait failed");
+        if (wait_res.error() == ErrCode::INTERRUPTED) {
+            return static_cast<size_t>(-EINTR);
+        }
+        loggers::LXSC::ERROR("rt_sigtimedwait wait failed err=%s",
+                             to_cstring(wait_res.error()));
         return static_cast<size_t>(-EINVAL);
     }
-    if (wait_res.value() == cap::null) {
-        return static_cast<size_t>(-EAGAIN);
-    }
-    return LINUX_SIGCHLD;
+    return wait_res.value();
 }

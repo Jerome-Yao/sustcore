@@ -25,6 +25,29 @@ namespace cap {
         task::TCB *current_object_tcb() noexcept {
             return schd::Scheduler::inst().current_tcb();
         }
+
+        [[nodiscard]]
+        Result<task::TCB *> main_signal_target(task::PCB *pcb) noexcept {
+            if (pcb == nullptr) {
+                unexpect_return(ErrCode::NULLPTR);
+            }
+            for (auto &tcb : pcb->threads) {
+                if (tcb.basic_entity.state != ThreadState::DYING) {
+                    return &tcb;
+                }
+            }
+            unexpect_return(ErrCode::ENTRY_NOT_FOUND);
+        }
+
+        [[nodiscard]]
+        size_t first_signal_index(uint64_t bits) noexcept {
+            size_t index = 0;
+            while ((bits & 1) == 0) {
+                bits >>= 1;
+                index++;
+            }
+            return index;
+        }
     }  // namespace
 
     // 无人引用的 PCB 对象会被放入 TaskManager 的回收队列中等待销毁
@@ -233,6 +256,96 @@ namespace cap {
         propagate(pcb_res);
         return procfs::ProcFSDriver::inst().redirect(pcb_res.value()->pid, name,
                                                      target);
+    }
+
+    Result<void> PCBObject::sigaction(size_t signo,
+                                      const task::SigAction *action,
+                                      task::SigAction *old_action) const {
+        if (!imply(perm::pcb::SIGACTION)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr ||
+            signo >= task::SignalState::MAX_SIGNALS)
+        {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto &state = _obj->pcb->signal_state;
+        if (old_action != nullptr) {
+            *old_action = state.actions[signo];
+        }
+        if (action != nullptr) {
+            state.actions[signo] = *action;
+        }
+        void_return();
+    }
+
+    Result<void> PCBObject::signal(size_t signo) const {
+        if (!imply(perm::pcb::SIGNAL)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr ||
+            signo >= task::SignalState::MAX_SIGNALS)
+        {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto &state = _obj->pcb->signal_state;
+        state.pending_mask |= (uint64_t(1) << signo);
+
+        auto target_res = main_signal_target(_obj->pcb);
+        propagate(target_res);
+        auto *target = target_res.value();
+        task::mark_tcb_signal_interrupt(*target, signo);
+        if (target->basic_entity.state == ThreadState::INTERRUPTIBLE_WAITING) {
+            (void)schd::Scheduler::inst().wakeup_waiting(target);
+        }
+        auto wake_res = wait::wake_all(state.waitsig_wd);
+        if (!wake_res.has_value() &&
+            wake_res.error() != ErrCode::ENTRY_NOT_FOUND)
+        {
+            propagate_return(wake_res);
+        }
+        void_return();
+    }
+
+    Result<size_t> PCBObject::waitsig(uint64_t mask, size_t timeout_ns,
+                                      size_t options) const {
+        if (!imply(perm::pcb::WAITSIG)) {
+            unexpect_return(ErrCode::INSUFFICIENT_PERMISSIONS);
+        }
+        if (_obj->pcb == nullptr || options != 0) {
+            unexpect_return(ErrCode::INVALID_PARAM);
+        }
+
+        auto &state = _obj->pcb->signal_state;
+        auto pending = state.pending_mask.load() & mask &
+                       ~state.blocked_mask.load();
+        if (pending != 0) {
+            size_t signo = first_signal_index(pending);
+            state.pending_mask &= ~(uint64_t(1) << signo);
+            return signo;
+        }
+        if (timeout_ns == 0) {
+            unexpect_return(ErrCode::TIMEOUT);
+        }
+
+        auto wait_res = timeout_wait_event_int(state.waitsig_wd, timeout_ns, ({
+            auto __pending = state.pending_mask.load() & mask &
+                             ~state.blocked_mask.load();
+            __pending != 0;
+        }));
+        if (!wait_res.has_value()) {
+            propagate_return(wait_res);
+        }
+
+        pending = state.pending_mask.load() & mask & ~state.blocked_mask.load();
+        if (pending == 0) {
+            unexpect_return(ErrCode::FAILURE);
+        }
+        size_t signo = first_signal_index(pending);
+        state.pending_mask &= ~(uint64_t(1) << signo);
+        return signo;
     }
 
     Result<task::TCB *> TCBObject::require_current() const {

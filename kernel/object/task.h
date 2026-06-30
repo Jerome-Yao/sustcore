@@ -12,6 +12,7 @@
 #include <mem/vma.h>
 #include <object/memory.h>
 #include <sustcore/capability.h>
+#include <task/task_struct.h>
 #include <string_view>
 
 #include <vector>
@@ -121,6 +122,11 @@ namespace cap {
                                       CHolder &holder) const;
         Result<void> redirect_procfs(std::string_view name,
                                      std::string_view target) const;
+        Result<void> sigaction(size_t signo, const task::SigAction *action,
+                               task::SigAction *old_action) const;
+        Result<void> signal(size_t signo) const;
+        Result<size_t> waitsig(uint64_t mask, size_t timeout_ns,
+                               size_t options) const;
     };
 
     /**

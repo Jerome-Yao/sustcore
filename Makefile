@@ -81,6 +81,7 @@ module-component-makefile.test_ext4_create := $(path-e)/module/test_ext4_create/
 module-component-makefile.test_ext4_rw := $(path-e)/module/test_ext4_rw/Makefile
 module-component-makefile.test_ext4_symlink := $(path-e)/module/test_ext4_symlink/Makefile
 module-component-makefile.test-procfs := $(path-e)/module/test-procfs/Makefile
+module-component-makefile.test-signal := $(path-e)/module/test-signal/Makefile
 module-component-makefile.test-meminfo := $(path-e)/module/test-meminfo/Makefile
 module-component-makefile.test_fs_score := $(path-e)/module/test_fs_score/Makefile
 module-component-makefile.test_page_cache := $(path-e)/module/test_page_cache/Makefile
@@ -135,6 +136,7 @@ build-mods: make-initrd build-libs
 	$(q)$(MAKE) -f $(module-component-makefile.test_ext4_create) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_ext4_rw) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_ext4_symlink) $(arg-basic) build
+	$(q)$(MAKE) -f $(module-component-makefile.test-signal) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test-procfs) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test-meminfo) $(arg-basic) build
 	$(q)$(MAKE) -f $(module-component-makefile.test_fs_score) $(arg-basic) build

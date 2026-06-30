@@ -46,4 +46,7 @@ namespace syscall {
 
     [[nodiscard]]
     bool is_linux_syscall_number(b64 sysno) noexcept;
+
+    [[nodiscard]]
+    bool is_kernel_linux_syscall_number(b64 sysno) noexcept;
 }  // namespace syscall

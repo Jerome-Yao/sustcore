@@ -68,3 +68,4 @@ size_t linux_sys_clone(size_t flags, addr_t newsp, int *parent_tid,
 
 extern "C" [[noreturn]] void linux_clone_fork_return_trampoline(
     addr_t newsp, addr_t dispatch_frame_sp);
+extern "C" [[noreturn]] void linux_signal_rt_sigreturn_trampoline();

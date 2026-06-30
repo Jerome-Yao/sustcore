@@ -474,7 +474,7 @@ namespace contest_runner {
         contest_runner::accumulate_stats(total,
                                          contest_runner::run_busybox(ctx));
 // #if defined(__ARCH_riscv64__)
-//         contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
+        // contest_runner::accumulate_stats(total, contest_runner::run_ltp(ctx));
 // #endif
         contest_runner::cleanup_runner_context_caps(ctx);
 

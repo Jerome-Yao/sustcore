@@ -30,8 +30,11 @@ namespace {
     constexpr int LINUX_O_WRONLY        = 1;
     constexpr int LINUX_SIGABRT         = 6;
     constexpr int LINUX_SIGKILL         = 9;
+    constexpr int LINUX_SIGUSR1         = 10;
     constexpr int LINUX_SIGSEGV         = 11;
+    constexpr int LINUX_SIGUSR2         = 12;
     constexpr int LINUX_SIGTERM         = 15;
+    constexpr int LINUX_SIGCHLD         = 17;
     constexpr long LINUX_TIMES_STAMP    = 114514;
     constexpr byte GETRANDOM_PATTERN[]  = {0x11, 0x41, 0x51, 0x41,
                                            0x19, 0x19, 0x81, 0x00};
@@ -146,6 +149,16 @@ namespace {
             case LINUX_SIGSEGV:
             case LINUX_SIGTERM: return 128 + sig;
             default:            return -1;
+        }
+    }
+
+    [[nodiscard]]
+    bool signal_uses_async_delivery(int sig) noexcept {
+        switch (sig) {
+            case LINUX_SIGUSR1:
+            case LINUX_SIGUSR2:
+            case LINUX_SIGCHLD: return true;
+            default:            return false;
         }
     }
 }  // namespace
@@ -621,13 +634,6 @@ size_t linux_sys_gettid() {
 
 size_t linux_sys_kill(int pid, int sig) {
     loggers::LXSC::INFO("kill pid=%d sig=%d", pid, sig);
-    int exit_code = signal_exit_code(sig);
-    if (exit_code < 0) {
-        loggers::LXSC::ERROR(
-            "kill 仅支持 SIGABRT/SIGKILL/SIGSEGV/SIGTERM, 目前得到 sig=%d",
-            sig);
-        return static_cast<size_t>(-ENOSYS);
-    }
     if (pid <= 0) {
         loggers::LXSC::ERROR("kill 不支持 pid=%d", pid);
         return static_cast<size_t>(-ENOSYS);
@@ -652,9 +658,27 @@ size_t linux_sys_kill(int pid, int sig) {
         return static_cast<size_t>(-ESRCH);
     }
 
+    if (signal_uses_async_delivery(sig)) {
+        auto signal_res =
+            sys_pcb_signal(target_pcb, static_cast<size_t>(sig)).to_result();
+        if (!signal_res.has_value()) {
+            loggers::LXSC::ERROR("kill(signal) failed pid=%d err=%s", pid,
+                                 to_cstring(signal_res.error()));
+            return static_cast<size_t>(-EINVAL);
+        }
+        return 0;
+    }
+
+    int exit_code = signal_exit_code(sig);
+    if (exit_code < 0) {
+        loggers::LXSC::ERROR(
+            "kill 暂不支持 sig=%d", sig);
+        return static_cast<size_t>(-ENOSYS);
+    }
+
     auto kill_res = sys_pcb_kill(target_pcb, exit_code).to_result();
     if (!kill_res.has_value()) {
-        loggers::LXSC::ERROR("kill failed pid=%d err=%s", pid,
+        loggers::LXSC::ERROR("kill(exit) failed pid=%d err=%s", pid,
                              to_cstring(kill_res.error()));
         return static_cast<size_t>(-EINVAL);
     }
@@ -663,13 +687,6 @@ size_t linux_sys_kill(int pid, int sig) {
 
 size_t linux_sys_tgkill(int tgid, int tid, int sig) {
     loggers::LXSC::INFO("tgkill tgid=%d tid=%d sig=%d", tgid, tid, sig);
-    int exit_code = signal_exit_code(sig);
-    if (exit_code < 0) {
-        loggers::LXSC::ERROR(
-            "tgkill 仅支持 SIGABRT/SIGKILL/SIGSEGV/SIGTERM, 目前得到 sig=%d",
-            sig);
-        return static_cast<size_t>(-ENOSYS);
-    }
     if (!cap::valid(__prog_pcb_cap) || !cap::valid(__prog_main_tcb_cap)) {
         loggers::LXSC::ERROR("tgkill PCB 与 TCB 能力无效");
         return static_cast<size_t>(-EINVAL);
@@ -695,10 +712,27 @@ size_t linux_sys_tgkill(int tgid, int tid, int sig) {
         return static_cast<size_t>(-ESRCH);
     }
 
+    if (signal_uses_async_delivery(sig)) {
+        auto signal_res =
+            sys_pcb_signal(__prog_pcb_cap, static_cast<size_t>(sig)).to_result();
+        if (!signal_res.has_value()) {
+            loggers::LXSC::ERROR("tgkill(signal) failed tgid=%d tid=%d err=%s",
+                                 tgid, tid, to_cstring(signal_res.error()));
+            return static_cast<size_t>(-EINVAL);
+        }
+        return 0;
+    }
+
+    int exit_code = signal_exit_code(sig);
+    if (exit_code < 0) {
+        loggers::LXSC::ERROR("tgkill 暂不支持 sig=%d", sig);
+        return static_cast<size_t>(-ENOSYS);
+    }
+
     auto kill_res = sys_tcb_kill(__prog_main_tcb_cap, exit_code).to_result();
     if (!kill_res.has_value()) {
-        loggers::LXSC::ERROR("tgkill failed tgid=%d tid=%d err=%s", tgid, tid,
-                             to_cstring(kill_res.error()));
+        loggers::LXSC::ERROR("tgkill(exit) failed tgid=%d tid=%d err=%s", tgid,
+                             tid, to_cstring(kill_res.error()));
         return static_cast<size_t>(-EINVAL);
     }
     return 0;

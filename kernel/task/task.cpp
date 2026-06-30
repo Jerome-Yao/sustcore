@@ -243,6 +243,26 @@ namespace task {
         return true;
     }
 
+    void mark_tcb_signal_interrupt(TCB &tcb, size_t signo) noexcept {
+        tcb.signal_interrupted = true;
+        tcb.interrupted_signal = signo;
+    }
+
+    bool consume_tcb_signal_interrupt(TCB &tcb) noexcept {
+        if (!tcb.signal_interrupted) {
+            return false;
+        }
+        tcb.signal_interrupted = false;
+        tcb.interrupted_signal = 0;
+        return true;
+    }
+
+    void reset_tcb_signal_delivery(TCB &tcb) noexcept {
+        tcb.signal_delivery_active = false;
+        tcb.signal_delivery_signo  = 0;
+        tcb.signal_frame_user_sp   = 0;
+    }
+
     void process_timeout_tcb(tid_t tid) noexcept {
         auto *tcb = lookup_tcb_by_tid(tid);
         if (tcb == nullptr) {
@@ -568,6 +588,9 @@ namespace task {
         pcb->linux_subsystem_entry = VirAddr(static_cast<addr_t>(0));
         pcb->is_linux_process      = false;
         pcb->proc_state            = nullptr;
+        pcb->signal_state.pending_mask = 0;
+        pcb->signal_state.blocked_mask = 0;
+        pcb->signal_state.waitsig_wd   = wait::alloc_reason();
         pcb->pcb_cap               = cap::null;
         pcb->main_tcb_cap          = cap::null;
         void_return();
@@ -602,7 +625,8 @@ namespace task {
             auto dequeue_res = schd::Scheduler::inst().dequeue(tcb);
             propagate(dequeue_res);
         }
-        if ((tcb->basic_entity.state == ThreadState::WAITING ||
+        if ((tcb->basic_entity.state == ThreadState::INTERRUPTIBLE_WAITING ||
+             tcb->basic_entity.state == ThreadState::UNINTERRUPTIBLE_WAITING ||
              tcb->basic_entity.state == ThreadState::DYING) &&
             wait::WaitReasonManager::initialized())
         {

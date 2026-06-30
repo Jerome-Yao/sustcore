@@ -109,6 +109,24 @@ sys_pcb_procfs_redirect:
     li.d $a7, SYS_PCB_PROCFS_REDIRECT
     do_syscall
 
+    .global sys_pcb_sigaction
+    .type sys_pcb_sigaction, @function
+sys_pcb_sigaction:
+    li.d $a7, SYS_PCB_SIGACTION
+    do_syscall
+
+    .global sys_pcb_signal
+    .type sys_pcb_signal, @function
+sys_pcb_signal:
+    li.d $a7, SYS_PCB_SIGNAL
+    do_syscall
+
+    .global sys_pcb_waitsig
+    .type sys_pcb_waitsig, @function
+sys_pcb_waitsig:
+    li.d $a7, SYS_PCB_WAITSIG
+    do_syscall
+
     .global sys_notif_wait
     .type sys_notif_wait, @function
 sys_notif_wait:

@@ -106,6 +106,9 @@ namespace perm::pcb {
     constexpr b64 NEW_PROCESS = 0x10'0000;
     constexpr b64 EXECUTE     = 0x20'0000;
     constexpr b64 PROCFS      = 0x40'0000;
+    constexpr b64 SIGACTION   = 0x80'0000;
+    constexpr b64 SIGNAL      = 0x100'0000;
+    constexpr b64 WAITSIG     = 0x200'0000;
 }  // namespace perm::pcb
 
 namespace perm::sintobj {

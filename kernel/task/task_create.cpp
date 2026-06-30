@@ -175,7 +175,7 @@ namespace task {
             if (tcb == nullptr || !tcb->is_kernel) {
                 panic("非法内核线程退出");
             }
-            tcb->basic_entity.state = ThreadState::WAITING;
+            tcb->basic_entity.state = ThreadState::UNINTERRUPTIBLE_WAITING;
             tcb->basic_entity
                 .template flags_set<schd::SchedMeta::FLAGS_NEED_RESCHED>();
             schd::Scheduler::inst().schedule();
@@ -505,6 +505,7 @@ namespace task {
 #endif
         spec.auxv.push_back(AT_RANDOM);
         spec.auxv.push_back(random_sp_res.value().arith());
+        // TODO: 将 #self:0 变为真正的 #self:<pid>
         auto pcb_explain_res = append_bootstrap_cap_explain_record(
             spec, pcb_cap, PayloadType::PCB, perm::allperm(), "#self:0");
         propagate(pcb_explain_res);

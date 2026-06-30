@@ -41,6 +41,22 @@ namespace task {
     struct TimedWaitContext;
     struct ProcState;
 
+    struct SigAction {
+        size_t handler = 0;
+        uint64_t mask  = 0;
+        uint64_t flags = 0;
+        size_t restorer = 0;
+    };
+
+    struct SignalState {
+        static constexpr size_t MAX_SIGNALS = 64;
+
+        std::atomic<uint64_t> pending_mask = 0;
+        std::atomic<uint64_t> blocked_mask = 0;
+        wait::wd_t waitsig_wd              = 0;
+        SigAction actions[MAX_SIGNALS]{};
+    };
+
     enum class BootThreadRole {
         NONE,
         KINIT,
@@ -194,6 +210,11 @@ namespace task {
         // 由被等待的事件在满足条件时检查, 决定是否可以唤醒线程
         wait::WaitPredicate wait_predicate;
         bool timeout = false;
+        bool signal_interrupted = false;
+        size_t interrupted_signal = 0;
+        bool signal_delivery_active = false;
+        size_t signal_delivery_signo = 0;
+        addr_t signal_frame_user_sp = 0;
         NanosleepContext *nanosleep_ctx;
         TimedWaitContext *timed_wait_ctx;
         SyscallInfo syscall_info;
@@ -225,6 +246,7 @@ namespace task {
         VirAddr linux_subsystem_entry;
         bool is_linux_process;
         ProcState *proc_state;
+        SignalState signal_state;
         CapIdx pcb_cap;
         CapIdx main_tcb_cap;
 

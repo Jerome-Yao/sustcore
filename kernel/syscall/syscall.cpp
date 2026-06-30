@@ -32,6 +32,7 @@
 #include <syscall/uaccess.h>
 #include <syscall/vfs.h>
 #include <task/scheduler.h>
+#include <task/task.h>
 #include <task/task_struct.h>
 #include <task/wait.h>
 
@@ -39,6 +40,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <syscall.h.in>
 
 namespace syscall {
     namespace {
@@ -127,6 +129,7 @@ namespace syscall {
         [[nodiscard]]
         RetPack bool_ret(bool ok) noexcept {
             return RetPack{.processed = true,
+                           .suppress_writeback = false,
                            .ret0      = static_cast<b64>(ok),
                            .ret1      = static_cast<b64>(ErrCode::SUCCESS)};
         }
@@ -145,6 +148,7 @@ namespace syscall {
                 loggers::SYSCALL::ERROR("%s失败: err=%s", op,
                                         to_cstring(res.error()));
                 return RetPack{.processed = true,
+                               .suppress_writeback = false,
                                .ret0      = false,
                                .ret1      = static_cast<b64>(res.error())};
             }
@@ -165,10 +169,12 @@ namespace syscall {
                 loggers::SYSCALL::ERROR("%s失败: err=%s", op,
                                         to_cstring(res.error()));
                 return RetPack{.processed = true,
+                               .suppress_writeback = false,
                                .ret0      = 0,
                                .ret1      = static_cast<b64>(res.error())};
             }
             return RetPack{.processed = true,
+                           .suppress_writeback = false,
                            .ret0      = res.value(),
                            .ret1      = static_cast<b64>(ErrCode::SUCCESS)};
         }
@@ -187,10 +193,12 @@ namespace syscall {
                 loggers::SYSCALL::ERROR("%s失败: err=%s", op,
                                         to_cstring(res.error()));
                 return RetPack{.processed = true,
+                               .suppress_writeback = false,
                                .ret0      = 0,
                                .ret1      = static_cast<b64>(res.error())};
             }
             return RetPack{.processed = true,
+                           .suppress_writeback = false,
                            .ret0      = static_cast<b64>(res.value()),
                            .ret1      = static_cast<b64>(ErrCode::SUCCESS)};
         }
@@ -221,6 +229,32 @@ namespace syscall {
                 "同步 syscall 立即完成: pid=%lu tid=%lu sysno=0x%lx",
                 tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
                 args.syscall_number);
+        }
+
+        [[nodiscard]]
+        RetPack linux_rt_sigreturn_ret(
+            util::nonnull<task::TCB *> tcb,
+            util::nonnull<Context *> trap_context) noexcept {
+            auto restore_res =
+                task::rt_sigreturn_current(tcb, trap_context);
+            if (!restore_res.has_value()) {
+                loggers::SYSCALL::ERROR("rt_sigreturn 失败: pid=%lu tid=%lu err=%s",
+                                        tcb->task != nullptr ? tcb->task->pid : 0,
+                                        tcb->tid,
+                                        to_cstring(restore_res.error()));
+                return RetPack{
+                    .processed = true,
+                    .suppress_writeback = false,
+                    .ret0 = 0,
+                    .ret1 = static_cast<b64>(restore_res.error()),
+                };
+            }
+            return RetPack{
+                .processed = true,
+                .suppress_writeback = true,
+                .ret0 = restore_res.value(),
+                .ret1 = static_cast<b64>(ErrCode::SUCCESS),
+            };
         }
 
         [[nodiscard]]
@@ -309,6 +343,9 @@ namespace syscall {
             case SYS_PCB_UNMAP:           return "SYS_PCB_UNMAP";
             case SYS_PCB_QUERY_VADDR:     return "SYS_PCB_QUERY_VADDR";
             case SYS_PCB_QUERY_VSPACE:    return "SYS_PCB_QUERY_VSPACE";
+            case SYS_PCB_SIGACTION:       return "SYS_PCB_SIGACTION";
+            case SYS_PCB_SIGNAL:          return "SYS_PCB_SIGNAL";
+            case SYS_PCB_WAITSIG:         return "SYS_PCB_WAITSIG";
             case SYS_PCB_PROCFS_GET:      return "SYS_PCB_PROCFS_GET";
             case SYS_PCB_PROCFS_REDIRECT: return "SYS_PCB_PROCFS_REDIRECT";
             case SYS_NOTIF_CREATE:        return "SYS_NOTIF_CREATE";
@@ -383,12 +420,17 @@ namespace syscall {
         return true;
     }
 
+    bool is_kernel_linux_syscall_number(b64 sysno) noexcept {
+        return sysno == __NR_rt_sigreturn;
+    }
+
     RetPack dispatch_sync(util::nonnull<task::TCB *> tcb,
                           util::nonnull<Context *> trap_context,
                           const ArgPack &args) {
         if (tcb->task == nullptr) {
             return RetPack{
                 .processed = false,
+                .suppress_writeback = false,
                 .ret0      = 0,
                 .ret1      = static_cast<b64>(ErrCode::INVALID_PARAM),
             };
@@ -402,8 +444,17 @@ namespace syscall {
         b64 arg5   = args.args[6];
         b64 sysno  = args.syscall_number;
 
+        if (is_kernel_linux_syscall_number(sysno)) {
+            switch (sysno) {
+                case __NR_rt_sigreturn:
+                    return linux_rt_sigreturn_ret(tcb, trap_context);
+                default: break;
+            }
+        }
+
         RetPack ret{
             .processed = true,
+            .suppress_writeback = false,
             .ret0      = 0,
             .ret1      = static_cast<b64>(ErrCode::SUCCESS),
         };
@@ -1035,6 +1086,49 @@ namespace syscall {
                                       pcb_procfs_redirect(capidx, name, target));
                 break;
             }
+            case SYS_PCB_SIGACTION: {
+                task::SigAction action{};
+                task::SigAction old_action{};
+                task::SigAction *action_ptr = nullptr;
+                task::SigAction *old_ptr    = nullptr;
+                if (arg1 != 0) {
+                    UBuffer action_buf((VirAddr)arg1, sizeof(task::SigAction));
+                    auto sync_res = action_buf.sync_from_user();
+                    if (!sync_res.has_value()) {
+                        ret = result_void_ret("同步sigaction", sync_res);
+                        break;
+                    }
+                    memcpy(&action, action_buf.kbuf(), sizeof(task::SigAction));
+                    action_ptr = &action;
+                }
+                if (arg2 != 0) {
+                    old_ptr = &old_action;
+                }
+                auto sigaction_res =
+                    pcb_sigaction(capidx, arg0, action_ptr, old_ptr);
+                if (sigaction_res.has_value() && old_ptr != nullptr) {
+                    UBuffer old_buf((VirAddr)arg2, sizeof(task::SigAction));
+                    memcpy(old_buf.kbuf(), &old_action,
+                           sizeof(task::SigAction));
+                    auto commit_res = old_buf.commit_to_user();
+                    if (!commit_res.has_value()) {
+                        ret = result_void_ret("提交old sigaction", commit_res);
+                        break;
+                    }
+                }
+                ret = result_bool_ret("pcb_sigaction", sigaction_res);
+                break;
+            }
+            case SYS_PCB_SIGNAL: {
+                ret = result_bool_ret("pcb_signal",
+                                      pcb_signal(capidx, arg0));
+                break;
+            }
+            case SYS_PCB_WAITSIG: {
+                ret = result_value_ret("pcb_waitsig",
+                                       pcb_waitsig(capidx, arg0, arg1, arg2));
+                break;
+            }
             case SYS_NOTIF_SIGNAL: {
                 ret = result_bool_ret("设置notification",
                                       notification_signal(capidx, arg0, true));
@@ -1233,7 +1327,9 @@ namespace syscall {
                 break;
             }
         }
-        write_ret(*trap_context, ret);
+        if (!ret.suppress_writeback) {
+            write_ret(*trap_context, ret);
+        }
         return ret;
     }
 

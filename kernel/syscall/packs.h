@@ -22,6 +22,7 @@ namespace syscall {
 
     struct RetPack {
         bool processed;
+        bool suppress_writeback;
         b64 ret0;
         b64 ret1;
     };

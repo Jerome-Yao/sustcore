@@ -585,6 +585,7 @@ namespace exception {
         if (current_tcb->task != nullptr &&
             current_tcb->task->is_linux_process &&
             current_tcb->task->linux_subsystem_entry.nonnull() &&
+            !syscall::is_kernel_linux_syscall_number(args.syscall_number) &&
             syscall::is_linux_syscall_number(args.syscall_number))
         {
             ctx->linux_ra() = ctx->pc() + 4;
@@ -716,6 +717,20 @@ extern "C" void handle_trap(umb_t era, csr_estat_t estat, Context *ctx) {
     }
     if (schd::Scheduler::initialized()) {
         schd::Scheduler::inst().schedule();
+        if (exception::from_umode()) {
+            auto *tcb = schd::Scheduler::inst().current_tcb();
+            if (tcb != nullptr) {
+                auto delivery_res =
+                    task::deliver_signal_if_needed(util::nnullforce(tcb),
+                                                   util::nnullforce(ctx));
+                if (!delivery_res.has_value()) {
+                    loggers::TASK::ERROR(
+                        "signal delivery 失败: pid=%lu tid=%lu err=%s",
+                        tcb->task != nullptr ? tcb->task->pid : 0, tcb->tid,
+                        to_cstring(delivery_res.error()));
+                }
+            }
+        }
     }
 }
 

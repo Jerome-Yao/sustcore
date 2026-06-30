@@ -506,7 +506,7 @@ namespace syscall {
             return exited_res.value();
         }
 
-        auto wait_res = wait_event(task::task_exit_wait_wd(), ({
+        auto wait_res = wait_event_int(task::task_exit_wait_wd(), ({
             auto __exited_res = find_exited_pcb_cap(pcbs);
             __exited_res.has_value() && __exited_res.value() != cap::null;
         }));
@@ -550,13 +550,14 @@ namespace syscall {
             return cap::null;
         }
 
-        auto wait_res = timeout_wait_event(task::task_exit_wait_wd(),
-                                           timeout_ns, ({
-                                               auto __exited_res =
-                                                   find_exited_pcb_cap(pcbs);
-                                               __exited_res.has_value() &&
-                                               __exited_res.value() != cap::null;
-                                           }));
+        auto wait_res = timeout_wait_event_int(task::task_exit_wait_wd(),
+                                               timeout_ns, ({
+                                                   auto __exited_res =
+                                                       find_exited_pcb_cap(pcbs);
+                                                   __exited_res.has_value() &&
+                                                   __exited_res.value() !=
+                                                       cap::null;
+                                               }));
         propagate(wait_res);
 
         auto final_res = find_exited_pcb_cap(pcbs);
@@ -761,6 +762,39 @@ namespace syscall {
         auto redirect_res = obj.redirect_procfs(name.kbuf(), target.kbuf());
         propagate(redirect_res);
         return true;
+    }
+
+    Result<bool> pcb_sigaction(CapIdx pcb_cap, size_t signo,
+                               const task::SigAction *action,
+                               task::SigAction *old_action) {
+        cap::Capability *cap = nullptr;
+        auto pcb_res         = lookup_pcb(pcb_cap, &cap);
+        propagate(pcb_res);
+        cap::PCBObject obj(util::nnullforce(cap));
+        auto sigaction_res = obj.sigaction(signo, action, old_action);
+        propagate(sigaction_res);
+        return true;
+    }
+
+    Result<bool> pcb_signal(CapIdx pcb_cap, size_t signo) {
+        cap::Capability *cap = nullptr;
+        auto pcb_res         = lookup_pcb(pcb_cap, &cap);
+        propagate(pcb_res);
+        cap::PCBObject obj(util::nnullforce(cap));
+        auto signal_res = obj.signal(signo);
+        propagate(signal_res);
+        return true;
+    }
+
+    Result<size_t> pcb_waitsig(CapIdx pcb_cap, uint64_t mask,
+                               size_t timeout_ns, size_t options) {
+        cap::Capability *cap = nullptr;
+        auto pcb_res         = lookup_pcb(pcb_cap, &cap);
+        propagate(pcb_res);
+        cap::PCBObject obj(util::nnullforce(cap));
+        auto wait_res = obj.waitsig(mask, timeout_ns, options);
+        propagate(wait_res);
+        return wait_res.value();
     }
 
     bool pcb_is_current(CapIdx pcb_cap) {

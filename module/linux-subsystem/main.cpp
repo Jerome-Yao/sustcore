@@ -84,6 +84,19 @@ namespace {
     constexpr size_t MAP_FIXED_NOREPLACE = 0x100000;
 
     constexpr uint64_t MEMORY_GROWTH_FIXED = 0;
+    constexpr uint64_t LINUX_SA_SIGINFO    = 0x00000004UL;
+    constexpr uint64_t LINUX_SA_RESTORER   = 0x04000000UL;
+
+    struct linux_sigset_t {
+        uint64_t sig[1];
+    };
+
+    struct linux_sigaction {
+        size_t handler;
+        uint64_t flags;
+        size_t restorer;
+        linux_sigset_t mask;
+    };
 
     [[nodiscard]]
     size_t page_align_up_user(size_t value) noexcept {
@@ -288,6 +301,64 @@ namespace {
             }
             offset += count;
         }
+    }
+
+    [[nodiscard]]
+    size_t linux_rt_sigaction(int signo, const linux_sigaction *act,
+                              linux_sigaction *oldact,
+                              size_t sigsetsize) {
+        (void)LINUX_SA_SIGINFO;
+        if (sigsetsize < sizeof(linux_sigset_t)) {
+            return static_cast<size_t>(-EINVAL);
+        }
+        if (signo <= 0 || static_cast<size_t>(signo) >= 64) {
+            return static_cast<size_t>(-EINVAL);
+        }
+
+        KmodSigAction action{};
+        KmodSigAction old_action{};
+        KmodSigAction *action_ptr = nullptr;
+        KmodSigAction *old_ptr    = oldact != nullptr ? &old_action : nullptr;
+
+        if (act != nullptr) {
+            action.handler  = act->handler;
+            action.flags    = act->flags;
+            action.restorer = act->restorer;
+            action.mask     = act->mask.sig[0] << 1U;
+            const bool is_user_handler =
+                action.handler != 0 && action.handler != 1;
+            if (is_user_handler) {
+                if ((action.flags & LINUX_SA_RESTORER) != 0) {
+                    if (action.restorer == 0) {
+                        return static_cast<size_t>(-EINVAL);
+                    }
+                } else {
+                    action.flags |= LINUX_SA_RESTORER;
+                    action.restorer = reinterpret_cast<size_t>(
+                        &linux_signal_rt_sigreturn_trampoline);
+                }
+            }
+            action_ptr      = &action;
+        }
+
+        auto sigaction_res =
+            sys_pcb_sigaction(__prog_pcb_cap, static_cast<size_t>(signo),
+                              action_ptr, old_ptr)
+                .to_result();
+        if (!sigaction_res.has_value()) {
+            loggers::LXSC::ERROR("rt_sigaction failed signo=%d err=%s", signo,
+                                 to_cstring(sigaction_res.error()));
+            return static_cast<size_t>(-EINVAL);
+        }
+
+        if (oldact != nullptr) {
+            memset(oldact, 0, sizeof(*oldact));
+            oldact->handler     = old_action.handler;
+            oldact->flags       = old_action.flags;
+            oldact->restorer    = old_action.restorer;
+            oldact->mask.sig[0] = old_action.mask >> 1U;
+        }
+        return 0;
     }
 
 }  // namespace
@@ -865,11 +936,10 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                 syscall_to_string(a7), a7, static_cast<int>(a0));
             return 1;
         case __NR_rt_sigaction:
-            loggers::LXSC::WARN(
-                "unsupported syscall %s (%lu), ignoring and returning 0 for "
-                "compatibility",
-                syscall_to_string(a7), a7);
-            return 0;
+            return linux_rt_sigaction(static_cast<int>(a0),
+                                      reinterpret_cast<const linux_sigaction *>(a1),
+                                      reinterpret_cast<linux_sigaction *>(a2),
+                                      a3);
         case __NR_setitimer:
             loggers::LXSC::WARN(
                 "unsupported syscall %s (%lu) with which=%d, ignoring and returning 0 for "

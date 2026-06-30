@@ -62,11 +62,21 @@ namespace task {
     void mark_tcb_timeout(TCB &tcb) noexcept;
     [[nodiscard]]
     bool consume_tcb_timeout(TCB &tcb) noexcept;
+    void mark_tcb_signal_interrupt(TCB &tcb, size_t signo) noexcept;
+    [[nodiscard]]
+    bool consume_tcb_signal_interrupt(TCB &tcb) noexcept;
+    void reset_tcb_signal_delivery(TCB &tcb) noexcept;
     void process_timeout_tcb(tid_t tid) noexcept;
     void process_timeout_wakeup(wait::wd_t wait_wd, size_t context) noexcept;
     [[nodiscard]]
     Result<void> block_current_for_nanosleep(
         util::nonnull<TCB *> tcb, size_t ns) noexcept;
+    [[nodiscard]]
+    Result<void> deliver_signal_if_needed(util::nonnull<TCB *> tcb,
+                                          util::nonnull<Context *> ctx) noexcept;
+    [[nodiscard]]
+    Result<size_t> rt_sigreturn_current(util::nonnull<TCB *> tcb,
+                                        util::nonnull<Context *> ctx) noexcept;
 
     class TaskManager {
     private:
