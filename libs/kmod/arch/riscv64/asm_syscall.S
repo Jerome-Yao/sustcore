@@ -326,6 +326,14 @@ sys_mem_resize:
     ecall
     ret
 
+    .global sys_mem_sync
+    .type sys_mem_sync, @function
+sys_mem_sync:
+    /* a0 = cap slot, a1 = offset, a2 = len */
+    li a7, SYS_MEM_SYNC
+    ecall
+    ret
+
     .global sys_mem_query
     .type sys_mem_query, @function
 sys_mem_query:

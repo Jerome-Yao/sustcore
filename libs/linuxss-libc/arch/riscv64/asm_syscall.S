@@ -314,6 +314,13 @@ sys_mem_unmap:
     ecall
     ret
 
+    .global sys_mem_sync
+    .type   sys_mem_sync, @function
+sys_mem_sync:
+    li a7, SYS_MEM_SYNC
+    ecall
+    ret
+
     .global sys_mem_query
     .type   sys_mem_query, @function
 sys_mem_query:

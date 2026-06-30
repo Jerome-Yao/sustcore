@@ -1214,6 +1214,11 @@ namespace syscall {
                                static_cast<cap::MemoryGrowth>(arg3), arg4));
                 break;
             }
+            case SYS_MEM_SYNC: {
+                ret = result_bool_ret("mem_sync",
+                                      mem_sync(capidx, arg0, arg1));
+                break;
+            }
             case SYS_PCB_MAP: {
                 ret = result_bool_ret(
                     "pcb_map",

@@ -214,6 +214,7 @@ SysRet<CapIdx> sys_mem_create(CapIdx file_cap, size_t memsz, bool shared,
 SysRet<void> sys_mem_map(CapIdx idx, void *vaddr, uint64_t rwx, uint64_t growth);
 SysRet<void> sys_mem_unmap(CapIdx idx, void *vaddr);
 SysRet<void> sys_mem_resize(CapIdx idx, size_t newsz);
+SysRet<void> sys_mem_sync(CapIdx idx, size_t offset, size_t len);
 SysRet<void> sys_mem_query(CapIdx idx, MemQueryRet *out);
 }
 

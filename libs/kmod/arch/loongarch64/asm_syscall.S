@@ -262,6 +262,12 @@ sys_mem_resize:
     li.d $a7, SYS_MEM_RESIZE
     do_syscall
 
+    .global sys_mem_sync
+    .type sys_mem_sync, @function
+sys_mem_sync:
+    li.d $a7, SYS_MEM_SYNC
+    do_syscall
+
     .global sys_mem_query
     .type sys_mem_query, @function
 sys_mem_query:

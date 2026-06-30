@@ -184,6 +184,8 @@ namespace cap {
          */
         [[nodiscard]]
         Result<size_t> write(size_t offset, const void *data, size_t buflen);
+        [[nodiscard]]
+        Result<void> sync(size_t offset, size_t buflen);
         /**
          * @brief 对指定偏移所在页执行写时复制拆分. 
          *

@@ -83,9 +83,6 @@ namespace syscall {
         }
         util::owner<cap::Capability *> backing_file(nullptr);
         if (cap::valid(file_cap)) {
-            if (shared) {
-                unexpect_return(ErrCode::NOT_SUPPORTED);
-            }
             auto holder_res = current_holder();
             propagate(holder_res);
             auto file_cap_res = holder_res.value()->lookup(file_cap);
@@ -145,6 +142,19 @@ namespace syscall {
         auto *tmm       = pcb_res.value()->tmm.get();
         auto resize_res = obj.resize_in(tmm, newsz);
         propagate(resize_res);
+        return true;
+    }
+
+    Result<bool> mem_sync(CapIdx idx, size_t offset, size_t len) {
+        cap::Capability *cap = nullptr;
+        auto memory_res      = lookup_memory(idx, &cap);
+        propagate(memory_res);
+        auto *memory = memory_res.value();
+        if (memory == nullptr) {
+            unexpect_return(ErrCode::NULLPTR);
+        }
+        auto sync_res = memory->sync(offset, len);
+        propagate(sync_res);
         return true;
     }
 

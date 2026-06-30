@@ -364,6 +364,69 @@ namespace cap {
         return total;
     }
 
+    Result<void> MemoryPayload::sync(size_t offset, size_t buflen) {
+        if (buflen == 0 || !file_backed()) {
+            void_return();
+        }
+        if (offset >= memsz) {
+            unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+        }
+
+        auto total_res = bounded_length(memsz, offset, buflen);
+        propagate(total_res);
+        size_t total = total_res.value();
+        cap::VFileObject file_obj(util::nnullforce(file.get()));
+
+        size_t consumed = 0;
+        while (consumed < total) {
+            size_t cur_offset = offset + consumed;
+            size_t chunk      = page_chunk_size(cur_offset, total - consumed);
+            size_t offvpn     = offset_to_offvpn(cur_offset);
+            auto it           = phy_pages.find(offvpn);
+            if (it == phy_pages.end()) {
+                consumed += chunk;
+                continue;
+            }
+
+            size_t page_file_offset = offvpn_to_offset(offvpn);
+            if (page_file_offset > static_cast<size_t>(-1) - file_offset) {
+                unexpect_return(ErrCode::OUT_OF_BOUNDARY);
+            }
+
+            size_t write_len = chunk;
+            if (file_backed_len != static_cast<size_t>(-1)) {
+                if (page_file_offset >= file_backed_len) {
+                    consumed += chunk;
+                    continue;
+                }
+                size_t page_inner = offset_in_page(cur_offset);
+                size_t remain     = file_backed_len - page_file_offset;
+                if (page_inner >= remain) {
+                    consumed += chunk;
+                    continue;
+                }
+                if (remain - page_inner < write_len) {
+                    write_len = remain - page_inner;
+                }
+            }
+
+            auto *src =
+                static_cast<const char *>(convert<KpaAddr>(it->second.addr).addr()) +
+                offset_in_page(cur_offset);
+            auto write_res =
+                file_obj.write(file_offset + cur_offset, src, write_len);
+            propagate(write_res);
+            if (write_res.value() != write_len) {
+                unexpect_return(ErrCode::IO_ERROR);
+            }
+            consumed += chunk;
+        }
+
+        auto sync_res = file_obj.sync();
+        propagate(sync_res);
+        void_return();
+    }
+
     Result<void> MemoryPayload::fork(size_t offset) {
         if (page_align_down(offset) >= memsz) {
             unexpect_return(ErrCode::OUT_OF_BOUNDARY);

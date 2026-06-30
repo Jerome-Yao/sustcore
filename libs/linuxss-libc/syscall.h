@@ -109,6 +109,7 @@ extern "C" SysRet<CapIdx> sys_mem_create(CapIdx file_cap, size_t memsz,
                                          uint64_t growth, size_t file_offset);
 extern "C" SysRet<void> sys_mem_unmap(CapIdx idx, void *vaddr);
 extern "C" SysRet<void> sys_mem_resize(CapIdx idx, size_t newsz);
+extern "C" SysRet<void> sys_mem_sync(CapIdx idx, size_t offset, size_t len);
 extern "C" SysRet<void> sys_mem_query(CapIdx idx, MemQueryRet *out);
 extern "C" SysRet<void> sys_pcb_map(CapIdx pcb_cap, CapIdx mem_cap, size_t offset,
                                     void *vaddr, size_t sz, uint64_t protflg);

@@ -52,6 +52,8 @@ namespace syscall {
      */
     [[nodiscard]]
     Result<bool> mem_resize(CapIdx idx, size_t newsz);
+    [[nodiscard]]
+    Result<bool> mem_sync(CapIdx idx, size_t offset, size_t len);
     /**
      * @brief Memory 查询 syscall 返回值. 
      */

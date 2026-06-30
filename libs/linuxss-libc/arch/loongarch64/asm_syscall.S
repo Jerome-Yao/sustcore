@@ -315,6 +315,13 @@ sys_mem_unmap:
     syscall 0
     ret
 
+    .global sys_mem_sync
+    .type sys_mem_sync, @function
+sys_mem_sync:
+    li.d $a7, SYS_MEM_SYNC
+    syscall 0
+    ret
+
     .global sys_mem_query
     .type sys_mem_query, @function
 sys_mem_query:

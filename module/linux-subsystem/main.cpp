@@ -47,6 +47,7 @@ namespace {
     constexpr size_t VMA_PROT_R             = 0x1;
     constexpr size_t VMA_PROT_W             = 0x2;
     constexpr size_t VMA_PROT_X             = 0x4;
+    constexpr size_t VMA_PROT_SHARE         = 0x8;
 
     // 共享映射, 修改同步到文件并对其他进程可见
     constexpr size_t MAP_SHARED          = 0x01;
@@ -82,6 +83,9 @@ namespace {
     constexpr size_t MAP_SYNC            = 0x80000;
     // 固定地址映射, 但绝不替换已有映射 (若冲突则失败)
     constexpr size_t MAP_FIXED_NOREPLACE = 0x100000;
+    constexpr int MS_ASYNC               = 1;
+    constexpr int MS_INVALIDATE          = 2;
+    constexpr int MS_SYNC                = 4;
 
     constexpr uint64_t MEMORY_GROWTH_FIXED = 0;
     constexpr uint64_t LINUX_SA_SIGINFO    = 0x00000004UL;
@@ -361,6 +365,63 @@ namespace {
         return 0;
     }
 
+    [[nodiscard]]
+    size_t linux_sys_msync(void *addr, size_t length, int flags) {
+        if (addr == nullptr || length == 0) {
+            return static_cast<size_t>(-EINVAL);
+        }
+        size_t target_addr = reinterpret_cast<size_t>(addr);
+        if ((target_addr % PAGESIZE) != 0) {
+            return static_cast<size_t>(-EINVAL);
+        }
+        if ((flags & ~(MS_ASYNC | MS_INVALIDATE | MS_SYNC)) != 0) {
+            return static_cast<size_t>(-EINVAL);
+        }
+
+        VMAInfo infos[LINUX_MMAP_QUERY_BATCH]{};
+        size_t offset        = 0;
+        size_t sync_begin    = target_addr;
+        size_t sync_end      = page_align_up_user(target_addr + length);
+        bool touched_mapping = false;
+
+        while (true) {
+            auto count_res = sys_pcb_query_vspace(__prog_pcb_cap, offset, infos,
+                                                  LINUX_MMAP_QUERY_BATCH)
+                                 .to_result();
+            if (!count_res.has_value()) {
+                return touched_mapping ? 0 : static_cast<size_t>(-EINVAL);
+            }
+            size_t count = count_res.value();
+            if (count == 0) {
+                return touched_mapping ? 0 : static_cast<size_t>(-EINVAL);
+            }
+
+            for (size_t i = 0; i < count; ++i) {
+                size_t vma_begin = reinterpret_cast<size_t>(infos[i].vma_start);
+                size_t vma_end   = vma_begin + infos[i].vma_size;
+                if (sync_end <= vma_begin || vma_end <= sync_begin) {
+                    continue;
+                }
+                touched_mapping = true;
+                if ((infos[i].vma_prot & VMA_PROT_SHARE) == 0 ||
+                    infos[i].mem_cap == cap::null || infos[i].mem_cap == cap::error)
+                {
+                    continue;
+                }
+                size_t part_begin = sync_begin > vma_begin ? sync_begin : vma_begin;
+                size_t part_end   = sync_end < vma_end ? sync_end : vma_end;
+                auto sync_res =
+                    sys_mem_sync(infos[i].mem_cap, part_begin - vma_begin,
+                                 part_end - part_begin)
+                        .to_result();
+                if (!sync_res.has_value()) {
+                    return static_cast<size_t>(-EIO);
+                }
+            }
+            offset += count;
+        }
+    }
+
 }  // namespace
 
 const char *at_to_string(int a_type) {
@@ -615,11 +676,6 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         return INVALID_VALUE;
     }
 
-    if (is_shared) {
-        loggers::LXSC::WARN(
-            "mmap MAP_SHARED is currently treated as MAP_PRIVATE");
-    }
-
     if ((offset % PAGESIZE) != 0) {
         loggers::LXSC::ERROR("mmap requires page-aligned offset, offset=%lu",
                              static_cast<unsigned long>(offset));
@@ -694,7 +750,7 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         file_offset = offset;
     }
 
-    auto mem_cap_res = sys_mem_create(backing_file_cap, aligned_length, false,
+    auto mem_cap_res = sys_mem_create(backing_file_cap, aligned_length, is_shared,
                                       false, MEMORY_GROWTH_FIXED, file_offset)
                            .to_result();
     if (!mem_cap_res.has_value()) {
@@ -702,9 +758,13 @@ size_t linux_sys_mmap(void *addr, size_t length, size_t prot, size_t flags,
         return INVALID_VALUE;
     }
     CapIdx mem_cap = mem_cap_res.value();
+    size_t vma_prot = prot_to_vma_prot(prot);
+    if (is_shared) {
+        vma_prot |= VMA_PROT_SHARE;
+    }
     if (!sys_pcb_map(__prog_pcb_cap, mem_cap, 0,
                      reinterpret_cast<void *>(target_addr), aligned_length,
-                     prot_to_vma_prot(prot)))
+                     vma_prot))
     {
         loggers::LXSC::ERROR("mmap failed to map memory capability to vspace");
         return INVALID_VALUE;
@@ -753,6 +813,9 @@ extern "C" size_t linux_dispatch(size_t a0, size_t a1, size_t a2, size_t a3,
                                   a5);
         case __NR_munmap:
             return linux_sys_munmap(reinterpret_cast<void *>(a0), a1);
+        case __NR_msync:
+            return linux_sys_msync(reinterpret_cast<void *>(a0), a1,
+                                   static_cast<int>(a2));
         case __NR_clone:
             return linux_sys_clone(a0, a1, reinterpret_cast<int *>(a2),
                                    reinterpret_cast<int *>(a3), a4,
