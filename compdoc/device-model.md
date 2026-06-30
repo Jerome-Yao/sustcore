@@ -2,8 +2,6 @@
 
 ## 设计目标
 
-设备框架需要完成四件事:
-
 1. **屏蔽平台差异**: 驱动不直接读取 DTB/ACPI 原始结构, 统一通过 `DeviceNode` 查询属性。
 2. **集中维护全局设备状态**: 由 `DeviceModel` 保存设备节点、内存区域、CPU 信息和中断管理器。
 3. **把节点属性转成运行时资源**: 将设备节点中的 MMIO 和中断声明转换成 `MMIOResource` / `VIrqResource`。
@@ -64,8 +62,6 @@ enum class DevicePlatform { FDT, PCI };
 
 ### 统一语义属性
 
-框架在 `DeviceNode` 上提供高层便捷接口, 驱动通常不需要理解 `reg`、`interrupts` 等平台属性名:
-
 | 方法                   | 统一语义      | 对应 FDT 属性      |
 | ---------------------- | ------------- | ------------------ |
 | `name()`               | 设备名称      | —                  |
@@ -77,8 +73,6 @@ enum class DevicePlatform { FDT, PCI };
 
 ### DevicePropView —— 统一属性视图
 
-`DevicePropView` 既能直接引用底层原始属性字节, 也能承载框架预解析后的结构化结果。支持的类型:
-
 | 类型           | 说明                                  |
 | -------------- | ------------------------------------- |
 | `STRING`       | 字符串                                |
@@ -88,8 +82,6 @@ enum class DevicePlatform { FDT, PCI };
 | `BYTE_ARRAY`   | 字节数组                              |
 | `REGION_LIST`  | MMIO 区域列表 (框架构造)              |
 | `VIRQ_LIST`    | 虚拟中断列表 (框架构造, 支持延迟求值) |
-
-`VIRQ_LIST` 的延迟求值机制: FDT 后端不会在节点创建时立刻分配/解析所有 virq, 而是把解析逻辑放进 loader, 等驱动真正访问 `node.irqs()` 时再执行。这避免了在中断域尚未就绪时过早解析。
 
 ## 内存区域模型
 
@@ -116,8 +108,6 @@ struct DevRes {
     vector<owner<MMIOResource *>> mmios;            // MMIO 资源
 };
 ```
-
-`DevRes` 由 Factory 在创建设备前完成资源提取, 一并移交给驱动实例。驱动通过 `DevRes` 访问设备 MMIO 寄存器空间和注册中断处理函数。
 
 ### 中断资源
 
@@ -193,10 +183,6 @@ struct DeviceId {
 1. 若节点是 FDT 类型, 遍历 `fdt_ids`, 用 `node.is_compatible_with(id.compatible)` 匹配
 2. 若节点是 PCI 类型, 遍历 `pci_ids`, 匹配 vendor/device/class 等信息
 
-### 中断控制器工厂
-
-`IIrqChipFactory` 与 `IDeviceFactory` 接口相同, 但语义上专用于中断控制器。中断控制器在系统启动的早期阶段就需要就绪, 因此有独立的匹配和创建路径。
-
 ## 中断子系统
 
 ### IrqManager
@@ -258,8 +244,6 @@ class BlockDevice : public DriverBase, public IBlockDeviceOps {
 };
 ```
 
-同时继承 `DriverBase` 和 `IBlockDeviceOps`, 使块设备驱动既能复用设备框架的资源管理, 又能作为 VFS 可挂载的块设备暴露。
-
 ### BlkManager
 
 `blk::BlkManager` 维护块设备对象到设备号的映射, 用于设备持久化引用。
@@ -291,7 +275,7 @@ class BlockDevice : public DriverBase, public IBlockDeviceOps {
 
 ### PCI 主机桥
 
-`PCIHostBridgeDriver` 继承 `DriverBase`, 通过 ECAM (Enhanced Configuration Access Mechanism) 空间枚举 PCI 总线。
+`PCIHostBridgeDriver` 继承 `DriverBase`, 通过 ECAM 空间枚举 PCI 总线。
 
 核心数据结构:
 
@@ -311,8 +295,6 @@ struct PCIHostControllerConfig {
 
 ## 初始化序列
 
-`kernel/main.cpp` 中的 `init_device_model()` 明确设备系统的启动顺序:
-
 ```
 1. DeviceModel::init()             — 构造设备模型单例
 2. DriverModel::init()             — 构造驱动模型单例
@@ -325,12 +307,6 @@ struct PCIHostControllerConfig {
 9. DriverModel::activate_runtime(nodes) — 匹配驱动工厂并创建驱动实例
 10. DriverModel::activate_block_devices() — 注册块设备到 BlkManager / DevFS
 ```
-
-关键时序约束:
-
-- **中断控制器先就绪**: 步骤 7-8 确保驱动创建前 virq 已经分配完成
-- **驱动工厂已注册**: 步骤 9 前各驱动的 `IDeviceFactory` 已经通过 `register_factory()` 注册到 `DriverModel`
-- **DevFS 就绪后接入**: VFS 在步骤 9 之前已完成 `devfs` 挂载
 
 ## DevFS 集成
 
